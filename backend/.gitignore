@@ -4,6 +4,7 @@ dist/
 .env.*
 !.env.example
 !.env.atukhosting.example
+tmp/
 certificado/*.p12
 certificado/*.pfx
 certificados/*.p12

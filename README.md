@@ -47,6 +47,10 @@ se guardan directamente en el servidor.
 
 ### Despliegue en cPanel / AtukHosting
 
+El archivo `.cpanel.yml` de la raíz instala las dependencias, compila la API
+y solicita el reinicio de Passenger. Está configurado para la ruta de la
+cuenta de AtukHosting actual y Node.js 22.
+
 1. En **Setup Node.js App**, conserva Node.js 22, la raíz de la aplicación
    `repositories/Turesma-Plataforma-Web/backend` y el startup `dist/server.js`.
 2. Crea en cPanel las variables de `backend/.env.atukhosting.example` para la
@@ -54,7 +58,13 @@ se guardan directamente en el servidor.
    no subas el archivo de ejemplo ni pegues secretos en mensajes. Confirma la
    ruta absoluta de `UPLOADS_DIR`, que debe estar fuera del repositorio y ser
    escribible por la aplicación.
-3. En Terminal, ejecuta el comando de activación que muestra cPanel y luego:
+3. En **Git Version Control**, pulsa **Update from Remote** y confirma que
+   cPanel muestre el commit que incluye `.cpanel.yml`. Luego pulsa
+   **Deploy HEAD Commit**. El archivo instala dependencias y construye `dist/`;
+   si el despliegue falla, revisa el log de cPanel antes de continuar.
+
+   Como alternativa manual, en Terminal ejecuta el comando de activación que
+   muestra cPanel y luego:
 
    ```bash
    cd ~/repositories/Turesma-Plataforma-Web/backend
