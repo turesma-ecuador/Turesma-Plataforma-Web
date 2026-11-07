@@ -5,6 +5,7 @@ const { crearNotificacion, usuarioIdDeConductor } = require("../../config/notifi
 const { notificarClienteReserva } = require("../../config/reservaMailer");
 const { emitirFacturaPorReserva, obtenerFactura, reenviarFacturaPorReserva } = require("../../config/sriFacturacion");
 const { prepararDespachoRequerimiento } = require("../../config/requerimientosDespacho");
+const { resolveStoredUploadPath } = require("../../config/storage");
 
 // Recalcula monto_pagado y estado_pago de una reserva a partir de sus pagos
 // APROBADOS. La reserva solo se confirma cuando el total está pagado. Cuando
@@ -225,7 +226,7 @@ const descargarReciboPagoAdmin = async (req: any, res: any) => {
       return res.status(404).json({ error: "La factura de esta reserva todavía no está autorizada" });
     }
 
-    const filePath = require("path").resolve(process.cwd(), factura.pdf_url.replace(/^\/uploads\//, "uploads/"));
+    const filePath = resolveStoredUploadPath(factura.pdf_url);
     if (!require("fs").existsSync(filePath)) return res.status(404).json({ error: "Archivo de factura no encontrado" });
     return res.download(filePath, `factura_${factura.clave_acceso}.pdf`);
   } catch (error) {
@@ -240,7 +241,7 @@ const descargarFacturaAdmin = async (req: any, res: any) => {
   try {
     const factura = await obtenerFactura(reservaId);
     if (!factura || factura.estado !== "autorizada") return res.status(404).json({ error: "La factura todavía no está autorizada" });
-    const filePath = require("path").resolve(process.cwd(), factura.pdf_url.replace(/^\/uploads\//, "uploads/"));
+    const filePath = resolveStoredUploadPath(factura.pdf_url);
     if (!require("fs").existsSync(filePath)) return res.status(404).json({ error: "Archivo de factura no encontrado" });
     return res.download(filePath, `factura_${factura.clave_acceso}.pdf`);
   } catch (error) {

@@ -9,6 +9,7 @@ const { signXml: signXadesXml } = require("osodreamer-sri-xml-signer");
 const PDFDocument = require("pdfkit");
 const pool = require("./db");
 const { enviarCorreo } = require("./mailer");
+const { getUploadsRoot, resolveStoredUploadPath } = require("./storage");
 
 const SRI_NAMESPACES = {
   ds: "http://www.w3.org/2000/09/xmldsig#",
@@ -415,7 +416,7 @@ const emitirFacturaPorReserva = async (reservaId: number) => {
       throw new Error(`SRI no autorizó la factura: ${detail || authorizationState}`);
     }
     const pdf = await generatePdf(invoice, config);
-    const directory = path.resolve(process.cwd(), "uploads", "facturas");
+    const directory = path.join(getUploadsRoot(), "facturas");
     fs.mkdirSync(directory, { recursive: true });
     const baseName = `factura_${invoice.clave_acceso}`;
     fs.writeFileSync(path.join(directory, `${baseName}.xml`), xml);
@@ -463,7 +464,7 @@ const reenviarFacturaPorReserva = async (reservaId: number) => {
   }
   if (!factura.cliente_email) throw new Error("El cliente no tiene un correo registrado");
 
-  const pdfPath = path.resolve(process.cwd(), factura.pdf_url.replace(/^\/uploads\//, "uploads/"));
+  const pdfPath = resolveStoredUploadPath(factura.pdf_url);
   if (!fs.existsSync(pdfPath)) throw new Error("No se encontró el PDF de la factura");
   const xml = factura.xml_autorizado;
   if (!xml) throw new Error("No se encontró el XML autorizado de la factura");

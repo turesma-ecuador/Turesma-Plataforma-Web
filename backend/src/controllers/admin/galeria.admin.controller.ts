@@ -1,19 +1,10 @@
 export {};
 
-const fs = require("fs");
-const path = require("path");
 const multer = require("multer");
 const pool = require("../../config/db");
 const { ensureGaleriaVideoColumns } = require("../../config/galeriaSchema");
 const { uploadImage, uploadVideo, deleteImage, getStoragePathFromUrl } = require("../../config/storage");
 const { invalidarGaleriaPublica } = require("../galeria.controller");
-
-// ── Almacenamiento en disco de las fotos de la galería de viajes ─────────────
-const galeriaDir = path.join(__dirname, "../../../uploads/galeria");
-
-if (!fs.existsSync(galeriaDir)) {
-  fs.mkdirSync(galeriaDir, { recursive: true });
-}
 
 const storage = multer.memoryStorage();
 
@@ -60,7 +51,7 @@ const uploadGaleriaImagen = (req: any, res: any) => {
     try {
       imageUrl = await uploadImage(req.file, "galeria");
     } catch (uploadError) {
-      console.error("Error subiendo imagen de galería a Supabase:", uploadError);
+      console.error("Error guardando imagen de galería:", uploadError);
       return res.status(502).json({ error: "No se pudo guardar la imagen" });
     }
     return res.status(201).json({
@@ -93,7 +84,7 @@ const uploadGaleriaVideo = (req: any, res: any) => {
           }
         }
       }
-      console.error("Error subiendo video de galería a Supabase:", uploadError);
+      console.error("Error guardando video de galería:", uploadError);
       const detail = process.env.NODE_ENV === "production"
         ? ""
         : `: ${uploadError?.message || "error de Storage"}`;
@@ -269,15 +260,6 @@ const eliminarGaleria = async (req: any, res: any) => {
     const posterStoragePath = getStoragePathFromUrl(String(found.rows[0].video_poster_url || ""));
     if (posterStoragePath) {
       await deleteImage(posterStoragePath);
-    }
-
-    // Compatibilidad con fotos antiguas guardadas en el disco local.
-    const marker = "/uploads/galeria/";
-    const idx = url.indexOf(marker);
-    if (idx !== -1) {
-      const filename = url.slice(idx + marker.length);
-      const filePath = path.join(galeriaDir, filename);
-      fs.unlink(filePath, () => {});
     }
 
     return res.status(200).json({ message: "Foto eliminada" });

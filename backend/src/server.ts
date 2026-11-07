@@ -4,7 +4,6 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
-const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 const authRoutes = require("./routes/auth.routes");
@@ -16,16 +15,15 @@ const cotizacionesRoutes = require("./routes/cotizaciones.routes");
 const requerimientosRoutes = require("./routes/requerimientos.routes");
 const { initDatabase } = require("./config/initDb");
 const pool = require("./config/db");
+const { verifyToken } = require("./middleware/auth.middleware");
+const { servePrivateFile } = require("./controllers/private-files.controller");
+const { assertStorageConfig, getUploadsRoot } = require("./config/storage");
 
 const app = express();
-const uploadsRoot = path.join(__dirname, "../uploads");
+const uploadsRoot = getUploadsRoot();
 
-// Render se ejecuta detrás de un proxy que añade X-Forwarded-For.
+// El hosting ejecuta esta API detrás de un proxy que añade X-Forwarded-For.
 app.set("trust proxy", 1);
-
-if (!fs.existsSync(uploadsRoot)) {
-  fs.mkdirSync(uploadsRoot, { recursive: true });
-}
 
 // Cabeceras de seguridad HTTP. Se permite cargar recursos (imágenes de
 // vehículos/galería) desde otro origen, porque el frontend corre en otro puerto.
@@ -46,9 +44,14 @@ app.use(cors(allowedOrigins?.length ? { origin: allowedOrigins } : {}));
 // Las publicaciones pueden incluir varias URLs de imágenes. El archivo nunca
 // viaja dentro del JSON, pero el límite debe permitir galerías y metadatos.
 app.use(express.json({ limit: "10mb" }));
-for (const publicFolder of ["galeria", "perfiles", "vehiculos", "viajes"]) {
-  app.use(`/uploads/${publicFolder}`, express.static(path.join(uploadsRoot, publicFolder)));
+for (const publicFolder of ["galeria", "perfiles", "vehiculos", "viajes", "videos"]) {
+  app.use(`/uploads/${publicFolder}`, express.static(path.join(uploadsRoot, publicFolder), {
+    fallthrough: false,
+    immutable: true,
+    maxAge: "1y",
+  }));
 }
+app.get("/api/private-files/:folder/:filename", verifyToken, servePrivateFile);
 
 // Límite de peticiones a autenticación: frena ataques de fuerza bruta al login
 // y al envío de PIN de recuperación (por IP).
@@ -99,6 +102,7 @@ const PORT = process.env.PORT || 4000;
 
 const startServer = async () => {
   try {
+    assertStorageConfig();
     await initDatabase();
 
     app.listen(PORT, () => {

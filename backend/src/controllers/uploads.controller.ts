@@ -6,7 +6,7 @@ const multer = require("multer");
 const pool = require("../config/db");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../middleware/auth.middleware");
-const { uploadImage } = require("../config/storage");
+const { getUploadsRoot, uploadImage } = require("../config/storage");
 
 const fileFilter = (_req, file, cb) => {
   const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"];
@@ -40,7 +40,7 @@ const uploadPerfilImagen = (req, res) => {
     try {
       imageUrl = await uploadImage(req.file, "perfiles");
     } catch (uploadError) {
-      console.error("Error subiendo foto de perfil a Supabase:", uploadError);
+      console.error("Error guardando foto de perfil:", uploadError);
       return res.status(502).json({ error: "No se pudo guardar la foto de perfil" });
     }
 
@@ -53,11 +53,8 @@ const uploadPerfilImagen = (req, res) => {
 };
 
 // ── Comprobante de pago (transferencia / link de pago) ───────────────────────
-const comprobantesDir = path.join(__dirname, "../../uploads/comprobantes");
-
-if (!fs.existsSync(comprobantesDir)) {
-  fs.mkdirSync(comprobantesDir, { recursive: true });
-}
+const comprobantesDir = path.join(getUploadsRoot(), "comprobantes");
+fs.mkdirSync(comprobantesDir, { recursive: true });
 
 const comprobanteStorage = multer.diskStorage({
   destination: (_req, _file, cb) => {

@@ -1,15 +1,7 @@
 export {};
 
-const fs = require("fs");
-const path = require("path");
 const multer = require("multer");
 const { uploadImage } = require("../../config/storage");
-
-const uploadsDir = path.join(__dirname, "../../../uploads/vehiculos");
-
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
 
 const storage = multer.memoryStorage();
 
@@ -51,7 +43,7 @@ const uploadVehiculoImagen = (req, res) => {
     try {
       imageUrl = await uploadImage(req.file, "vehiculos");
     } catch (uploadError) {
-      console.error("Error subiendo imagen de vehículo a Supabase:", uploadError);
+      console.error("Error guardando imagen de vehículo:", uploadError);
       return res.status(502).json({ error: "No se pudo guardar la imagen" });
     }
 

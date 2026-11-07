@@ -8,6 +8,7 @@ const { obtenerFactura } = require("../config/sriFacturacion");
 const { emitirFacturaPorReserva } = require("../config/sriFacturacion");
 const { buildProformaDataDeReserva, generarProformaPDF } = require("../config/proforma");
 const { prepararDespachoRequerimiento } = require("../config/requerimientosDespacho");
+const { resolveStoredUploadPath } = require("../config/storage");
 
 const METODOS_VALIDOS = ["transferencia", "link_pago", "payphone"];
 
@@ -296,7 +297,7 @@ const descargarFactura = async (req: any, res: any) => {
         return res.status(502).json({ error: error?.message || "El SRI todavía no ha autorizado esta factura" });
       }
     }
-    const filePath = require("path").resolve(process.cwd(), factura.pdf_url.replace(/^\/uploads\//, "uploads/"));
+    const filePath = resolveStoredUploadPath(factura.pdf_url);
     if (!require("fs").existsSync(filePath)) return res.status(404).json({ error: "Archivo de factura no encontrado" });
     return res.download(filePath, `factura_${factura.clave_acceso}.pdf`);
   } catch (error) {

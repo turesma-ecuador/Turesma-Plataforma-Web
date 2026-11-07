@@ -28,6 +28,53 @@ const ESTADO_LABEL: Record<string, string> = {
   pendiente: "Pendiente", verificado: "Verificado", rechazado: "Rechazado", no_verificado: "Sin verificar",
 };
 
+const VerificationImage = ({ src, alt, className }: { src: string; alt: string; className: string }) => {
+  const [loadedImage, setLoadedImage] = useState<{ url: string; objectUrl: string } | null>(null);
+  const [failedUrl, setFailedUrl] = useState("");
+  const isPrivateFile = src.includes("/api/private-files/");
+
+  useEffect(() => {
+    let objectUrl = "";
+    let cancelled = false;
+    if (!isPrivateFile) {
+      return () => {};
+    }
+
+    const headers = getAuthHeaders();
+    delete headers["Content-Type"];
+    fetch(src, { headers })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("No se pudo cargar el documento");
+        return response.blob();
+      })
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setLoadedImage({ url: src, objectUrl });
+      })
+      .catch(() => {
+        if (!cancelled) setFailedUrl(src);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [isPrivateFile, src]);
+
+  const imageSrc = isPrivateFile
+    ? loadedImage?.url === src ? loadedImage.objectUrl : ""
+    : src;
+  if (!imageSrc) {
+    return (
+      <div className={`${className} flex items-center justify-center bg-slate-100 text-xs text-slate-500`}>
+        {failedUrl === src ? "No se pudo cargar" : "Cargando..."}
+      </div>
+    );
+  }
+  return <Image src={imageSrc} alt={alt} width={1200} height={900} unoptimized className={className} />;
+};
+
 export default function AdminVerificacionesPage() {
   const { checkingSession } = useAdminGuard();
   const [items, setItems] = useState<Verificacion[]>([]);
@@ -128,7 +175,7 @@ export default function AdminVerificacionesPage() {
               <div className="grid grid-cols-2 gap-2">
                 {[{ url: v.cedula_url, label: "Cédula" }, { url: v.selfie_cedula_url, label: "Selfie con cédula" }].map(doc => doc.url ? (
                   <button key={doc.label} onClick={() => setZoomImg(doc.url)} className="block">
-                    <Image src={doc.url} alt={doc.label} width={320} height={160} unoptimized className="w-full h-32 object-cover rounded-xl border border-slate-200 hover:opacity-80 transition-all" />
+                    <VerificationImage src={doc.url} alt={doc.label} className="w-full h-32 object-cover rounded-xl border border-slate-200 hover:opacity-80 transition-all" />
                     <span className="text-[10px] text-slate-500">{doc.label}</span>
                   </button>
                 ) : <div key={doc.label} className="h-32 flex flex-col items-center justify-center bg-slate-50 rounded-xl border border-slate-200 text-[10px] text-slate-400"><ImageIcon size={24} />{doc.label} faltante</div>)}
@@ -185,7 +232,7 @@ export default function AdminVerificacionesPage() {
       {zoomImg && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 p-4" onClick={() => setZoomImg(null)}>
           <button onClick={() => setZoomImg(null)} className="absolute top-4 right-4 text-white p-2 hover:bg-white/10 rounded-full"><X size={28} /></button>
-          <Image src={zoomImg} alt="Cédula" width={1200} height={900} unoptimized className="max-w-full max-h-full rounded-2xl" />
+          <VerificationImage src={zoomImg} alt="Documento de identidad" className="max-w-full max-h-full rounded-2xl" />
         </div>
       )}
     </div>

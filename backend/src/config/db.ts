@@ -2,8 +2,8 @@ export {};
 
 const { Pool } = require("pg");
 
-// Las bases de datos en la nube (Neon, Render, Railway, Supabase…) exigen SSL.
-// En local NO se usa SSL. Se activa con DB_SSL=true en el hosting.
+// En la base PostgreSQL local de AtukHosting normalmente no se usa SSL.
+// Actívalo solo si el proveedor lo exige para esta conexión.
 const useSSL = String(process.env.DB_SSL || "").toLowerCase() === "true";
 const sslConfig = useSSL ? { rejectUnauthorized: false } : undefined;
 const poolConfig = {

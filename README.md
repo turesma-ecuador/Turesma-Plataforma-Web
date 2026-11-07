@@ -31,6 +31,47 @@ La API queda en `http://localhost:4000` y el frontend en `http://localhost:3000`
 
 Configura las variables de `backend/.env` con datos locales o del proveedor de PostgreSQL. Para el frontend, `web/.env.local` debe contener la URL de la API.
 
+## Almacenamiento de archivos
+
+El backend guarda las imágenes y videos en el disco del servidor y los sirve
+desde la API. Configura `API_PUBLIC_URL` con el origen HTTPS de la API y
+`UPLOADS_DIR` con una carpeta persistente fuera del checkout del repositorio
+(por ejemplo, `/home3/ojtaagta/turesma-storage` en cPanel). La carpeta contiene
+archivos que no deben incluirse en Git. El archivo
+`backend/.env.atukhosting.example` documenta los valores iniciales esperados
+para la cuenta actual; contiene placeholders, nunca contraseñas utilizables.
+
+Los documentos de identidad se guardan en carpetas no públicas y se entregan
+solo con autenticación. El almacenamiento empieza vacío y los archivos nuevos
+se guardan directamente en el servidor.
+
+### Despliegue en cPanel / AtukHosting
+
+1. En **Setup Node.js App**, conserva Node.js 22, la raíz de la aplicación
+   `repositories/Turesma-Plataforma-Web/backend` y el startup `dist/server.js`.
+2. Crea en cPanel las variables de `backend/.env.atukhosting.example` para la
+   app. Sustituye los placeholders por secretos reales directamente en cPanel;
+   no subas el archivo de ejemplo ni pegues secretos en mensajes. Confirma la
+   ruta absoluta de `UPLOADS_DIR`, que debe estar fuera del repositorio y ser
+   escribible por la aplicación.
+3. En Terminal, ejecuta el comando de activación que muestra cPanel y luego:
+
+   ```bash
+   cd ~/repositories/Turesma-Plataforma-Web/backend
+   node -v
+   npx --yes npm@10 ci
+   npm run build
+   ```
+
+   Comprueba que `node -v` muestre `v22`. Usa `npx --yes npm@10 ci` en lugar
+   del botón de instalación de cPanel si la Terminal muestra npm 6; el lockfile
+   requiere npm 7 o posterior. Confirma que la aplicación puede escribir en
+   `UPLOADS_DIR`. Al iniciar con almacenamiento vacío, carga los medios desde
+   la aplicación para guardarlos en el servidor.
+
+Después de configurar la API en cPanel, configura en Vercel
+`NEXT_PUBLIC_API_URL=https://api.turesma.com` y vuelve a desplegar el frontend.
+
 ## Inteligencia operativa
 
 El panel administrativo incluye analítica descriptiva y recomendaciones basadas en
@@ -128,4 +169,4 @@ npm run lint
 npm run build
 ```
 
-No subas `.env`, `.env.local`, contraseñas, tokens ni contenido de `backend/uploads/`. Las variables de producción se configuran como Environment Variables en Render.
+No subas `.env`, `.env.local`, contraseñas, tokens ni contenido de los directorios de archivos. Configura las variables de producción en el panel del proveedor correspondiente (cPanel para la API y Vercel para el frontend).
