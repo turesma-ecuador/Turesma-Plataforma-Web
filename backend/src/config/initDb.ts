@@ -963,7 +963,6 @@ const initDatabase = async () => {
       precio_final DECIMAL(10,2),
       reserva_id INT REFERENCES reservas(id) ON DELETE SET NULL,
       respuesta_admin TEXT,
-      reserva_id INT REFERENCES reservas(id) ON DELETE SET NULL,
       creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
