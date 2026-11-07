@@ -58,10 +58,14 @@ cuenta de AtukHosting actual y Node.js 22.
    no subas el archivo de ejemplo ni pegues secretos en mensajes. Confirma la
    ruta absoluta de `UPLOADS_DIR`, que debe estar fuera del repositorio y ser
    escribible por la aplicación.
-3. En **Git Version Control**, pulsa **Update from Remote** y confirma que
-   cPanel muestre el commit que incluye `.cpanel.yml`. Luego pulsa
-   **Deploy HEAD Commit**. El archivo instala dependencias y construye `dist/`;
-   si el despliegue falla, revisa el log de cPanel antes de continuar.
+3. En **Setup Node.js App**, pulsa **Run NPM Install** para instalar las
+   dependencias en el entorno virtual de CloudLinux. No ejecutes `npm ci` en
+   la raíz de la aplicación: puede reemplazar el enlace `node_modules` que
+   CloudLinux requiere. Después, en **Git Version Control**, pulsa
+   **Update from Remote** y confirma que cPanel muestre el commit que incluye
+   `.cpanel.yml`. Luego pulsa **Deploy HEAD Commit**. El archivo compila `dist/`
+   y solicita el reinicio de Passenger; si el despliegue falla, revisa el log
+   de cPanel antes de continuar.
 
    Como alternativa manual, en Terminal ejecuta el comando de activación que
    muestra cPanel y luego:

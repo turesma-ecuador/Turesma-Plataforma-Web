@@ -1,4 +1,4 @@
 ---
 deployment:
   tasks:
-    - /bin/bash -lc 'source /home3/ojtaagta/nodevenv/repositories/Turesma-Plataforma-Web/backend/22/bin/activate && cd /home3/ojtaagta/repositories/Turesma-Plataforma-Web/backend && npx --yes npm@10 ci && npm run build && /bin/mkdir -p tmp && /usr/bin/touch tmp/restart.txt'
+    - /bin/bash -lc 'source /home3/ojtaagta/nodevenv/repositories/Turesma-Plataforma-Web/backend/22/bin/activate && cd /home3/ojtaagta/repositories/Turesma-Plataforma-Web/backend && test -L node_modules && npm run build && /bin/mkdir -p tmp && /usr/bin/touch tmp/restart.txt'
