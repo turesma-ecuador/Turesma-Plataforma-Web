@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders } from "../../../lib/session";
 import {
@@ -15,7 +16,7 @@ import { useConfirm } from "../../../components/confirm-dialog";
 import { descargarExcel } from "../../../lib/download";
 import {
   Users, Plus, X, Search, Loader2, Trash2,
-  Edit3, Eye, ShoppingCart, DollarSign, Mail, FileText, FileSpreadsheet,
+  Edit3, Eye, ShoppingCart, DollarSign, Mail, FileText, FileSpreadsheet, CalendarPlus,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -305,6 +306,9 @@ export default function AdminClientesPage() {
                 </div>
                 <div className="flex gap-2 pt-1 items-center">
                   <WhatsAppButton telefono={c.telefono} title={`WhatsApp de ${c.nombre}`} mensaje={`Hola ${c.nombre}, le saludamos de Turesma S.A.`} />
+                  <Link href={`/admin/reservas?usuario_id=${c.id}`} className="flex items-center justify-center gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-[11px] font-black uppercase text-[#E31E24]" aria-label={`Crear reserva para ${c.nombre}`}>
+                    <CalendarPlus size={14} /> Reserva
+                  </Link>
                   <button onClick={() => openDetalle(c)} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-black uppercase text-blue-600 bg-blue-50 rounded-lg"><Eye size={14} /> Ver</button>
                   <button onClick={() => openEdit(c)} className="p-2 rounded-lg bg-slate-100 text-slate-600" aria-label="Editar"><Edit3 size={16} /></button>
                   <button onClick={() => handleDelete(c.id)} className="p-2 rounded-lg bg-red-50 text-red-500" aria-label="Eliminar"><Trash2 size={16} /></button>
@@ -363,6 +367,9 @@ export default function AdminClientesPage() {
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         <WhatsAppButton telefono={c.telefono} title={`WhatsApp de ${c.nombre}`} mensaje={`Hola ${c.nombre}, le saludamos de Turesma S.A.`} />
+                        <Link href={`/admin/reservas?usuario_id=${c.id}`} className="rounded-xl bg-red-50 p-2 text-[#E31E24] hover:bg-red-100 transition-colors" aria-label={`Crear reserva para ${c.nombre}`} title="Crear reserva">
+                          <CalendarPlus size={14} />
+                        </Link>
                         <button onClick={() => openDetalle(c)} className="p-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
                           <Eye size={14} />
                         </button>

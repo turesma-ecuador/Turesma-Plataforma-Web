@@ -410,10 +410,24 @@ const crearReserva = async (req, res) => {
     });
   }
 
-  const estadoFinal = estado || "pendiente";
+  const estadoFinal = estado || "pendiente_pago";
+
+  if (!["pendiente", "pendiente_pago"].includes(estadoFinal)) {
+    return res.status(400).json({
+      error: "Una reserva nueva debe quedar pendiente hasta registrar el pago y confirmar el servicio",
+    });
+  }
 
   if (!(await isReservaEstadoValido(estadoFinal))) {
     return res.status(400).json({ error: "Estado de viaje inválido" });
+  }
+
+  const submittedTotal = req.body.total;
+  const parsedTotal = submittedTotal === null || submittedTotal === undefined || submittedTotal === ""
+    ? null
+    : Number(submittedTotal);
+  if (parsedTotal !== null && (!Number.isFinite(parsedTotal) || parsedTotal < 0)) {
+    return res.status(400).json({ error: "El total debe ser un monto válido mayor o igual a cero" });
   }
 
   try {
@@ -446,7 +460,7 @@ const crearReserva = async (req, res) => {
       }
     }
 
-    const total = tour ? Number(tour.precio) * numPersonas : 0;
+    const total = parsedTotal ?? (tour ? Number(tour.precio) * numPersonas : 0);
 
     const reservasHotelColumn = await getReservasHotelColumnInfo();
     const requestedHotelId = parsePositiveInt(req.body.hotel_id);
@@ -502,6 +516,8 @@ const crearReserva = async (req, res) => {
       { name: "origen_lng", value: origenLng, requiredFallback: 0 },
       { name: "destino_lat", value: destinoLat, requiredFallback: 0 },
       { name: "destino_lng", value: destinoLng, requiredFallback: 0 },
+      { name: "monto_pagado", value: 0, requiredFallback: 0 },
+      { name: "estado_pago", value: "pendiente", requiredFallback: "pendiente" },
     ];
 
     for (const column of optionalColumns) {
@@ -522,6 +538,20 @@ const crearReserva = async (req, res) => {
       RETURNING *`;
 
     const insertResult = await pool.query(insertSql, insertValues);
+    try {
+      await pool.query(
+        `INSERT INTO reserva_historial (reserva_id, usuario_id, accion, estado_nuevo, detalle)
+         VALUES ($1, $2, 'creada_por_admin', $3, $4)`,
+        [
+          insertResult.rows[0].id,
+          req.user?.id || null,
+          estadoFinal,
+          JSON.stringify({ creado_por_administrador: true, cliente_id: usuarioId }),
+        ]
+      );
+    } catch (historyError) {
+      console.error("No se pudo registrar la creación de la reserva en el historial:", historyError);
+    }
 
     return res.status(201).json({
       message: "Reserva creada correctamente",

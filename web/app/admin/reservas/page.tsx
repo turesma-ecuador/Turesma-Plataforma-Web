@@ -5,6 +5,7 @@ import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders } from "../../../lib/session";
 import { useAutoRefresh } from "../../../lib/use-auto-refresh";
 import { descargarExcel } from "../../../lib/download";
+import { useRouter } from "next/navigation";
 import {
   Calendar, Plus, Edit3, Trash2, X, Search,
   CheckCircle, Clock, AlertCircle, Loader2, User, Car,
@@ -54,6 +55,18 @@ type ReservaHistoryEntry = {
 };
 
 const ESTADOS = ["pendiente", "pendiente_pago", "confirmada", "en_curso", "finalizada", "cancelada"];
+const createEmptyForm = () => ({
+  usuario_id: "",
+  fecha_reserva: new Date().toISOString().slice(0, 10),
+  fecha_salida: "",
+  fecha_llegada: "",
+  num_personas: "1",
+  total: "",
+  origen: "",
+  destino: "",
+  notas: "",
+  estado: "pendiente_pago",
+});
 
 const ESTADO_BADGE: Record<string, string> = {
   pendiente: "bg-amber-100 text-amber-700 border-amber-200",
@@ -91,6 +104,7 @@ const INPUT_CLS = "w-full rounded-xl border-2 border-slate-100 bg-slate-50 px-4 
 
 export default function AdminReservasPage() {
   const { checkingSession } = useAdminGuard();
+  const router = useRouter();
   const confirmar = useConfirm();
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -106,19 +120,8 @@ export default function AdminReservasPage() {
   const [adminOrigin, setAdminOrigin] = useState<Punto | null>(null);
   const [adminDestination, setAdminDestination] = useState<Punto | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const emptyForm = {
-    usuario_id: "",
-    fecha_reserva: new Date().toISOString().slice(0, 10),
-    fecha_salida: "",
-    fecha_llegada: "",
-    num_personas: "1",
-    total: "",
-    origen: "",
-    destino: "",
-    notas: "",
-    estado: "pendiente",
-  };
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(createEmptyForm);
+  const [prefilledClientId, setPrefilledClientId] = useState<string | null>(null);
 
   // Modal cambio de estado
   const [estadoModal, setEstadoModal] = useState<Reserva | null>(null);
@@ -130,6 +133,32 @@ export default function AdminReservasPage() {
   const [historyError, setHistoryError] = useState("");
 
   const h = getAuthHeaders();
+
+  useEffect(() => {
+    const clientId = new URLSearchParams(window.location.search).get("usuario_id");
+    if (clientId && /^\d+$/.test(clientId)) setPrefilledClientId(clientId);
+  }, []);
+
+  useEffect(() => {
+    if (!prefilledClientId || loading) return;
+    const client = clientes.find((item) => String(item.id) === prefilledClientId);
+    if (!client) {
+      setErr("No se encontró el cliente seleccionado para crear la reserva");
+      setPrefilledClientId(null);
+      router.replace("/admin/reservas");
+      return;
+    }
+
+    setEditingId(null);
+    setForm({ ...createEmptyForm(), usuario_id: String(client.id) });
+    setAdminOrigin(null);
+    setAdminDestination(null);
+    setMsg("");
+    setErr("");
+    setModalOpen(true);
+    setPrefilledClientId(null);
+    router.replace("/admin/reservas");
+  }, [clientes, loading, prefilledClientId, router]);
 
   const openHistory = async (reserva: Reserva) => {
     setHistoryReservation(reserva);
@@ -196,7 +225,7 @@ export default function AdminReservasPage() {
 
   const openCreate = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm(createEmptyForm());
     setMsg(""); setErr("");
     setModalOpen(true);
   };
@@ -232,7 +261,7 @@ export default function AdminReservasPage() {
       origen: adminOrigin ? adminOrigin.label : (form.origen || null),
       destino: adminDestination ? adminDestination.label : (form.destino || null),
       notas: form.notas || null,
-      estado: form.estado,
+      estado: editingId ? form.estado : "pendiente_pago",
     };
     const url = editingId ? `${API_URL}/api/admin/reservas/${editingId}` : `${API_URL}/api/admin/reservas`;
     const method = editingId ? "PUT" : "POST";
@@ -619,9 +648,13 @@ export default function AdminReservasPage() {
                 </div>
                 <div>
                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Estado</label>
-                  <select value={form.estado} onChange={e => setForm(p => ({ ...p, estado: e.target.value }))} className={INPUT_CLS}>
-                    {ESTADOS.map(s => <option key={s} value={s}>{ESTADO_LABEL[s] || s.replace("_", " ")}</option>)}
-                  </select>
+                  {editingId ? (
+                    <select value={form.estado} onChange={e => setForm(p => ({ ...p, estado: e.target.value }))} className={INPUT_CLS}>
+                      {ESTADOS.map(s => <option key={s} value={s}>{ESTADO_LABEL[s] || s.replace("_", " ")}</option>)}
+                    </select>
+                  ) : (
+                    <div className={`${INPUT_CLS} cursor-not-allowed text-orange-700`}>Pendiente de pago</div>
+                  )}
                 </div>
                 <div>
                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Fecha reserva * {form.fecha_reserva && <span className="text-[#E31E24]">({form.fecha_reserva})</span>}</label>
