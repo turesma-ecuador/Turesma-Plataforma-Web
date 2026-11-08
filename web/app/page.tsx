@@ -94,6 +94,17 @@ const TELEFONO_EMPRESA_DISPLAY = "+593 99 357 0061";
 const IMAGEN_FALLBACK = "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=800&auto=format&fit=crop";
 const PUBLIC_DATA_CACHE_KEY = "turesma_public_data";
 
+const getSafeImageSource = (source?: string | null) => {
+  if (!source) return IMAGEN_FALLBACK;
+  try {
+    const hostname = new URL(source, "http://localhost").hostname.toLowerCase();
+    if (hostname === "supabase.co" || hostname.endsWith(".supabase.co")) return IMAGEN_FALLBACK;
+  } catch {
+    return IMAGEN_FALLBACK;
+  }
+  return source;
+};
+
 const handleRemoteImageError = (event: SyntheticEvent<HTMLImageElement>) => {
   const image = event.currentTarget;
   if (image.src === IMAGEN_FALLBACK) return;
@@ -187,7 +198,7 @@ function VideoPlayer({ src, posterUrl, title, offsetX, offsetY, zoom, videoForma
     >
       {posterUrl && (
         <Image
-          src={posterUrl}
+          src={getSafeImageSource(posterUrl)}
           alt="Fondo difuminado de la vista previa del video"
           aria-hidden="true"
           fill
@@ -290,8 +301,8 @@ export default function RootPage() {
   const publicDataCacheRef = useRef<PublicDataCache>({ vehiculos: [], galeria: [] });
   const fotosGaleria = galeria.filter((contenido) => contenido.categoria !== "destinos" && contenido.tipo !== "video");
   const videosGaleria = galeria.filter((contenido) => contenido.categoria !== "destinos" && contenido.tipo === "video");
-  const imagenPrincipal = homeShowcaseImages.primary?.image_url || HERO_IMAGE_URL;
-  const imagenSecundaria = homeShowcaseImages.secondary?.image_url || "/destinos/puerto-lopez.jpg";
+  const imagenPrincipal = getSafeImageSource(homeShowcaseImages.primary?.image_url || HERO_IMAGE_URL);
+  const imagenSecundaria = getSafeImageSource(homeShowcaseImages.secondary?.image_url || "/destinos/puerto-lopez.jpg");
   const mosaicosVideos = createVideoMosaics(videosGaleria);
   const fotosDestinos = galeria.filter((contenido) => contenido.categoria === "destinos" && contenido.tipo !== "video");
 
@@ -878,7 +889,7 @@ export default function RootPage() {
                     className="home-card flex w-[85%] flex-none snap-center flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-xl hover:shadow-2xl sm:w-[360px]"
                   >
                     <Image
-                      src={v.imagen_url || IMAGEN_FALLBACK}
+                      src={getSafeImageSource(v.imagen_url)}
                       alt={`${v.tipo || "Vehículo"} ${v.modelo || ""}`.trim()}
                       data-no-translate
                       width={720}
@@ -948,7 +959,7 @@ export default function RootPage() {
                   className="home-card group relative overflow-hidden rounded-3xl shadow-xl aspect-[4/3] bg-gray-100"
                 >
                   <Image
-                    src={foto.imagen_url}
+                    src={getSafeImageSource(foto.imagen_url)}
                     alt={foto.titulo || "Viaje realizado por Turesma"}
                     data-no-translate
                     fill
@@ -994,7 +1005,7 @@ export default function RootPage() {
                 <article key={destino.id} className="home-card group flex flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-lg transition-shadow hover:shadow-2xl">
                   <div className="relative aspect-[5/4] overflow-hidden bg-gray-200">
                     <Image
-                      src={destino.imagen_url}
+                      src={getSafeImageSource(destino.imagen_url)}
                       alt={destino.titulo || "Destino en Ecuador"}
                       data-no-translate
                       fill
@@ -1151,7 +1162,7 @@ export default function RootPage() {
                           >
                             <VideoPlayer
                               src={video.imagen_url}
-                              posterUrl={video.video_poster_url}
+                              posterUrl={getSafeImageSource(video.video_poster_url)}
                               title={video.titulo}
                               offsetX={video.video_offset_x}
                               offsetY={video.video_offset_y}
