@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 process.env.JWT_SECRET = "fleet-calendar-integration-test-secret";
 
 const queryResults = [
+  { match: "select session_version from usuarios", rows: [{ session_version: 0 }] },
   {
     match: "from vehiculos where activo = true",
     rows: [{ id: 21, placa: "TEST-021", tipo: "van", modelo: "Van de prueba", estado: "disponible" }],

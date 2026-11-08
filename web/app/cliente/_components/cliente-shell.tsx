@@ -204,37 +204,37 @@ export function ClienteShell({ children }: ClienteShellProps) {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col lg:ml-72 h-screen relative min-w-0 overflow-hidden">
-        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-3">
-            <button ref={mobileMenuTriggerRef} className="lg:hidden flex min-h-11 min-w-11 items-center justify-center rounded-xl p-2 text-[#E31E24] transition-all hover:bg-red-50" onClick={() => setIsMobileMenuOpen(true)} type="button" aria-label="Abrir menú" aria-expanded={isMobileMenuOpen} aria-controls="cliente-mobile-navigation">
+      <main className="relative flex h-dvh min-w-0 flex-1 flex-col overflow-hidden lg:ml-72">
+        <header className="sticky top-0 z-40 flex shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 shadow-sm backdrop-blur-xl sm:px-6 sm:py-4">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-3">
+            <button ref={mobileMenuTriggerRef} className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl p-2 text-[#E31E24] transition-all hover:bg-red-50 lg:hidden" onClick={() => setIsMobileMenuOpen(true)} type="button" aria-label="Abrir menú" aria-expanded={isMobileMenuOpen} aria-controls="cliente-mobile-navigation">
               <Menu size={24} />
             </button>
             {/* Logo + sección (visible en móvil, donde el sidebar está oculto) */}
-            <div className="lg:hidden flex items-center gap-2">
-              <div className="w-8 h-8 bg-[#E31E24] rounded-lg flex items-center justify-center">
+            <div className="flex min-w-0 items-center gap-2 lg:hidden">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#E31E24]">
                 <Bus size={18} className="text-white" />
               </div>
-              <span className="text-sm font-bold text-gray-900">{currentSection}</span>
+              <span className="max-w-[22vw] truncate text-xs font-bold text-gray-900 sm:max-w-none sm:text-sm">{currentSection}</span>
             </div>
             <h2 className="hidden lg:block text-sm font-semibold text-gray-500">{currentSection}</h2>
           </div>
 
-          <div className="flex items-center gap-3 md:gap-6">
-            <LanguageSwitcher />
+          <div className="flex shrink-0 items-center gap-1 sm:gap-3 md:gap-6">
+            <LanguageSwitcher compactOnMobile />
             <NotificationBell userId={user?.id} accent="red" portal="cliente" />
 
-            <div className="flex items-center gap-3 border-l border-gray-200 pl-3 md:pl-6">
+            <div className="flex shrink-0 items-center gap-2 border-l border-gray-200 pl-2 sm:gap-3 sm:pl-3 md:pl-6">
               <div className="hidden sm:block text-right">
                 <p className="text-sm font-semibold text-gray-900 leading-tight">{user?.nombre ? <span data-no-translate>{user.nombre}</span> : "Cliente"}</p>
                 <p className="text-[11px] text-gray-400">Cliente</p>
               </div>
               {user?.imagen_url ? (
-                <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm border border-slate-200">
+                <div className="relative h-9 w-9 overflow-hidden rounded-xl border border-slate-200 shadow-sm sm:h-10 sm:w-10">
                   <Image src={user.imagen_url} alt={user?.nombre || "Cliente"} fill sizes="40px" className="object-cover" />
                 </div>
               ) : (
-                <div className="w-10 h-10 rounded-xl bg-[#E31E24] flex items-center justify-center text-white shadow-sm">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#E31E24] text-white shadow-sm sm:h-10 sm:w-10">
                   <User size={20} strokeWidth={2.2} />
                 </div>
               )}
@@ -242,7 +242,7 @@ export function ClienteShell({ children }: ClienteShellProps) {
           </div>
         </header>
 
-        <section className="p-3 sm:p-6 md:p-10 flex-1 overflow-y-auto">
+        <section className="min-h-0 flex-1 overflow-y-auto p-3 pb-24 sm:p-6 sm:pb-6 md:p-10">
           <div className="w-full max-w-7xl mx-auto space-y-5 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-l-4 border-[#E31E24] pl-4 sm:pl-6">
               <div>

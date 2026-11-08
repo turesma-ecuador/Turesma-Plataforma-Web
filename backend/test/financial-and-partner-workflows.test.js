@@ -19,6 +19,7 @@ const pool = {
   async query(sql) {
     const query = normalized(sql);
     state.queries.push(query);
+    if (query.startsWith("select session_version from usuarios")) return result([{ session_version: 0 }]);
     if (query.startsWith("select extract(month from fecha_reserva)::int as mes, count(*)::int as total")) return result([]);
     if (query.startsWith("select extract(isodow from fecha_reserva)::int as dow")) return result([]);
     if (query.startsWith("select coalesce(sum(monto_pagado), 0)::numeric as total")) return result([{ total: "60" }]);

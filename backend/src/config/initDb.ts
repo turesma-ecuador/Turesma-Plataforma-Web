@@ -86,7 +86,27 @@ const initDatabase = async () => {
     ADD COLUMN IF NOT EXISTS notas_verificacion TEXT,
     ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMP,
     ADD COLUMN IF NOT EXISTS email_verification_token_hash VARCHAR(128),
-    ADD COLUMN IF NOT EXISTS email_verification_expires_at TIMESTAMP;
+    ADD COLUMN IF NOT EXISTS email_verification_expires_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS pending_email VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS session_version INT NOT NULL DEFAULT 0;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_email_change_audit (
+      id SERIAL PRIMARY KEY,
+      user_id INT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+      admin_id INT REFERENCES usuarios(id) ON DELETE SET NULL,
+      accion VARCHAR(20) NOT NULL,
+      email_anterior VARCHAR(100) NOT NULL,
+      email_nuevo VARCHAR(100) NOT NULL,
+      motivo TEXT NOT NULL,
+      identidad_confirmada BOOLEAN NOT NULL DEFAULT false,
+      verificacion_enviada BOOLEAN NOT NULL DEFAULT false,
+      aviso_correo_anterior_enviado BOOLEAN NOT NULL DEFAULT false,
+      creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS admin_email_change_audit_user_idx
+      ON admin_email_change_audit (user_id, creado_en DESC);
   `);
 
   await pool.query(`

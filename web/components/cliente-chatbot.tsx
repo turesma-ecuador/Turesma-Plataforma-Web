@@ -191,7 +191,7 @@ export function ClienteChatbot() {
 
   return (
     <LocalizedContent>
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] right-3 z-50 sm:bottom-4 sm:right-4">
       {isOpen ? (
         <div className="w-[360px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.2)]">
           <div className="flex items-center justify-between border-b border-slate-200 bg-[#111827] px-4 py-3 text-white">
@@ -280,10 +280,10 @@ export function ClienteChatbot() {
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          className="group flex items-center gap-3 rounded-full bg-[#111827] px-4 py-3 text-white shadow-[0_20px_45px_rgba(17,24,39,0.35)] transition hover:scale-[1.02] hover:bg-[#1f2937]"
+          className="group flex h-12 w-12 items-center justify-center rounded-full bg-[#111827] p-1 text-white shadow-[0_12px_28px_rgba(17,24,39,0.3)] transition hover:scale-[1.02] hover:bg-[#1f2937] sm:h-auto sm:w-auto sm:gap-3 sm:px-4 sm:py-3 sm:shadow-[0_20px_45px_rgba(17,24,39,0.35)]"
           aria-label="Abrir chatbot"
         >
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#E31E24] text-white">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E31E24] text-white sm:h-11 sm:w-11">
             <MessageCircleMore size={20} />
           </span>
           <span className="hidden sm:flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em]">

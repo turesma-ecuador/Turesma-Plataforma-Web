@@ -79,7 +79,7 @@ const miVerificacion = async (req: any, res: any) => {
 
   try {
     const r = await pool.query(
-      `      SELECT cedula, cedula_url, selfie_cedula_url, email_verified_at,
+      `      SELECT cedula, cedula_url, selfie_cedula_url, email_verified_at, pending_email,
               COALESCE(estado_verificacion, 'no_verificado') AS estado_verificacion,
               notas_verificacion, fecha_verificacion
        FROM usuarios WHERE id = $1 LIMIT 1`,

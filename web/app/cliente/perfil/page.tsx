@@ -13,8 +13,8 @@ import { LocalizedContent } from "../../../lib/i18n";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
-type Perfil = { id: number; nombre: string; email: string; rol: string; telefono?: string | null; imagen_url?: string | null };
-type Verif = { estado_verificacion: string; cedula: string | null; cedula_url?: string | null; selfie_cedula_url?: string | null; email_verified_at?: string | null; notas_verificacion: string | null };
+type Perfil = { id: number; nombre: string; email: string; pending_email?: string | null; rol: string; telefono?: string | null; imagen_url?: string | null };
+type Verif = { estado_verificacion: string; cedula: string | null; cedula_url?: string | null; selfie_cedula_url?: string | null; email_verified_at?: string | null; pending_email?: string | null; notas_verificacion: string | null };
 
 const INPUT = "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition-all focus:border-[#E31E24] focus:ring-2 focus:ring-[#E31E24]/10 disabled:bg-slate-50 disabled:text-slate-400";
 
@@ -216,7 +216,11 @@ export default function ClientePerfilPage() {
                 <div>
                   <h2 className="text-sm font-bold text-slate-800">Verificación de correo</h2>
                   <p className="text-xs text-slate-500">
-                    {verif?.email_verified_at ? "Tu correo electrónico está verificado." : "Debes confirmar el enlace enviado a tu correo electrónico."}
+                    {verif?.pending_email
+                      ? `Cambio pendiente de verificación para ${verif.pending_email}.`
+                      : verif?.email_verified_at
+                        ? "Tu correo electrónico está verificado."
+                        : "Debes confirmar el enlace enviado a tu correo electrónico."}
                   </p>
                 </div>
               </div>
@@ -248,7 +252,7 @@ export default function ClientePerfilPage() {
             <div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" /><input value={nombre} onChange={e => setNombre(e.target.value)} className={INPUT + " pl-9"} /></div></div>
           <div className="space-y-1.5"><label className="text-xs font-semibold text-slate-500">Teléfono</label>
             <div className="relative"><Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" /><input value={telefono} onChange={e => setTelefono(e.target.value)} className={INPUT + " pl-9"} placeholder="099 123 4567" /></div></div>
-          <div className="space-y-1.5 sm:col-span-2"><label className="text-xs font-semibold text-slate-500">Correo (no editable)</label>
+          <div className="space-y-1.5 sm:col-span-2"><label className="text-xs font-semibold text-slate-500">Correo (cambio solo por administración y con verificación)</label>
             <div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" /><input value={perfil?.email || ""} disabled className={INPUT + " pl-9"} /></div></div>
         </div>
 

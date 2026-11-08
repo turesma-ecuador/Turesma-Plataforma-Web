@@ -22,6 +22,7 @@ const result = (rows = []) => ({ rows, rowCount: rows.length });
 const pool = {
   async query(sql, params = []) {
     const query = sql.replace(/\s+/g, " ").trim().toLowerCase();
+    if (query.startsWith("select session_version from usuarios")) return result([{ session_version: 0 }]);
     if (query.startsWith("select * from empresas_asociadas")) return result(state.companies);
     if (query.startsWith("select * from vehiculos_asociados")) return result(state.vehicles);
     if (query.startsWith("insert into empresas_asociadas")) {

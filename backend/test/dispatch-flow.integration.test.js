@@ -105,6 +105,7 @@ const operationView = (operation) => {
 const pool = {
   async query(sql, params = []) {
     const query = sql.replace(/\s+/g, " ").trim().toLowerCase();
+    if (query.startsWith("select session_version from usuarios")) return result([{ session_version: 0 }]);
     if (query.startsWith("select coalesce(o.fecha_fin_programada")) {
       const operation = operationFor(params[0]);
       const reservation = operation?.reserva_id ? reservationFor(operation.reserva_id) : null;

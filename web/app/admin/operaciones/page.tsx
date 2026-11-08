@@ -193,6 +193,7 @@ export default function OperacionesPage() {
   const [assignmentResourcesError, setAssignmentResourcesError] = useState("");
   const [partnerCompaniesError, setPartnerCompaniesError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [focusedReservationId, setFocusedReservationId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -271,6 +272,17 @@ export default function OperacionesPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const reservationId = Number(new URLSearchParams(window.location.search).get("reserva_id"));
+    if (Number.isInteger(reservationId) && reservationId > 0) setFocusedReservationId(reservationId);
+  }, []);
+
+  useEffect(() => {
+    if (loading || !focusedReservationId) return;
+    const target = document.querySelector(`[data-reservation-id="${focusedReservationId}"]`);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [loading, focusedReservationId, reservations, operations]);
 
   const request = async (url: string, options: RequestInit) => {
     const response = await fetch(`${API_URL}${url}`, { ...options, headers: { ...getAuthHeaders(), "Content-Type": "application/json" } });
@@ -559,7 +571,7 @@ export default function OperacionesPage() {
               const serviceTime = reservationServiceTime(reservation);
               const overdue = Boolean(serviceDate && serviceDate < today);
               return (
-              <article key={reservation.id} className={`grid gap-4 border-l-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-5 ${overdue ? "border-l-red-400 bg-red-50/40" : "border-l-transparent"}`}>
+              <article key={reservation.id} data-reservation-id={reservation.id} className={`grid gap-4 border-l-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-5 ${focusedReservationId === reservation.id ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100" : overdue ? "border-l-red-400 bg-red-50/40" : "border-l-transparent"}`}>
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-black leading-snug text-slate-900">Reserva #{reservation.id}</p>
@@ -618,7 +630,7 @@ export default function OperacionesPage() {
                 ? `Requerimiento #${operation.requerimiento_id} · Grupo ${operation.grupo_numero} · Unidad ${operation.unidad_numero}`
                 : operation.reserva_id ? `Reserva #${operation.reserva_id}` : operation.tipo_servicio;
               return (
-                <article key={operation.id} className={`rounded-2xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm ${overdue ? "border-l-red-400 bg-red-50/30" : "border-l-cyan-400"}`}>
+                <article key={operation.id} data-reservation-id={operation.reserva_id || undefined} className={`rounded-2xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm ${focusedReservationId === operation.reserva_id ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100" : overdue ? "border-l-red-400 bg-red-50/30" : "border-l-cyan-400"}`}>
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-black leading-snug text-slate-900">{serviceTitle}</h3>
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Operación #{operation.id}</span>

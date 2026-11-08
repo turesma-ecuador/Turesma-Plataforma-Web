@@ -99,27 +99,27 @@ export default function ClienteInicioPage() {
 
   return (
     <LocalizedContent>
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="animate-in space-y-4 fade-in duration-500 sm:space-y-6">
       {/* KPIs */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         {[
           { label: "En revisión", val: cotPendientes, color: "text-amber-600", bg: "bg-amber-50 border-amber-200" },
           { label: "Aprobadas", val: cotAprobadas, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200" },
           { label: "Mis viajes", val: viajes, color: "text-slate-900", bg: "bg-white border-slate-200" },
         ].map(k => (
-          <div key={k.label} className={`${k.bg} border rounded-2xl p-4 text-center shadow-sm`}>
+          <div key={k.label} className={`${k.bg} flex min-h-24 flex-col justify-center rounded-2xl border p-2.5 text-center shadow-sm sm:p-4`}>
             <p className={`text-2xl font-black italic ${k.color}`}>{k.val}</p>
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">{k.label}</p>
+            <p className="mt-1 text-[8px] font-black uppercase leading-tight tracking-[0.08em] text-slate-400 sm:text-[9px] sm:tracking-widest">{k.label}</p>
           </div>
         ))}
       </div>
 
-      <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:space-y-4 sm:p-5">
         <div className="flex items-start justify-between gap-3 sm:items-end">
           <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-[0.2em] text-[#E31E24]">Compra directa</p>
             <h2 className="mt-1 text-xl font-black text-slate-900 sm:text-2xl">Viajes disponibles</h2>
-            <p className="mt-1 text-sm text-slate-500">Selecciona un viaje con precio y capacidad de personas definida.</p>
+            {catalogoViajes.length > 0 && <p className="mt-1 text-sm text-slate-500">Selecciona un viaje con precio y capacidad de personas definida.</p>}
           </div>
           <Link href="/cliente/historial" className="shrink-0 whitespace-nowrap pt-1 text-xs font-black text-slate-400 hover:text-[#E31E24]">Mis pagos</Link>
         </div>
@@ -189,7 +189,7 @@ export default function ClienteInicioPage() {
             );
           })}
         </div>
-        {!catalogoViajes.length && <p className="rounded-2xl bg-slate-50 p-6 text-center text-sm font-bold text-slate-400">No hay viajes publicados en este momento.</p>}
+        {!catalogoViajes.length && <p className="rounded-2xl bg-slate-50 px-3 py-4 text-center text-sm font-bold text-slate-400 sm:p-6">No hay viajes publicados en este momento.</p>}
       </section>
 
       {viajeCompra && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4"><form onSubmit={(event) => { event.preventDefault(); void reservarViaje(); }} className="my-4 w-full max-w-md space-y-4 rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-[#E31E24]">Confirmar compra</p><h2 className="mt-1 text-xl font-black text-slate-900">{viajeCompra.titulo}</h2></div><button type="button" onClick={() => setViajeCompra(null)} className="text-2xl text-slate-400">×</button></div>      <p className="text-sm font-semibold text-slate-600">{viajeCompra.origen} → {viajeCompra.destino} · ${Number(viajeCompra.precio).toFixed(2)} por persona</p><p className="rounded-xl bg-slate-50 p-3 text-xs font-bold text-slate-600">Capacidad del vehículo: {viajeCompra.capacidad_personas} personas</p><label className="block text-xs font-black uppercase tracking-wider text-slate-500">Personas que van<input type="number" min="1" max={viajeCompra.cupos_disponibles} value={compraForm.pasajeros} onChange={(e) => setCompraForm({ ...compraForm, pasajeros: e.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" required /></label><label className="block text-xs font-black uppercase tracking-wider text-slate-500">Fecha del viaje<input type="date" value={compraForm.fecha} onChange={(e) => setCompraForm({ ...compraForm, fecha: e.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" required /></label><label className="block text-xs font-black uppercase tracking-wider text-slate-500">Hora de salida<input type="time" value={compraForm.hora} onChange={(e) => setCompraForm({ ...compraForm, hora: e.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" required /></label><div className="space-y-2"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Ubicación de recogida</p>      <MapPicker localized pickupOnly origin={pickupPoint} destination={null} onChange={(which, point) => { if (which === "origin") { setPickupPoint(point); setCompraForm((current) => ({ ...current, ubicacion: point.label })); } }} /><input value={compraForm.ubicacion} onChange={(e) => setCompraForm({ ...compraForm, ubicacion: e.target.value })} className="w-full rounded-xl border p-3 text-sm normal-case" placeholder="Dirección o punto de encuentro" required /><label className="block text-xs font-black uppercase tracking-wider text-slate-500">Referencia (opcional)<textarea value={compraForm.referencia} onChange={(e) => setCompraForm({ ...compraForm, referencia: e.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm normal-case" rows={2} placeholder="Ej.: junto a la farmacia, puerta azul..." /></label></div><button disabled={comprando} className="w-full rounded-xl bg-[#E31E24] py-3 font-black text-white disabled:opacity-50">{comprando ? "Registrando..." : "Confirmar reserva"}</button></form></div>}
@@ -205,12 +205,12 @@ export default function ClienteInicioPage() {
             <Link href="/cliente/historial" className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-[#E31E24]">Ver historial</Link>
           </div>
           {(viajeActivo.origen || viajeActivo.destino) && (
-            <p className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
-              <MapPin size={13} className="text-[#E31E24]" />
-              <span className="truncate">{viajeActivo.origen || "—"}</span>
-              <ArrowRight size={12} className="text-slate-300" />
-              <span className="truncate">{viajeActivo.destino || "—"}</span>
-            </p>
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-1.5 gap-y-1 text-xs font-bold text-slate-500 sm:flex sm:items-center sm:gap-1.5">
+              <MapPin size={13} className="row-span-2 row-start-1 mt-0.5 text-[#E31E24] sm:mt-0" />
+              <span className="col-start-2 row-start-1 min-w-0 break-words sm:flex-1 sm:truncate">{viajeActivo.origen || "—"}</span>
+              <ArrowRight size={12} className="col-start-1 row-start-2 mt-0.5 rotate-90 text-slate-300 sm:mt-0 sm:rotate-0" />
+              <span className="col-start-2 row-start-2 min-w-0 break-words sm:flex-1 sm:truncate">{viajeActivo.destino || "—"}</span>
+            </div>
           )}
           {viajeActivo.estado === "en_curso" ? (
             <LiveTripMap reservaId={viajeActivo.id} />

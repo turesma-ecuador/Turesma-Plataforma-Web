@@ -28,6 +28,8 @@ type Cliente = {
   telefono: string | null;
   cedula?: string | null;
   imagen_url?: string | null;
+  pending_email?: string | null;
+  email_verified_at?: string | null;
   activo: boolean;
   creado_en: string;
   total_reservas?: number;
@@ -45,13 +47,20 @@ const INPUT = "w-full rounded-xl border-2 border-slate-100 bg-slate-50 px-4 py-3
 const EMPTY: Partial<Cliente> = { nombre: "", email: "", telefono: "", cedula: "", imagen_url: null };
 
 export default function AdminClientesPage() {
-  const { checkingSession } = useAdminGuard();
+  const { user, checkingSession } = useAdminGuard();
+  const puedeRecuperarCorreo = user?.rol === "admin";
   const confirmar = useConfirm();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(false);
   const [detalle, setDetalle] = useState<Cliente | null>(null);
+  const [recuperacionCorreo, setRecuperacionCorreo] = useState<Cliente | null>(null);
+  const [correoNuevo, setCorreoNuevo] = useState("");
+  const [motivoCambioCorreo, setMotivoCambioCorreo] = useState("");
+  const [identidadConfirmada, setIdentidadConfirmada] = useState(false);
+  const [procesandoCorreo, setProcesandoCorreo] = useState(false);
+  const [reenviandoVerificacion, setReenviandoVerificacion] = useState(false);
   const [detalleReservas, setDetalleReservas] = useState<ReservaCliente[]>([]);
   const [loadingDetalle, setLoadingDetalle] = useState(false);
   const [form, setForm] = useState<Partial<Cliente>>(EMPTY);
@@ -124,6 +133,70 @@ export default function AdminClientesPage() {
       setErr("Error al cargar clientes");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const abrirRecuperacionCorreo = (cliente: Cliente) => {
+    setDetalle(null);
+    setRecuperacionCorreo(cliente);
+    setCorreoNuevo(cliente.pending_email || "");
+    setMotivoCambioCorreo("");
+    setIdentidadConfirmada(false);
+    setErr("");
+    setMsg("");
+  };
+
+  const handleCambiarCorreo = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!recuperacionCorreo) return;
+    setProcesandoCorreo(true);
+    setErr("");
+    setMsg("");
+    try {
+      const response = await fetch(`${API}/api/admin/usuarios/${recuperacionCorreo.id}/correo`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          email: correoNuevo,
+          motivo: motivoCambioCorreo,
+          identidad_confirmada: identidadConfirmada,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo iniciar la recuperación");
+      const delivery = [
+        data.verification_sent ? "enlace enviado al correo nuevo" : "no se pudo enviar el enlace",
+        data.old_email_notified ? "aviso enviado al correo anterior" : "no se pudo enviar aviso al correo anterior",
+        data.delivery_audit_saved ? "" : "no se pudo guardar el resultado de los envíos en la auditoría",
+      ].filter(Boolean).join("; ");
+      setMsg(`${data.message} ${delivery}.`);
+      setRecuperacionCorreo(null);
+      await load();
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : "No se pudo iniciar la recuperación");
+    } finally {
+      setProcesandoCorreo(false);
+    }
+  };
+
+  const reenviarVerificacionCorreo = async (cliente: Cliente) => {
+    setReenviandoVerificacion(true);
+    setErr("");
+    setMsg("");
+    try {
+      const response = await fetch(`${API}/api/admin/usuarios/${cliente.id}/correo/verificacion`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo reenviar la verificación");
+      setMsg(`${data.message || "Enlace de verificación reenviado"}${data.delivery_audit_saved ? "" : " No se pudo guardar el resultado del envío en la auditoría."}`);
+      await load();
+      setDetalle((current) => current?.id === cliente.id ? { ...current, pending_email: cliente.pending_email } : current);
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : "No se pudo reenviar la verificación");
+    } finally {
+      setReenviandoVerificacion(false);
     }
   };
 
@@ -405,7 +478,8 @@ export default function AdminClientesPage() {
               </div>
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">Email</label>
-                <input className={INPUT} type="email" required value={form.email ?? ""} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="correo@ejemplo.com" />
+                <input className={INPUT} type="email" required disabled={Boolean(editId)} value={form.email ?? ""} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="correo@ejemplo.com" />
+                {editId && <p className="mt-1 text-[10px] text-slate-500">Para cambiar el correo, usa la recuperación desde el detalle del cliente. El nuevo correo deberá verificarse.</p>}
               </div>
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">Teléfono</label>
@@ -454,6 +528,42 @@ export default function AdminClientesPage() {
         </div>
       )}
 
+      {recuperacionCorreo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/60 p-4">
+          <form onSubmit={handleCambiarCorreo} className="my-4 w-full max-w-lg space-y-4 rounded-3xl border-b-8 border-[#E31E24] bg-white p-6 shadow-2xl sm:p-8">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black uppercase italic">Recuperar correo del cliente</h3>
+                <p className="mt-1 text-xs text-slate-500">{recuperacionCorreo.nombre} · correo actual: {recuperacionCorreo.email}</p>
+              </div>
+              <button type="button" onClick={() => setRecuperacionCorreo(null)} className="rounded-xl p-2 hover:bg-slate-100" aria-label="Cerrar"><X size={18} /></button>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+              Confirma la identidad del titular antes de continuar. El correo actual no cambiará hasta que el cliente verifique el enlace enviado al nuevo correo. La acción quedará registrada y se intentará avisar al correo anterior.
+            </div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+              Nuevo correo
+              <input className={`${INPUT} mt-1.5`} type="email" required maxLength={100} value={correoNuevo} onChange={(event) => setCorreoNuevo(event.target.value)} placeholder="cliente@ejemplo.com" />
+            </label>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+              Motivo de la recuperación
+              <textarea className={`${INPUT} mt-1.5 normal-case`} required minLength={8} maxLength={500} rows={3} value={motivoCambioCorreo} onChange={(event) => setMotivoCambioCorreo(event.target.value)} placeholder="Indica cómo confirmaste la identidad y por qué solicita el cambio." />
+            </label>
+            <label className="flex items-start gap-2 text-xs font-semibold text-slate-700">
+              <input className="mt-0.5" type="checkbox" required checked={identidadConfirmada} onChange={(event) => setIdentidadConfirmada(event.target.checked)} />
+              Confirmo que verifiqué la identidad del titular por un medio confiable.
+            </label>
+            {err && <p className="text-xs font-bold text-red-600">{err}</p>}
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={() => setRecuperacionCorreo(null)} className="flex-1 rounded-xl border-2 border-slate-200 py-3 text-sm font-black uppercase text-slate-600">Cancelar</button>
+              <button type="submit" disabled={procesandoCorreo || !identidadConfirmada} className="flex-1 rounded-xl bg-[#E31E24] py-3 text-sm font-black uppercase text-white disabled:opacity-50">
+                {procesandoCorreo ? "Procesando…" : "Enviar verificación"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* MODAL DETALLE */}
       {detalle && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -473,6 +583,29 @@ export default function AdminClientesPage() {
                 <p className="text-sm text-slate-500 truncate">{detalle.email}</p>
                 {detalle.telefono && <p className="text-xs text-slate-400">{detalle.telefono}</p>}
               </div>
+            </div>
+
+            <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-700">Correo de la cuenta</p>
+                  {detalle.pending_email ? (
+                    <p className="mt-1 text-xs font-semibold text-amber-700">Pendiente de verificar: {detalle.pending_email}</p>
+                  ) : (
+                    <p className="mt-1 text-xs text-slate-500">{detalle.email_verified_at ? "Verificado" : "Sin verificar"}</p>
+                  )}
+                </div>
+                {puedeRecuperarCorreo && detalle.pending_email && (
+                  <button type="button" onClick={() => reenviarVerificacionCorreo(detalle)} disabled={reenviandoVerificacion}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-[10px] font-black uppercase text-slate-700 disabled:opacity-50">
+                    {reenviandoVerificacion ? "Enviando…" : "Reenviar enlace"}
+                  </button>
+                )}
+              </div>
+              {puedeRecuperarCorreo && <button type="button" onClick={() => abrirRecuperacionCorreo(detalle)}
+                className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-100">
+                Recuperar / cambiar correo
+              </button>}
             </div>
 
             <div className="grid grid-cols-2 gap-3 mb-5">

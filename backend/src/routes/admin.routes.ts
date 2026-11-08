@@ -36,6 +36,8 @@ const {
   crearUsuarioAdmin,
   listarUsuariosAdmin,
   editarUsuarioAdmin,
+  cambiarCorreoClienteAdmin,
+  reenviarVerificacionCorreoClienteAdmin,
   eliminarUsuarioAdmin,
   recuperarPasswordUsuarioAdmin,
   getInteligenciaDashboard,
@@ -250,6 +252,8 @@ router.get("/disponibilidad", verDisponibilidad);
 router.post("/usuarios", crearUsuarioAdmin);
 router.get("/usuarios", listarUsuariosAdmin);
 router.put("/usuarios/:id", editarUsuarioAdmin);
+router.patch("/usuarios/:id/correo", requireRole("admin"), cambiarCorreoClienteAdmin);
+router.post("/usuarios/:id/correo/verificacion", requireRole("admin"), reenviarVerificacionCorreoClienteAdmin);
 router.delete("/usuarios/:id", eliminarUsuarioAdmin);
 router.patch("/usuarios/:id/recuperar-password", recuperarPasswordUsuarioAdmin);
 router.post("/uploads/vehiculo-imagen", uploadVehiculoImagen);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders } from "../../../lib/session";
@@ -40,6 +41,7 @@ const INPUT = "w-full rounded-xl border-2 border-slate-100 bg-slate-50 px-4 py-2
 
 export default function AdminPagosPage() {
   const { user, checkingSession } = useAdminGuard();
+  const router = useRouter();
   const isAdmin = normalizeRole(user?.rol) === "admin";
   const [pagos, setPagos] = useState<Pago[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +55,19 @@ export default function AdminPagosPage() {
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [refundPayment, setRefundPayment] = useState<Pago | null>(null);
   const [refundForm, setRefundForm] = useState({ monto: "", motivo: "", referencia_externa: "" });
+  const [focusedPaymentId, setFocusedPaymentId] = useState<number | null>(null);
+  const [nextReservationId, setNextReservationId] = useState<number | null>(null);
+  const [scrolledPaymentId, setScrolledPaymentId] = useState<number | null>(null);
+  const [paymentLinkReady, setPaymentLinkReady] = useState(false);
+
+  useEffect(() => {
+    const id = Number(new URLSearchParams(window.location.search).get("id"));
+    if (Number.isInteger(id) && id > 0) {
+      setFocusedPaymentId(id);
+      setFiltro("todos");
+    }
+    setPaymentLinkReady(true);
+  }, []);
 
   const load = async (silencioso = false) => {
     if (!silencioso) setLoading(true);
@@ -63,9 +78,17 @@ export default function AdminPagosPage() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { if (!checkingSession) load(); }, [checkingSession, filtro]);
+  useEffect(() => { if (!checkingSession && paymentLinkReady) load(); }, [checkingSession, filtro, paymentLinkReady]);
 
   useAutoRefresh(() => load(true), { enabled: !checkingSession, immediate: false });
+
+  useEffect(() => {
+    if (!focusedPaymentId || loading || scrolledPaymentId === focusedPaymentId) return;
+    const target = document.getElementById(`pago-${focusedPaymentId}`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    setScrolledPaymentId(focusedPaymentId);
+  }, [focusedPaymentId, loading, pagos, scrolledPaymentId]);
 
   const aprobar = async (id: number) => {
     setActingId(id); setErr(""); setMsg("");
@@ -74,6 +97,8 @@ export default function AdminPagosPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo aprobar");
       setMsg("Pago aprobado correctamente");
+      const payment = pagos.find((item) => item.id === id);
+      if (payment) setNextReservationId(payment.reserva_id);
       load();
     } catch (e) { setErr(e instanceof Error ? e.message : "Error inesperado"); }
     finally { setActingId(null); }
@@ -171,6 +196,14 @@ export default function AdminPagosPage() {
 
       {msg && <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700 text-sm font-bold rounded-r-xl">{msg}</div>}
       {err && <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm font-bold rounded-r-xl">{err}</div>}
+      {nextReservationId && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-bold text-emerald-800">Siguiente paso: revisar la reserva #{nextReservationId}.</p>
+          <button type="button" onClick={() => router.push(`/admin/reservas?id=${nextReservationId}`)} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white hover:bg-emerald-700">
+            Continuar a reserva
+          </button>
+        </div>
+      )}
 
       {/* FILTROS */}
       <div className="flex gap-2 flex-wrap bg-white p-3 sm:p-4 rounded-2xl border border-gray-100 shadow-sm">
@@ -192,7 +225,7 @@ export default function AdminPagosPage() {
       ) : (
         <div className="grid sm:grid-cols-2 gap-4">
           {pagos.map(p => (
-            <div key={p.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+            <div key={p.id} id={`pago-${p.id}`} className={`bg-white rounded-2xl border shadow-sm p-4 space-y-3 ${focusedPaymentId === p.id ? "border-emerald-400 ring-2 ring-emerald-100" : "border-slate-200"}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-xs font-black text-slate-800">{p.cliente_nombre}</p>
@@ -247,6 +280,9 @@ export default function AdminPagosPage() {
 
               {p.estado === "aprobado" && (
                 <div className="space-y-2">
+                <button type="button" onClick={() => router.push(`/admin/reservas?id=${p.reserva_id}`)} className="w-full rounded-xl bg-blue-50 py-2.5 text-[10px] font-black uppercase tracking-widest text-blue-700 transition-colors hover:bg-blue-100">
+                  Continuar a reserva #{p.reserva_id}
+                </button>
                 <button
                   type="button"
                   onClick={() => downloadReceipt(p.id)}

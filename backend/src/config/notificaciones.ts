@@ -2,7 +2,7 @@ export {};
 
 const pool = require("./db");
 
-export type LinkType = "cotizacion" | "reserva" | "requerimiento" | null;
+export type LinkType = "cotizacion" | "reserva" | "requerimiento" | "pago" | null;
 
 // Inserta una notificación (mensaje) para que aparezca en la campanita del destinatario.
 // linkType/linkId permiten que el frontend navegue directo al recurso al hacer clic.

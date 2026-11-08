@@ -147,7 +147,7 @@ const confirmarPagoPayphone = async (req: any, res: any) => {
         despacho = { pendiente: true };
       }
     }
-    await notificarAdmins(userId, `Pago PayPhone confirmado para la reserva #${reservaId} ($${monto.toFixed(2)}).`, "reserva", reservaId);
+    await notificarAdmins(userId, `Pago PayPhone confirmado para la reserva #${reservaId} ($${monto.toFixed(2)}).`, "pago", Number(saved.rows[0].id));
     return res.json({ message: "Pago PayPhone confirmado", pago: saved.rows[0], estado_pago: estadoPago, despacho });
   } catch (error: any) {
     console.error("Error confirmando pago PayPhone:", error);
@@ -185,8 +185,8 @@ const crearPagoReserva = async (req: any, res: any) => {
     await notificarAdmins(
       userId,
       `Nuevo comprobante de pago recibido para la reserva #${reservaId} ($${monto.toFixed(2)}). Pendiente de revisión.`,
-      "reserva",
-      reservaId
+      "pago",
+      Number(result.rows[0].id)
     );
 
     return res.status(201).json({ message: "Comprobante enviado. El administrador lo revisará pronto.", data: result.rows[0] });

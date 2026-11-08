@@ -181,7 +181,8 @@ const login = async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, nombre, email, rol, imagen_url, password_hash,
-              activo, email_verified_at, COALESCE(estado_verificacion, 'no_verificado') AS estado_verificacion
+              activo, email_verified_at, pending_email, session_version,
+              COALESCE(estado_verificacion, 'no_verificado') AS estado_verificacion
        FROM usuarios
        WHERE LOWER(email) = LOWER($1)
        LIMIT 1`,
@@ -204,6 +205,12 @@ const login = async (req, res) => {
     }
 
     const normalizedRole = (await normalizeRole(user.rol)) || user.rol;
+    if (normalizedRole === "cliente" && user.pending_email) {
+      return res.status(403).json({
+        error: "Se solicitó un cambio de correo para tu cuenta. Verifica el enlace enviado al nuevo correo antes de volver a iniciar sesión.",
+        code: "EMAIL_CHANGE_PENDING",
+      });
+    }
     if (normalizedRole === "cliente" && !user.email_verified_at) {
       return res.status(403).json({
         error: "Debes verificar tu correo electrónico antes de iniciar sesión. Revisa tu bandeja de entrada.",
@@ -230,7 +237,12 @@ const login = async (req, res) => {
       rol: normalizedRole,
       imagen_url: user.imagen_url || null,
     };
-    const token = generateToken({ id: user.id, email: user.email, rol: normalizedRole });
+    const token = generateToken({
+      id: user.id,
+      email: user.email,
+      rol: normalizedRole,
+      session_version: Number(user.session_version || 0),
+    });
     const message = `Bienvenido ${normalizedRole}`;
 
     return res.status(200).json({
@@ -428,7 +440,7 @@ const getMe = async (req: any, res: any) => {
     }
 
     const result = await pool.query(
-      `SELECT id, nombre, email, rol, telefono, imagen_url, activo, creado_en
+      `SELECT id, nombre, email, pending_email, rol, telefono, imagen_url, activo, creado_en
        FROM usuarios
        WHERE id = $1
          AND activo = true

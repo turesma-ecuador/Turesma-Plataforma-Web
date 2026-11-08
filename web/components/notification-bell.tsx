@@ -18,7 +18,7 @@ type NotificationItem = {
   mensaje: string;
   creado_en: string;
   leido: boolean;
-  link_type?: "cotizacion" | "reserva" | "requerimiento" | null;
+  link_type?: "cotizacion" | "reserva" | "requerimiento" | "pago" | null;
   link_id?: number | null;
 };
 
@@ -28,13 +28,11 @@ type Props = {
   userId?: number;
   accent?: "blue" | "emerald" | "red";
   // Portal actual: decide a qué pantalla navega al hacer clic en una notificación
-  // con link_type/link_id (cotización o reserva).
+  // con link_type/link_id.
   portal?: Portal;
 };
 
-// Resuelve a qué ruta debe navegar cada portal según el tipo de recurso enlazado.
-// El query ?id= permite que la pantalla destino abra directo ese registro (hoy solo
-// admin/cotizaciones lo consume; en las demás pantallas simplemente se ignora).
+// Resuelve la ruta según el tipo de recurso enlazado; ?id= identifica el registro.
 const resolveLinkPath = (portal: Portal | undefined, linkType?: string | null, linkId?: number | null): string | null => {
   if (!portal || !linkType) return null;
   const withId = (base: string) => (linkId ? `${base}?id=${linkId}` : base);
@@ -47,6 +45,9 @@ const resolveLinkPath = (portal: Portal | undefined, linkType?: string | null, l
     if (portal === "admin") return "/admin/reservas";
     if (portal === "cliente") return "/cliente/historial";
     if (portal === "vehiculo") return "/vehiculo/activas";
+  }
+  if (linkType === "pago" && portal === "admin") {
+    return withId("/admin/pagos");
   }
   if (linkType === "requerimiento" && portal === "admin") {
     return linkId ? `/admin/cotizaciones?requerimiento=${linkId}` : "/admin/cotizaciones";

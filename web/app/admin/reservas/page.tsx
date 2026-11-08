@@ -131,12 +131,18 @@ export default function AdminReservasPage() {
   const [reservationHistory, setReservationHistory] = useState<ReservaHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
+  const [focusedReservationId, setFocusedReservationId] = useState<number | null>(null);
 
   const h = getAuthHeaders();
 
   useEffect(() => {
     const clientId = new URLSearchParams(window.location.search).get("usuario_id");
     if (clientId && /^\d+$/.test(clientId)) setPrefilledClientId(clientId);
+    const reservationId = Number(new URLSearchParams(window.location.search).get("id"));
+    if (Number.isInteger(reservationId) && reservationId > 0) {
+      setFocusedReservationId(reservationId);
+      setSearch(String(reservationId));
+    }
   }, []);
 
   useEffect(() => {
@@ -368,6 +374,20 @@ export default function AdminReservasPage() {
       {/* MENSAJES */}
       {msg && <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700 text-sm font-bold rounded-r-xl">{msg}</div>}
       {err && <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm font-bold rounded-r-xl">{err}</div>}
+      {focusedReservationId && (() => {
+        const reservation = reservas.find((item) => item.id === focusedReservationId);
+        if (!reservation) return null;
+        return (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <p className="text-sm font-bold text-blue-900">Reserva #{reservation.id} · Estado: {ESTADO_LABEL[reservation.estado] || reservation.estado.replace("_", " ")}.</p>
+            {reservation.estado === "confirmada" && (
+              <button type="button" onClick={() => router.push(`/admin/operaciones?reserva_id=${reservation.id}`)} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase tracking-widest text-white hover:bg-slate-700">
+                Continuar a despacho
+              </button>
+            )}
+          </div>
+        );
+      })()}
       <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-800">
         Aquí se gestionan las solicitudes y sus datos. La asignación o cambio de vehículo y conductor se realiza desde Despacho.
       </div>

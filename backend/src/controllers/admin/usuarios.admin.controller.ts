@@ -2,8 +2,13 @@ export {};
 
 const pool = require("../../config/db");
 const bcrypt = require("bcrypt");
+const { enviarCorreo } = require("../../config/mailer");
 const { normalizeRole } = require("../../config/catalogoHelpers");
-const { createEmailVerification } = require("../../config/emailVerification");
+const {
+  createEmailVerification,
+  createEmailVerificationToken,
+  sendEmailVerification,
+} = require("../../config/emailVerification");
 
 const parsePositiveInt = (value) => {
   const parsed = Number(value);
@@ -166,7 +171,7 @@ const listarUsuariosAdmin = async (req, res) => {
   try {
     const { rol } = req.query;
 
-    let query = `SELECT id, nombre, email, rol, edad, capacidad_pasajeros, telefono, cedula, imagen_url, activo, creado_en FROM usuarios`;
+    let query = `SELECT id, nombre, email, pending_email, email_verified_at, rol, edad, capacidad_pasajeros, telefono, cedula, imagen_url, activo, creado_en FROM usuarios`;
     const params: unknown[] = [];
 
     if (rol && typeof rol === "string") {
@@ -195,9 +200,6 @@ const editarUsuarioAdmin = async (req, res) => {
     return res.status(400).json({ error: "ID de usuario inválido" });
   }
 
-  console.log("[editarUsuarioAdmin] Actualizando usuario ID:", userId);
-  console.log("[editarUsuarioAdmin] Body:", { ...req.body, password: req.body.password ? "[HIDDEN]" : undefined });
-
   try {
     const currentResult = await pool.query(
       "SELECT id, nombre, email, rol, activo, password_hash, imagen_url, cedula FROM usuarios WHERE id = $1 LIMIT 1",
@@ -209,24 +211,16 @@ const editarUsuarioAdmin = async (req, res) => {
     }
 
     const current = currentResult.rows[0];
-    console.log("[editarUsuarioAdmin] Usuario actual:", { id: current.id, nombre: current.nombre, email: current.email, rol: current.rol });
-
-    // Validar email si viene en el request
-    if (req.body.email && req.body.email !== current.email) {
-      const emailExists = await pool.query(
-        "SELECT id FROM usuarios WHERE email = $1 AND id != $2 LIMIT 1",
-        [req.body.email, userId]
-      );
-
-      if (emailExists.rowCount > 0) {
-        console.log("[editarUsuarioAdmin] Email ya existe:", req.body.email);
-        return res.status(409).json({ error: "El email ya está registrado" });
-      }
+    const requestedEmail = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : current.email;
+    if (requestedEmail !== String(current.email).trim().toLowerCase()) {
+      return res.status(400).json({
+        error: "El cambio de correo requiere el flujo de recuperación y verificación desde el detalle del cliente.",
+      });
     }
 
     // Campos a actualizar
     const nombre = req.body.nombre || current.nombre;
-    const email = req.body.email || current.email;
+    const email = current.email;
     const telefono = req.body.telefono !== undefined ? (String(req.body.telefono).trim() || null) : undefined;
     const cedula = req.body.cedula !== undefined ? String(req.body.cedula).trim() : undefined;
     if (cedula !== undefined && cedula && !/^\d{10}$/.test(cedula)) {
@@ -235,7 +229,6 @@ const editarUsuarioAdmin = async (req, res) => {
     let passwordHash = current.password_hash;
 
     if (req.body.password) {
-      console.log("[editarUsuarioAdmin] Hasheando nueva contraseña");
       passwordHash = await bcrypt.hash(req.body.password, 10);
     }
 
@@ -243,8 +236,6 @@ const editarUsuarioAdmin = async (req, res) => {
       (req.body.imagen_url && String(req.body.imagen_url).trim()) ||
       (req.body.foto_conductor && String(req.body.foto_conductor).trim()) ||
       current.imagen_url || null;
-
-    console.log("[editarUsuarioAdmin] Actualizando con:", { nombre, email, rol: current.rol });
 
     const result = await pool.query(
       `UPDATE usuarios
@@ -259,19 +250,212 @@ const editarUsuarioAdmin = async (req, res) => {
       [nombre, email, passwordHash, imagenUrl, telefono === undefined ? null : telefono, cedula || null, userId]
     );
 
-    console.log("[editarUsuarioAdmin] Actualizado exitosamente");
-
     return res.status(200).json({
       message: "Usuario actualizado correctamente",
       user: result.rows[0],
     });
   } catch (error) {
-    console.error("[editarUsuarioAdmin] Error:", error);
+    console.error("Error editando usuario desde administración:", error);
     if (error.code === "23505") {
       return res.status(409).json({ error: "El email ya está registrado" });
     }
     return res.status(500).json({ error: "Error interno del servidor", details: String(error.message) });
   }
+};
+
+const cambiarCorreoClienteAdmin = async (req, res) => {
+  const userId = parsePositiveInt(req.params.id);
+  const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  const motivo = typeof req.body.motivo === "string" ? req.body.motivo.trim() : "";
+  const identidadConfirmada = req.body.identidad_confirmada === true;
+
+  if (!userId) return res.status(400).json({ error: "ID de usuario inválido" });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 100) {
+    return res.status(400).json({ error: "Ingresa un correo electrónico válido" });
+  }
+  if (motivo.length < 8 || motivo.length > 500) {
+    return res.status(400).json({ error: "Describe el motivo de la recuperación (mínimo 8 caracteres)" });
+  }
+  if (!identidadConfirmada) {
+    return res.status(400).json({ error: "Debes confirmar que verificaste la identidad del titular" });
+  }
+
+  let client;
+  let customer;
+  let token;
+  let auditId;
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext(LOWER($1)))", [email]);
+    const currentResult = await client.query(
+      "SELECT id, nombre, email, pending_email, rol FROM usuarios WHERE id = $1 FOR UPDATE",
+      [userId]
+    );
+    if (currentResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Cliente no encontrado" });
+    }
+
+    customer = currentResult.rows[0];
+    if (customer.rol !== "cliente") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "La recuperación de correo solo está disponible para cuentas de cliente" });
+    }
+    if (String(customer.email).toLowerCase() === email) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "El nuevo correo debe ser diferente al correo actual" });
+    }
+
+    const conflict = await client.query(
+      `SELECT id FROM usuarios
+       WHERE id <> $1 AND (
+         LOWER(email) = LOWER($2) OR LOWER(pending_email) = LOWER($2)
+       )
+       LIMIT 1`,
+      [userId, email]
+    );
+    if (conflict.rowCount > 0) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Ese correo ya está asociado o pendiente en otra cuenta" });
+    }
+
+    const verification = createEmailVerificationToken();
+    token = verification.token;
+    await client.query(
+      `UPDATE usuarios
+       SET pending_email = $1,
+           email_verified_at = NULL,
+           email_verification_token_hash = $2,
+           email_verification_expires_at = $3,
+           session_version = COALESCE(session_version, 0) + 1
+       WHERE id = $4`,
+      [email, verification.tokenHash, verification.expiresAt, userId]
+    );
+    const auditResult = await client.query(
+      `INSERT INTO admin_email_change_audit
+       (user_id, admin_id, accion, email_anterior, email_nuevo, motivo, identidad_confirmada)
+       VALUES ($1, $2, 'cambio', $3, $4, $5, true)
+       RETURNING id`,
+      [userId, req.user.id, customer.email, email, motivo]
+    );
+    auditId = auditResult.rows[0]?.id;
+    await client.query("COMMIT");
+  } catch (error) {
+    try { await client?.query("ROLLBACK"); } catch (rollbackError) {
+      console.error("Error revirtiendo recuperación de correo:", rollbackError);
+    }
+    if (error?.code === "23505") {
+      return res.status(409).json({ error: "Ese correo ya está asociado a otra cuenta" });
+    }
+    console.error("Error preparando recuperación de correo:", error);
+    return res.status(500).json({ error: "No se pudo preparar el cambio de correo" });
+  } finally {
+    client?.release();
+  }
+
+  const verificationEmail = await sendEmailVerification(email, customer.nombre, token);
+  const oldEmailNotice = await enviarCorreo({
+    to: customer.email,
+    subject: "Aviso de seguridad sobre tu cuenta Turesma",
+    text: "Se solicitó un cambio de correo para tu cuenta de Turesma. Si no reconoces esta solicitud, comunícate con Turesma para proteger tu cuenta.",
+    html: "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111827\"><h2>Aviso de seguridad</h2><p>Se solicitó un cambio de correo para tu cuenta de Turesma. Si no reconoces esta solicitud, comunícate con Turesma para proteger tu cuenta.</p></div>",
+  });
+  let deliveryAuditSaved = true;
+  try {
+    await pool.query(
+      `UPDATE admin_email_change_audit
+       SET verificacion_enviada = $1, aviso_correo_anterior_enviado = $2
+       WHERE id = $3`,
+      [verificationEmail.sent, oldEmailNotice.sent, auditId]
+    );
+  } catch (error) {
+    deliveryAuditSaved = false;
+    console.error("No se pudo guardar el resultado de envío del cambio de correo:", error);
+  }
+
+  return res.status(200).json({
+    message: verificationEmail.sent
+      ? "Cambio pendiente. Se envió el enlace de verificación al nuevo correo."
+      : "El cambio quedó pendiente, pero no se pudo enviar el enlace. Comprueba el SMTP y reenvía la verificación.",
+    verification_sent: verificationEmail.sent,
+    old_email_notified: oldEmailNotice.sent,
+    delivery_audit_saved: deliveryAuditSaved,
+  });
+};
+
+const reenviarVerificacionCorreoClienteAdmin = async (req, res) => {
+  const userId = parsePositiveInt(req.params.id);
+  if (!userId) return res.status(400).json({ error: "ID de usuario inválido" });
+
+  let client;
+  let customer;
+  let token;
+  let auditId;
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN");
+    const result = await client.query(
+      "SELECT id, nombre, email, pending_email, rol FROM usuarios WHERE id = $1 FOR UPDATE",
+      [userId]
+    );
+    if (result.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Cliente no encontrado" });
+    }
+    customer = result.rows[0];
+    if (customer.rol !== "cliente" || !customer.pending_email) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "El cliente no tiene un cambio de correo pendiente" });
+    }
+
+    const verification = createEmailVerificationToken();
+    token = verification.token;
+    await client.query(
+      `UPDATE usuarios
+       SET email_verification_token_hash = $1, email_verification_expires_at = $2
+       WHERE id = $3`,
+      [verification.tokenHash, verification.expiresAt, userId]
+    );
+    const auditResult = await client.query(
+      `INSERT INTO admin_email_change_audit
+       (user_id, admin_id, accion, email_anterior, email_nuevo, motivo, identidad_confirmada)
+       VALUES ($1, $2, 'reenviar', $3, $4, 'Reenvío de enlace del cambio previamente autorizado', false)
+       RETURNING id`,
+      [userId, req.user.id, customer.email, customer.pending_email]
+    );
+    auditId = auditResult.rows[0]?.id;
+    await client.query("COMMIT");
+  } catch (error) {
+    try { await client?.query("ROLLBACK"); } catch (rollbackError) {
+      console.error("Error revirtiendo reenvío de verificación:", rollbackError);
+    }
+    console.error("Error preparando reenvío de verificación:", error);
+    return res.status(500).json({ error: "No se pudo preparar el reenvío" });
+  } finally {
+    client?.release();
+  }
+
+  const verificationEmail = await sendEmailVerification(customer.pending_email, customer.nombre, token);
+  let deliveryAuditSaved = true;
+  try {
+    await pool.query(
+      `UPDATE admin_email_change_audit
+       SET verificacion_enviada = $1
+       WHERE id = $2`,
+      [verificationEmail.sent, auditId]
+    );
+  } catch (error) {
+    deliveryAuditSaved = false;
+    console.error("No se pudo guardar el resultado del reenvío de correo:", error);
+  }
+  return res.status(200).json({
+    message: verificationEmail.sent
+      ? "Enlace de verificación reenviado al nuevo correo."
+      : "No se pudo enviar el enlace. Comprueba la configuración de correo e inténtalo de nuevo.",
+    verification_sent: verificationEmail.sent,
+    delivery_audit_saved: deliveryAuditSaved,
+  });
 };
 
 const eliminarUsuarioAdmin = async (req, res) => {
@@ -370,6 +554,8 @@ module.exports = {
   crearUsuarioAdmin,
   listarUsuariosAdmin,
   editarUsuarioAdmin,
+  cambiarCorreoClienteAdmin,
+  reenviarVerificacionCorreoClienteAdmin,
   eliminarUsuarioAdmin,
   recuperarPasswordUsuarioAdmin,
 };

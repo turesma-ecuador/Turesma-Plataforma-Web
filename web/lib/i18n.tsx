@@ -268,16 +268,6 @@ const translations: Record<string, string> = {
   "Respuesta visible para el cliente": "Response visible to the customer",
   "Indica disponibilidad, preguntas para aclarar o próximos pasos para preparar una propuesta.": "Share availability, questions, or next steps to prepare a proposal.",
   "Guardar y notificar al cliente": "Save and notify customer",
-  "Asistente inteligente": "Smart assistant",
-  "Cuéntame qué necesitas y te sugiero el vehículo ideal": "Tell me what you need and I will suggest the right vehicle",
-  "Usaré pasajeros, fechas y tus preferencias para sugerirte una categoría con capacidad suficiente. Despacho asignará la unidad específica después de confirmar el pago.": "I will use your passenger count, dates, and preferences to suggest a vehicle category with enough capacity. Dispatch will assign the specific vehicle after payment is confirmed.",
-  "Ej: Somos 5 personas, viajamos con maletas y queremos comodidad": "e.g., We are 5 people, traveling with luggage and want extra comfort",
-  "La búsqueda usará 1 pasajero, según el número seleccionado en el paso anterior.": "The search will use 1 passenger, based on the number selected in the previous step.",
-  "Cambiaron los pasajeros, las fechas o las preferencias. Pulsa Recomendar para actualizar las opciones.": "Passengers, dates, or preferences changed. Press Recommend to refresh the options.",
-  "Analizando": "Analyzing",
-  "Recomendar": "Recommend",
-  "Categoría sugerida": "Suggested category",
-  "Alternativa": "Alternative",
   " pasajeros": " passengers",
   "3. Elige una categoría de vehículo": "3. Choose a vehicle category",
   "Las fotos son referenciales y muestran vehículos de la flota por categoría. Esta selección es una preferencia, no reserva una unidad ni una placa específica; Despacho asignará el vehículo después de confirmar el pago.": "These are representative photos of fleet vehicles by category. Your selection is a preference, not a reservation of a specific vehicle or license plate; Dispatch will assign the vehicle after payment is confirmed.",
@@ -670,7 +660,7 @@ export function formatLocalizedDate(value: string, language: Language) {
   return new Intl.DateTimeFormat(language === "en" ? "en-US" : "es-EC").format(date);
 }
 
-export function LanguageSwitcher() {
+export function LanguageSwitcher({ compactOnMobile = false }: { compactOnMobile?: boolean }) {
   const { language, setLanguage } = useLocale();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -695,10 +685,11 @@ export function LanguageSwitcher() {
         ref={triggerRef}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 shadow-sm transition hover:border-[#E31E24] hover:text-[#E31E24]"
+        aria-label={language === "en" ? "Language" : "Idioma"}
+        className={`inline-flex min-h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white py-2 text-xs font-bold text-gray-700 shadow-sm transition hover:border-[#E31E24] hover:text-[#E31E24] ${compactOnMobile ? "px-2 sm:px-3" : "px-3"} ${compactOnMobile ? "max-sm:gap-1" : ""}`}
       >
         <span aria-hidden="true">{language === "en" ? "🇬🇧" : "🇪🇸"}</span>
-        <span>{language === "en" ? "Language" : "Idioma"}</span>
+        <span className={compactOnMobile ? "max-sm:hidden" : ""}>{language === "en" ? "Language" : "Idioma"}</span>
         <span aria-hidden="true">⌄</span>
       </button>
       {open && (
@@ -746,12 +737,6 @@ const translate = (value: string, language: Language) => {
   const calendarMaxDays = content.match(/^· máximo (\d+) días$/);
   const capacity = content.match(/^Hasta (\d+) pasajeros$/);
   const selectedCapacity = content.match(/^La categoría seleccionada admite hasta (\d+) pasajeros\. Elige otra categoría\.$/);
-  const detectedPassengers = content.match(/^Detecté (\d+) pasajero(?:s)? en tu descripción; usaré ese número para filtrar vehículos\.$/);
-  const selectedPassengers = content.match(/^La búsqueda usará (\d+) pasajero(?:s)?, según el número seleccionado en el paso anterior\.$/);
-  const assistantCapacity = content.match(/^La categoría (.+) puede cubrir tu grupo \(hasta (\d+) pasajeros\)( según la disponibilidad consultada)?\. La unidad específica se confirmará al revisar tu solicitud\.$/);
-  const assistantNoVehicle = content.match(/^No encontré un vehículo disponible para (\d+) pasajeros?( en esas fechas)?\. Prueba con otro rango o reduce el número de pasajeros\.$/);
-  const assistantInvalidCapacity = content.match(/^No pude validar una categoría con capacidad para (\d+) pasajeros\. Revisa el número de pasajeros y vuelve a intentar\.$/);
-  const assistantStale = content === "Cambiaron los pasajeros, las fechas o las preferencias. Pulsa Recomendar para actualizar las opciones.";
   const maxServiceDays = content.match(/^El servicio no puede superar los (\d+) días seguidos\.$/);
   const bookingMessage = content.match(/^Solicitud de reserva creada(?: por (\$[\d,.]+))?\. Ve a Historial para pagar el anticipo indicado; administración verificará el pago antes de confirmar la reserva y asignar el vehículo\.$/);
   const newBooking = content.match(/^Reserva #(\d+) creada — pendiente de pago$/);
@@ -773,12 +758,6 @@ const translate = (value: string, language: Language) => {
     ?? (calendarMaxDays ? `· maximum ${calendarMaxDays[1]} days` : undefined)
     ?? (capacity ? `Up to ${capacity[1]} passengers` : undefined)
     ?? (selectedCapacity ? `The selected category accommodates up to ${selectedCapacity[1]} passengers. Choose another category.` : undefined)
-    ?? (detectedPassengers ? `I detected ${detectedPassengers[1]} passenger${detectedPassengers[1] === "1" ? "" : "s"} in your description and will use that number to filter vehicles.` : undefined)
-    ?? (selectedPassengers ? `The search will use ${selectedPassengers[1]} passenger${selectedPassengers[1] === "1" ? "" : "s"}, based on the number selected in the previous step.` : undefined)
-    ?? (assistantCapacity ? `The ${assistantCapacity[1]} category can accommodate your group (up to ${assistantCapacity[2]} passengers)${assistantCapacity[3] ? " based on the availability checked" : ""}. The specific vehicle will be confirmed when your request is reviewed.` : undefined)
-    ?? (assistantNoVehicle ? `I couldn't find an available vehicle for ${assistantNoVehicle[1]} passenger${assistantNoVehicle[1] === "1" ? "" : "s"}${assistantNoVehicle[2] ? " on those dates" : ""}. Try another date range or reduce the passenger count.` : undefined)
-    ?? (assistantInvalidCapacity ? `I couldn't verify a category with enough capacity for ${assistantInvalidCapacity[1]} passengers. Check the passenger count and try again.` : undefined)
-    ?? (assistantStale ? "Passengers, dates, or preferences changed. Press Recommend to refresh the options." : undefined)
     ?? (maxServiceDays ? `The service cannot exceed ${maxServiceDays[1]} consecutive days.` : undefined)
     ?? (bookingMessage ? `Booking request created${bookingMessage[1] ? ` for ${bookingMessage[1]}` : ""}. Go to History to pay the requested deposit; the administrator will verify your payment before confirming the booking and assigning a vehicle.` : undefined)
     ?? (newBooking ? `Booking #${newBooking[1]} created — payment pending` : undefined)
