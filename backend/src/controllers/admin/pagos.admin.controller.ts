@@ -6,6 +6,7 @@ const { notificarClienteReserva } = require("../../config/reservaMailer");
 const { emitirFacturaPorReserva, obtenerFactura, reenviarFacturaPorReserva } = require("../../config/sriFacturacion");
 const { prepararDespachoRequerimiento } = require("../../config/requerimientosDespacho");
 const { resolveStoredUploadPath } = require("../../config/storage");
+const { aplicarCambioDestinoTrasPago } = require("../cambios-destino.controller");
 
 // Recalcula monto_pagado y estado_pago de una reserva a partir de sus pagos
 // APROBADOS. La reserva solo se confirma cuando el total está pagado. Cuando
@@ -45,6 +46,10 @@ const recalcularEstadoPago = async (reservaId: number, adminId: number | null | 
     }
     // Avisar al cliente (campanita + correo) que su reserva quedó confirmada.
     await notificarClienteReserva(reservaId, "confirmada", adminId);
+  }
+
+  if (estadoPago === "pagado") {
+    await aplicarCambioDestinoTrasPago(reservaId, adminId);
   }
 
   if (estadoPago === "pagado") {

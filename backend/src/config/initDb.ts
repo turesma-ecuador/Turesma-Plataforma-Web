@@ -562,6 +562,46 @@ const initDatabase = async () => {
   `);
 
   await pool.query(`
+    ALTER TABLE reservas
+    ADD COLUMN IF NOT EXISTS estado_operativo VARCHAR(30);
+
+    UPDATE reservas
+    SET estado_operativo = 'en_curso',
+        estado = 'confirmada'
+    WHERE estado = 'en_curso'
+      AND estado_operativo IS NULL;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS solicitudes_cambio_destino (
+      id SERIAL PRIMARY KEY,
+      reserva_id INT NOT NULL REFERENCES reservas(id) ON DELETE CASCADE,
+      usuario_id INT NOT NULL REFERENCES usuarios(id),
+      estado VARCHAR(30) NOT NULL DEFAULT 'pendiente_admin',
+      origen_anterior TEXT,
+      destino_anterior TEXT,
+      origen_solicitado TEXT NOT NULL,
+      destino_solicitado TEXT NOT NULL,
+      total_anterior NUMERIC(10, 2) NOT NULL,
+      total_propuesto NUMERIC(10, 2),
+      nota_admin TEXT,
+      respondido_por INT REFERENCES usuarios(id) ON DELETE SET NULL,
+      aceptado_en TIMESTAMP,
+      aplicado_en TIMESTAMP,
+      creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS solicitudes_cambio_destino_reserva_idx
+      ON solicitudes_cambio_destino (reserva_id, creado_en DESC);
+    CREATE INDEX IF NOT EXISTS solicitudes_cambio_destino_estado_idx
+      ON solicitudes_cambio_destino (estado, creado_en ASC);
+    CREATE UNIQUE INDEX IF NOT EXISTS solicitudes_cambio_destino_abierta_unique
+      ON solicitudes_cambio_destino (reserva_id)
+      WHERE estado IN ('pendiente_admin', 'propuesta_cliente', 'pago_pendiente', 'devolucion_pendiente');
+  `);
+
+  await pool.query(`
     CREATE INDEX IF NOT EXISTS operacion_historial_operacion_idx
     ON operacion_historial (operacion_id, creado_en DESC);
   `);
@@ -878,6 +918,12 @@ const initDatabase = async () => {
       ON reembolsos_reserva (LOWER(referencia_externa));
     CREATE INDEX IF NOT EXISTS reembolsos_reserva_reserva_idx
       ON reembolsos_reserva (reserva_id, creado_en DESC);
+  `);
+
+  await pool.query(`
+    ALTER TABLE reembolsos_reserva
+    ADD COLUMN IF NOT EXISTS solicitud_cambio_destino_id INT
+      REFERENCES solicitudes_cambio_destino(id) ON DELETE SET NULL;
   `);
 
   await pool.query(`

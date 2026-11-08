@@ -361,7 +361,11 @@ const listarReservas = async (req, res) => {
          r.fecha_reserva,
          r.num_personas,
          r.total,
-         r.estado,
+         CASE
+           WHEN r.estado = 'confirmada' AND r.estado_operativo = 'en_curso' THEN 'en_curso'
+           ELSE r.estado
+         END AS estado,
+         r.estado_operativo,
          r.monto_pagado,
          r.estado_pago,
          r.link_pago,
@@ -602,6 +606,9 @@ const editarReserva = async (req, res) => {
     }
 
     const current = currentResult.rows[0];
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "estado")) {
+      return res.status(400).json({ error: "El estado no se modifica al editar. Usa las acciones de estado o Despacho." });
+    }
 
     const usuarioId = parsePositiveInt(req.body.usuario_id) || current.usuario_id;
     const tourId = parsePositiveInt(req.body.tour_id) || current.tour_id;
@@ -609,11 +616,19 @@ const editarReserva = async (req, res) => {
     const vehiculoId = current.vehiculo_id;
     const fechaReserva = req.body.fecha_reserva || current.fecha_reserva;
     const numPersonas = parsePositiveInt(req.body.num_personas) || current.num_personas;
-    const estado = req.body.estado || current.estado;
+    const estado = current.estado;
     const fechaReservaActual = String(current.fecha_reserva || "").slice(0, 10);
     const fechaReservaNueva = String(fechaReserva || "").slice(0, 10);
-    const requiereNuevaConfirmacion = fechaReservaNueva !== fechaReservaActual && (current.vehiculo_id || current.conductor_id);
-    const estadoFinal = requiereNuevaConfirmacion ? "reprogramacion_pendiente" : estado;
+    const rutaCambiada = ["origen", "destino"].some((field) =>
+      Object.prototype.hasOwnProperty.call(req.body || {}, field)
+      && String(req.body[field] || "").trim() !== String(current[field] || "").trim()
+    );
+    const servicioCambiado = rutaCambiada
+      || (Object.prototype.hasOwnProperty.call(req.body || {}, "num_personas")
+        && Number(req.body.num_personas) !== Number(current.num_personas))
+      || (Object.prototype.hasOwnProperty.call(req.body || {}, "tour_id")
+        && Number(req.body.tour_id || 0) !== Number(current.tour_id || 0));
+    const estadoFinal = estado;
     const fechaReservaTimestamp = normalizeTimestampInput(fechaReserva) || `${String(fechaReserva).slice(0, 10)} 00:00:00`;
     const fechaSalida = normalizeTimestampInput(req.body.fecha_salida) || normalizeTimestampInput(current.fecha_salida) || fechaReservaTimestamp;
     const fechaLlegada = normalizeTimestampInput(req.body.fecha_llegada) || normalizeTimestampInput(current.fecha_llegada) || fechaReservaTimestamp;
@@ -631,6 +646,24 @@ const editarReserva = async (req, res) => {
 
     if (["cancelada", "finalizada"].includes(String(current.estado || "").toLowerCase())) {
       return res.status(400).json({ error: "No puedes reprogramar una reserva cancelada o finalizada" });
+    }
+    if (current.estado_operativo === "en_curso" && (servicioCambiado || scheduleChanged)) {
+      return res.status(409).json({ error: "El viaje ya comenzó. No se pueden editar la ruta, los pasajeros ni el horario; registra una incidencia operativa." });
+    }
+    if (rutaCambiada && (current.estado_pago === "pagado" || Number(current.monto_pagado) > 0)) {
+      return res.status(409).json({ error: "Una reserva con pagos no puede cambiar de ruta directamente. El cliente debe solicitar el cambio de destino." });
+    }
+    if (servicioCambiado) {
+      const pendingPayments = await pool.query(
+        "SELECT id FROM pagos_reserva WHERE reserva_id = $1 AND estado = 'pendiente' LIMIT 1",
+        [reservaId]
+      );
+      if (pendingPayments.rowCount) {
+        return res.status(409).json({ error: "No se puede cambiar el servicio mientras haya comprobantes de pago pendientes de revisión." });
+      }
+    }
+    if ((current.estado_pago === "pagado" || Number(current.monto_pagado) > 0) && servicioCambiado) {
+      return res.status(409).json({ error: "Una reserva con pagos no puede cambiar su servicio o precio directamente." });
     }
 
     if (scheduleChanged) {
@@ -854,7 +887,7 @@ const actualizarEstadoViaje = async (req, res) => {
   try {
     await client.query("BEGIN");
     const reservaActual = await client.query(
-      "SELECT id, usuario_id, total, estado, estado_pago FROM reservas WHERE id = $1 FOR UPDATE",
+      "SELECT id, usuario_id, total, estado, estado_pago, estado_operativo, recogido FROM reservas WHERE id = $1 FOR UPDATE",
       [reservaId]
     );
     if (!reservaActual.rowCount) {
@@ -862,23 +895,67 @@ const actualizarEstadoViaje = async (req, res) => {
       return res.status(404).json({ error: "Reserva no encontrada" });
     }
     const current = reservaActual.rows[0];
-    if (!transitions[current.estado]?.includes(estado)) {
+    const motivo = typeof req.body?.motivo === "string" ? req.body.motivo.trim() : "";
+    const correction = current.estado === "confirmada"
+      && current.estado_operativo === "en_curso"
+      && estado === "confirmada";
+    if (correction) {
+      if (motivo.length < 10 || motivo.length > 500) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "La corrección requiere un motivo de al menos 10 caracteres" });
+      }
+      if (current.recogido) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "No se puede revertir el estado después de registrar la recogida del cliente" });
+      }
+      const startedOperation = await client.query(
+        `SELECT id FROM operaciones
+         WHERE reserva_id = $1 AND estado IN ('en_curso', 'completada')
+         LIMIT 1`,
+        [reservaId]
+      );
+      if (startedOperation.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "El despacho indica que el viaje ya comenzó o terminó; no se puede revertir desde reservas" });
+      }
+      const driverStarted = await client.query(
+        `SELECT id FROM reserva_historial
+         WHERE reserva_id = $1 AND accion = 'inicio_viaje_conductor'
+         LIMIT 1`,
+        [reservaId]
+      );
+      if (driverStarted.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "El conductor ya registró el inicio. No se puede revertir desde reservas" });
+      }
+    } else if (!transitions[current.estado]?.includes(estado)) {
       await client.query("ROLLBACK");
       return res.status(409).json({ error: `No se puede cambiar de '${current.estado}' a '${estado}'` });
     }
+    if (current.estado_operativo === "en_curso" && estado === "cancelada") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "El viaje ya comenzó. Gestiona la situación como una incidencia operativa, no como una cancelación previa al servicio." });
+    }
     if (["en_curso", "finalizada"].includes(estado)) {
-      if (Number(current.total) > 0 && current.estado_pago !== "pagado") {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "El inicio y la finalización del viaje se gestionan desde el portal del conductor" });
+    }
+    if (estado === "confirmada" && Number(current.total) > 0 && current.estado_pago !== "pagado") {
         await client.query("ROLLBACK");
         return res.status(400).json({
-          error: "No puedes iniciar o finalizar un viaje sin el pago completo confirmado",
+          error: "No puedes confirmar una reserva sin el pago completo confirmado",
         });
-      }
     }
 
-    const result = await client.query(
-      "UPDATE reservas SET estado = $1 WHERE id = $2 RETURNING id, estado",
-      [estado, reservaId]
-    );
+    const result = correction
+      ? await client.query(
+        "UPDATE reservas SET estado_operativo = NULL, recogido = false WHERE id = $1 RETURNING id, estado, estado_operativo",
+        [reservaId]
+      )
+      : await client.query(
+        "UPDATE reservas SET estado = $1, estado_operativo = CASE WHEN $1 = 'cancelada' THEN 'cancelada' ELSE estado_operativo END WHERE id = $2 RETURNING id, estado, estado_operativo",
+        [estado, reservaId]
+      );
 
     if (estado === "cancelada") {
       const operations = await client.query(
@@ -903,12 +980,18 @@ const actualizarEstadoViaje = async (req, res) => {
     await client.query(
       `INSERT INTO reserva_historial (reserva_id, usuario_id, accion, estado_anterior, estado_nuevo, detalle)
        VALUES ($1, $2, 'cambio_estado_admin', $3, $4, $5::jsonb)`,
-      [reservaId, req.user?.id || null, current.estado, estado, JSON.stringify({})]
+      [
+        reservaId,
+        req.user?.id || null,
+        correction ? "en_curso" : current.estado,
+        correction ? "confirmada" : estado,
+        JSON.stringify(correction ? { motivo_correccion: motivo } : {}),
+      ]
     );
     await client.query("COMMIT");
 
     // Avisar al cliente (campanita + correo) si el admin cambia a un estado clave.
-    const estadoNuevo = String(result.rows[0].estado || "").toLowerCase();
+    const estadoNuevo = correction ? "confirmada" : String(result.rows[0].estado || "").toLowerCase();
     if (["confirmada", "en_curso", "finalizada", "cancelada"].includes(estadoNuevo)) {
       await notificarClienteReserva(reservaId, estadoNuevo as any, req.user?.id);
     }

@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, History, Plus, RefreshCw, Sparkles, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { getAuthHeaders } from "../../../lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -195,6 +195,7 @@ export default function OperacionesPage() {
   const [loading, setLoading] = useState(true);
   const [focusedReservationId, setFocusedReservationId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [clockNow, setClockNow] = useState(() => new Date());
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -247,9 +248,11 @@ export default function OperacionesPage() {
       || a.id - b.id;
   });
 
-  const load = async () => {
-    setLoading(true);
-    setError("");
+  const load = async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const headers = getAuthHeaders();
       const [operationsRes, reservationsRes] = await Promise.all([
@@ -265,12 +268,19 @@ export default function OperacionesPage() {
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Error cargando datos operativos");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     void load();
+    const timer = window.setInterval(() => void load(true), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(new Date()), 60000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -514,27 +524,13 @@ export default function OperacionesPage() {
     }
   };
 
-  const changeState = async (operation: Operation, estado: string) => {
-    setSaving(true);
-    setError("");
-    try {
-      await request(`/api/admin/operaciones/${operation.id}/estado`, { method: "PATCH", body: JSON.stringify({ estado }) });
-      setMessage(`Operación ${stateLabels[estado].toLowerCase()}.`);
-      await load();
-    } catch (stateError) {
-      setError(stateError instanceof Error ? stateError.message : "No se pudo cambiar el estado");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <main className="space-y-6 p-4 sm:p-6">
       <header className="flex flex-col gap-4 rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.25em] text-cyan-300">Gestión operativa</p>
           <h1 className="mt-2 text-3xl font-black tracking-tight">Despacho de servicios</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-300">Prepara reservas confirmadas, asigna recursos y supervisa cada servicio con validaciones operativas.</p>
+          <p className="mt-2 max-w-2xl text-sm text-slate-300">Prepara reservas confirmadas, asigna recursos y supervisa cada servicio. El conductor registra el inicio y la finalización desde su portal.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setShowCreate(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-cyan-300">
@@ -620,7 +616,10 @@ export default function OperacionesPage() {
               const startTime = formatTime(operation.hora_inicio);
               const endTime = formatTime(operation.hora_fin);
               const scheduledDate = dateKey(operation.fecha_programada);
-              const overdue = activeOperationStates.includes(operation.estado) && Boolean(scheduledDate && scheduledDate < today);
+              const currentTime = `${String(clockNow.getHours()).padStart(2, "0")}:${String(clockNow.getMinutes()).padStart(2, "0")}`;
+              const startPending = operation.estado === "asignada"
+                && Boolean(scheduledDate && (scheduledDate < today || (scheduledDate === today && startTime && startTime <= currentTime)));
+              const overdue = (activeOperationStates.includes(operation.estado) && Boolean(scheduledDate && scheduledDate < today)) || startPending;
               const subcontractState = operation.subcontratacion_estado || "no_requerida";
               const canEditSubcontracting = activeOperationStates.includes(operation.estado);
               const dateRange = operation.fecha_fin_programada && dateKey(operation.fecha_fin_programada) !== scheduledDate
@@ -637,6 +636,7 @@ export default function OperacionesPage() {
                     <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${overdue ? "bg-red-100 text-red-700" : "bg-cyan-50 text-cyan-800"}`}>
                       {overdue ? "Fecha vencida" : stateLabels[operation.estado] || operation.estado}
                     </span>
+                    {startPending && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-800">Inicio pendiente del conductor</span>}
                     {subcontractState !== "no_requerida" && (
                       <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${subcontractState === "confirmada" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                         {subcontractingLabels[subcontractState]}
@@ -684,8 +684,6 @@ export default function OperacionesPage() {
                     <button onClick={() => void openOperationHistory(operation)} className="rounded-lg bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700">Historial</button>
                     {["programada", "asignada"].includes(operation.estado) && subcontractState === "no_requerida" && <button onClick={() => openAssignment(operation)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">{operation.vehiculo_id ? "Reasignar" : "Asignar"}</button>}
                     {canEditSubcontracting && <button onClick={() => openSubcontracting(operation)} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-800">{subcontractState === "no_requerida" ? "Subcontratar" : "Editar proveedor"}</button>}
-                    {operation.estado === "asignada" && <button onClick={() => void changeState(operation, "en_curso")} disabled={saving} className="rounded-lg bg-cyan-50 px-3 py-2 text-xs font-bold text-cyan-700">Iniciar</button>}
-                    {operation.estado === "en_curso" && <button onClick={() => void changeState(operation, "completada")} disabled={saving} className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">Finalizar</button>}
                     {operation.estado === "cancelada" && <button onClick={() => void reopenOperation(operation)} disabled={saving} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">Reabrir unidad</button>}
                   </div>
                 </article>

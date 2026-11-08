@@ -40,6 +40,15 @@ type Reserva = {
   calificacion?: number | null; comentario_calificacion?: string | null;
   monto_pagado?: number | null; estado_pago?: string | null;
   hora_salida?: string | null;
+  cambio_destino?: {
+    id: number;
+    estado: string;
+    origen_solicitado: string;
+    destino_solicitado: string;
+    total_anterior: number;
+    total_propuesto: number | null;
+    nota_admin: string | null;
+  } | null;
 };
 
 type Pago = {
@@ -320,6 +329,11 @@ export default function ClienteHistorialPage() {
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<number | null>(null);
   const [downloadingProformaId, setDownloadingProformaId] = useState<number | null>(null);
   const [fileError, setFileError] = useState("");
+  const [cambioDestinoReserva, setCambioDestinoReserva] = useState<Reserva | null>(null);
+  const [cambioOrigen, setCambioOrigen] = useState("");
+  const [cambioDestino, setCambioDestino] = useState("");
+  const [cambioDestinoError, setCambioDestinoError] = useState("");
+  const [cambioDestinoSaving, setCambioDestinoSaving] = useState(false);
 
   // Reprogramar (cambiar fecha/hora de salida) de una reserva confirmada
   const [reprogReserva, setReprogReserva] = useState<Reserva | null>(null);
@@ -374,6 +388,54 @@ export default function ClienteHistorialPage() {
       load();
     } catch (e) { setReprogMsg(e instanceof Error ? e.message : "Error inesperado"); }
     finally { setReprogSaving(false); }
+  };
+
+  const abrirSolicitudCambioDestino = (reserva: Reserva) => {
+    setCambioDestinoReserva(reserva);
+    setCambioOrigen(reserva.origen || "");
+    setCambioDestino(reserva.destino || "");
+    setCambioDestinoError("");
+  };
+
+  const enviarSolicitudCambioDestino = async () => {
+    if (!cambioDestinoReserva) return;
+    setCambioDestinoSaving(true);
+    setCambioDestinoError("");
+    try {
+      const response = await fetch(`${API}/api/usuarios/mis-reservas/${cambioDestinoReserva.id}/cambio-destino`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ origen: cambioOrigen, destino: cambioDestino }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo enviar la solicitud");
+      setCambioDestinoReserva(null);
+      setMsg(data.message || "Solicitud enviada para revisión");
+      await load(true);
+    } catch (requestError) {
+      setCambioDestinoError(requestError instanceof Error ? requestError.message : "No se pudo enviar la solicitud");
+    } finally {
+      setCambioDestinoSaving(false);
+    }
+  };
+
+  const responderPropuestaCambioDestino = async (solicitudId: number, decision: "aceptar" | "rechazar") => {
+    setSaving(true);
+    setMsg("");
+    try {
+      const response = await fetch(`${API}/api/usuarios/mis-reservas/cambio-destino/${solicitudId}/${decision}`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo responder a la propuesta");
+      setMsg(data.message || "Respuesta guardada");
+      await load(true);
+    } catch (responseError) {
+      setFileError(responseError instanceof Error ? responseError.message : "No se pudo responder a la propuesta");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const load = async (silencioso = false) => {
@@ -514,6 +576,35 @@ export default function ClienteHistorialPage() {
                   <div className="bg-slate-50 rounded-xl p-2.5"><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Conductor</p><p className="font-bold text-slate-700 truncate">{r.conductor_nombre ? <span data-no-translate>{r.conductor_nombre}</span> : "Por asignar"}</p></div>
                 </div>
 
+                {r.cambio_destino && (
+                  <div className="mt-3 space-y-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-800">
+                      Cambio de ruta · {r.cambio_destino.estado.replaceAll("_", " ")}
+                    </p>
+                    <p data-no-translate className="text-xs font-semibold text-blue-900">
+                      {r.cambio_destino.origen_solicitado} → {r.cambio_destino.destino_solicitado}
+                    </p>
+                    {r.cambio_destino.estado === "propuesta_cliente" && r.cambio_destino.total_propuesto != null && (
+                      <>
+                        <p className="text-xs text-blue-900">
+                          Total actual: ${Number(r.cambio_destino.total_anterior).toFixed(2)} · Propuesta: ${Number(r.cambio_destino.total_propuesto).toFixed(2)}
+                        </p>
+                        {r.cambio_destino.nota_admin && <p className="text-xs text-blue-800">{r.cambio_destino.nota_admin}</p>}
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => void responderPropuestaCambioDestino(r.cambio_destino!.id, "aceptar")} disabled={saving} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase text-white disabled:opacity-50">Aceptar propuesta</button>
+                          <button type="button" onClick={() => void responderPropuestaCambioDestino(r.cambio_destino!.id, "rechazar")} disabled={saving} className="rounded-lg bg-white px-3 py-2 text-[10px] font-black uppercase text-slate-600 disabled:opacity-50">Rechazar propuesta</button>
+                        </div>
+                      </>
+                    )}
+                    {r.cambio_destino.estado === "pendiente_admin" && <p className="text-xs text-blue-800">Turesma revisará la nueva ruta y te enviará el total antes de aplicarla.</p>}
+                    {r.cambio_destino.estado === "pago_pendiente" && <p className="text-xs text-blue-800">Paga el saldo pendiente de la reserva. Aplicaremos la nueva ruta después de confirmar el pago.</p>}
+                    {r.cambio_destino.estado === "devolucion_pendiente" && <p className="text-xs text-blue-800">Aceptaste un precio menor. La ruta se actualizará después de registrar la devolución externa.</p>}
+                    {r.cambio_destino.estado === "aplicada" && <p className="text-xs text-emerald-800">La nueva ruta ya está aplicada.</p>}
+                    {r.cambio_destino.estado === "rechazada_admin" && <p className="text-xs text-slate-700">La solicitud fue rechazada. La reserva mantiene la ruta original. {r.cambio_destino.nota_admin}</p>}
+                    {r.cambio_destino.estado === "rechazada_cliente" && <p className="text-xs text-slate-700">Rechazaste la propuesta. La reserva mantiene la ruta original.</p>}
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
                   {Number(r.total) > 0 && <div className="flex items-center gap-1 text-emerald-600"><DollarSign size={14} /><span className="text-base font-black">${Number(r.total).toFixed(2)}</span></div>}
                   {r.conductor_telefono && (
@@ -591,10 +682,18 @@ export default function ClienteHistorialPage() {
 
                 {/* CAMBIAR FECHA/HORA (solo reservas confirmadas) */}
                 {r.estado === "confirmada" && (
-                  <button onClick={() => abrirReprogramar(r)}
-                    className="w-full mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
-                    <Clock size={14} /> Cambiar fecha u hora de salida
-                  </button>
+                  <>
+                    <button onClick={() => abrirReprogramar(r)}
+                      className="w-full mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
+                      <Clock size={14} /> Cambiar fecha u hora de salida
+                    </button>
+                    {pagoCompleto && !["pendiente_admin", "propuesta_cliente", "pago_pendiente", "devolucion_pendiente"].includes(r.cambio_destino?.estado || "") && (
+                      <button onClick={() => abrirSolicitudCambioDestino(r)}
+                        className="w-full mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100">
+                        <MapPin size={14} /> Solicitar cambio de destino
+                      </button>
+                    )}
+                  </>
                 )}
 
                 {/* Calificación */}
@@ -635,6 +734,31 @@ export default function ClienteHistorialPage() {
 
       {pagoReserva && (
         <PagoModal reserva={pagoReserva} onClose={() => setPagoReserva(null)} onSuccess={() => load(true)} />
+      )}
+
+      {cambioDestinoReserva && (
+        <div className="fixed inset-0 z-[105] flex items-center justify-center overflow-y-auto bg-[#0b0f1a]/80 p-4 backdrop-blur-sm" onClick={() => !cambioDestinoSaving && setCambioDestinoReserva(null)}>
+          <section className="my-4 w-full max-w-lg space-y-4 rounded-3xl bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <div><p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Reserva #{cambioDestinoReserva.id}</p><h2 className="mt-1 text-xl font-black text-slate-900">Solicitar cambio de ruta</h2></div>
+              <button type="button" onClick={() => setCambioDestinoReserva(null)} aria-label="Cerrar" className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={20} /></button>
+            </div>
+            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+              No modificaremos la reserva hasta que revises y aceptes la propuesta de precio. Si el nuevo trayecto cuesta más, deberás pagar la diferencia; si cuesta menos, administración ejecutará y registrará la devolución antes de aplicar el cambio.
+            </p>
+            <label className="block text-xs font-black uppercase tracking-wider text-slate-500">Origen solicitado
+              <input maxLength={500} value={cambioOrigen} onChange={(event) => setCambioOrigen(event.target.value)} className="mt-1 w-full rounded-xl border-2 border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold normal-case outline-none focus:border-blue-400" />
+            </label>
+            <label className="block text-xs font-black uppercase tracking-wider text-slate-500">Destino solicitado
+              <input maxLength={500} value={cambioDestino} onChange={(event) => setCambioDestino(event.target.value)} className="mt-1 w-full rounded-xl border-2 border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold normal-case outline-none focus:border-blue-400" />
+            </label>
+            {cambioDestinoError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-xs font-bold text-red-700">{cambioDestinoError}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setCambioDestinoReserva(null)} disabled={cambioDestinoSaving} className="flex-1 rounded-xl border-2 border-slate-100 py-3 text-xs font-black uppercase text-slate-500">Cancelar</button>
+              <button type="button" onClick={() => void enviarSolicitudCambioDestino()} disabled={cambioDestinoSaving || !cambioOrigen.trim() || !cambioDestino.trim()} className="flex-1 rounded-xl bg-blue-700 py-3 text-xs font-black uppercase text-white disabled:opacity-50">{cambioDestinoSaving ? "Enviando..." : "Enviar solicitud"}</button>
+            </div>
+          </section>
+        </div>
       )}
 
       {/* MODAL: cambiar fecha/hora de una reserva confirmada */}

@@ -2,6 +2,7 @@
 
 import { Bot, MessageCircleMore, Send, Sparkles, X } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
 import { LocalizedContent } from "../lib/i18n";
 
@@ -153,6 +154,7 @@ function getBotReply(input: string): Omit<ChatMessage, "id" | "role"> {
 }
 
 export function ClienteChatbot() {
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -191,7 +193,7 @@ export function ClienteChatbot() {
 
   return (
     <LocalizedContent>
-    <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] right-3 z-50 sm:bottom-4 sm:right-4">
+    <div className={`fixed right-3 z-50 sm:right-4 ${pathname === "/cliente/cotizar" ? "bottom-[calc(env(safe-area-inset-bottom)+5rem)] sm:bottom-20" : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:bottom-4"}`}>
       {isOpen ? (
         <div className="w-[360px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.2)]">
           <div className="flex items-center justify-between border-b border-slate-200 bg-[#111827] px-4 py-3 text-white">

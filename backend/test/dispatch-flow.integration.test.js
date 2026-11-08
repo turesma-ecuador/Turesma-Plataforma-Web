@@ -470,16 +470,21 @@ const pool = {
           });
           return result();
         }
-        if (query.startsWith("select id, estado from reservas")) {
+        if (query.startsWith("select id, estado from reservas") || query.startsWith("select id, estado, estado_operativo from reservas")) {
           const reservation = reservationFor(params[0]);
-          return result(reservation ? [{ id: reservation.id, estado: reservation.estado }] : []);
+          return result(reservation ? [{ id: reservation.id, estado: reservation.estado, estado_operativo: reservation.estado_operativo }] : []);
         }
         if (query.includes("information_schema.table_constraints")) {
           return result([{ referenced_table: "usuarios" }]);
         }
         if (query.startsWith("update reservas set vehiculo_id = $1, conductor_id")) {
           const reservation = reservationFor(params[2]);
-          Object.assign(reservation, { vehiculo_id: Number(params[0]), conductor_id: Number(params[1]) });
+          Object.assign(reservation, { vehiculo_id: Number(params[0]), conductor_id: Number(params[1]), estado_operativo: "asignada" });
+          return result();
+        }
+        if (query.startsWith("update reservas set estado_operativo = $1 where id = $2")) {
+          const reservation = reservationFor(params[1]);
+          if (reservation) reservation.estado_operativo = params[0];
           return result();
         }
         if (query.startsWith("update decisiones_sistema")) {
@@ -514,6 +519,11 @@ const pool = {
         if (query.startsWith("update reservas set vehiculo_id = null, conductor_id = null where id = $1 and estado = 'confirmada'")) {
           const reservation = reservationFor(params[0]);
           if (reservation?.estado === "confirmada") Object.assign(reservation, { vehiculo_id: null, conductor_id: null });
+          return result();
+        }
+        if (query.startsWith("update reservas set vehiculo_id = null, conductor_id = null, estado_operativo = null where id = $1")) {
+          const reservation = reservationFor(params[0]);
+          if (reservation?.estado === "confirmada") Object.assign(reservation, { vehiculo_id: null, conductor_id: null, estado_operativo: null });
           return result();
         }
         if (query.startsWith("update reservas set vehiculo_id = null, conductor_id = null where id = $1")) {
@@ -652,12 +662,16 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     assert.equal(state.decisions[0].resultado, "aceptada");
 
     const started = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "en_curso" } });
-    assert.equal(started.status, 200);
-    assert.equal(state.reservations[0].estado, "en_curso");
+    assert.equal(started.status, 403);
+    assert.equal(state.reservations[0].estado, "confirmada");
+    assert.equal(state.reservations[0].estado_operativo, "asignada");
 
     const completed = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "completada" } });
-    assert.equal(completed.status, 200);
-    assert.equal(state.reservations[0].estado, "finalizada");
+    assert.equal(completed.status, 403);
+    assert.equal(state.reservations[0].estado, "confirmada");
+    operationFor(operationId).estado = "completada";
+    state.reservations[0].estado = "finalizada";
+    state.reservations[0].estado_operativo = "finalizada";
   });
 
   await t.test("devuelve una reserva cancelada a la cola y reabre la operación existente", async () => {
@@ -724,7 +738,7 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
       method: "PATCH",
       body: { estado: "en_curso" },
     });
-    assert.equal(startBeforeConfirmation.status, 409);
+    assert.equal(startBeforeConfirmation.status, 403);
 
     const missingDetails = await request(`/api/admin/operaciones/${operationId}/subcontratacion`, {
       method: "PATCH",
@@ -779,9 +793,9 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     assert.equal(reconfirmedSubcontract.status, 200);
 
     const startedExternally = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "en_curso" } });
-    assert.equal(startedExternally.status, 200);
+    assert.equal(startedExternally.status, 403);
     const completedExternally = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "completada" } });
-    assert.equal(completedExternally.status, 200);
-    assert.equal(state.reservations[1].estado, "finalizada");
+    assert.equal(completedExternally.status, 403);
+    assert.equal(state.reservations[1].estado, "confirmada");
   });
 });

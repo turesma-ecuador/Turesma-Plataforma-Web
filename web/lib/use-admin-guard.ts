@@ -31,9 +31,13 @@ export function useAdminGuard() {
 
     checkSession();
     window.addEventListener("pageshow", checkSession);
+    window.addEventListener("storage", checkSession);
+    window.addEventListener("turesma-user-updated", checkSession);
 
     return () => {
       window.removeEventListener("pageshow", checkSession);
+      window.removeEventListener("storage", checkSession);
+      window.removeEventListener("turesma-user-updated", checkSession);
     };
   }, [router]);
 

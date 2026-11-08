@@ -167,6 +167,7 @@ const listarReservasPorDespachar = async (_req: any, res: any) => {
     const result = await pool.query(
       `SELECT r.id, r.fecha_reserva, r.fecha_servicio, r.fecha_salida, r.fecha_llegada,
               r.origen, r.destino, r.num_personas, r.total, r.vehiculo_id, r.tipo_vehiculo, r.conductor_id,
+              r.estado_operativo,
               u.nombre AS cliente_nombre, v.placa AS vehiculo_placa,
               (SELECT o.id FROM operaciones o
                WHERE o.reserva_id = r.id AND o.estado = 'cancelada'
@@ -175,6 +176,7 @@ const listarReservasPorDespachar = async (_req: any, res: any) => {
        LEFT JOIN usuarios u ON u.id = r.usuario_id
        LEFT JOIN vehiculos v ON v.id = r.vehiculo_id
        WHERE r.estado = 'confirmada'
+          AND COALESCE(r.estado_operativo, '') <> 'en_curso'
           AND NOT EXISTS (
             SELECT 1 FROM requerimientos_personalizados rp WHERE rp.reserva_id = r.id
           )
@@ -207,7 +209,7 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
     await client.query("BEGIN");
     const reservation = await client.query(
       `SELECT id, fecha_reserva, fecha_servicio, fecha_salida, fecha_llegada, fecha_fin, fecha_regreso,
-              origen, destino, num_personas, estado, vehiculo_id, conductor_id
+              origen, destino, num_personas, estado, estado_operativo, vehiculo_id, conductor_id
        FROM reservas WHERE id = $1 FOR UPDATE`,
       [reservationId]
     );
@@ -220,6 +222,10 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
     if (current.estado !== "confirmada") {
       await client.query("ROLLBACK");
       return res.status(409).json({ success: false, error: "La reserva ya no está pendiente de despacho" });
+    }
+    if (current.estado_operativo === "en_curso" || current.estado_operativo === "finalizada") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ success: false, error: "El viaje ya comenzó o terminó; no se puede volver a preparar desde Despacho" });
     }
 
     const existing = await client.query("SELECT id FROM operaciones WHERE reserva_id = $1 LIMIT 1", [reservationId]);
@@ -277,6 +283,10 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
     if (current.conductor_id && !driverId) {
       await client.query("UPDATE reservas SET conductor_id = NULL WHERE id = $1", [reservationId]);
     }
+    await client.query(
+      "UPDATE reservas SET estado_operativo = $1 WHERE id = $2",
+      [initialState, reservationId]
+    );
     await recordHistory(client, operationId, req.user?.id || null, "creacion_desde_reserva", null, initialState, { reserva_id: reservationId });
     const operation = await getOperation(client, operationId);
     await client.query("COMMIT");
@@ -507,11 +517,14 @@ const asignarOperacion = async (req: any, res: any) => {
     );
     if (current.reserva_id) {
       const reservation = await client.query(
-        "SELECT id, estado FROM reservas WHERE id = $1 FOR UPDATE",
+        "SELECT id, estado, estado_operativo FROM reservas WHERE id = $1 FOR UPDATE",
         [current.reserva_id]
       );
       if (!reservation.rowCount || ["cancelada", "finalizada"].includes(String(reservation.rows[0]?.estado))) {
         return reject(409, { success: false, error: "La reserva vinculada ya no permite asignar recursos" });
+      }
+      if (reservation.rows[0].estado_operativo === "en_curso") {
+        return reject(409, { success: false, error: "El viaje ya comenzó; no se pueden cambiar los recursos desde Despacho" });
       }
 
       if (!current.requerimiento_id) {
@@ -530,7 +543,7 @@ const asignarOperacion = async (req: any, res: any) => {
           ? driverId
           : driverData.usuario_id;
         await client.query(
-          "UPDATE reservas SET vehiculo_id = $1, conductor_id = $2 WHERE id = $3",
+          "UPDATE reservas SET vehiculo_id = $1, conductor_id = $2, estado_operativo = 'asignada' WHERE id = $3",
           [vehicleId, conductorReference, current.reserva_id]
         );
       }
@@ -829,6 +842,10 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
       return res.status(404).json({ success: false, error: "Operación no encontrada" });
     }
     const operation = current.rows[0];
+    if (operation.reserva_id && !operation.requerimiento_id && ["en_curso", "completada"].includes(nextState)) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ success: false, error: "El conductor actualiza el inicio y la finalización desde su portal" });
+    }
     const hasOwnResources = operation.vehiculo_id && operation.conductor_id;
     const hasConfirmedSubcontracting = operation.subcontratacion_estado === "confirmada"
       && operation.subcontratista_empresa
@@ -851,21 +868,15 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
       if (Number(progress.rows[0].total) > 0
         && Number(progress.rows[0].total) === Number(progress.rows[0].completadas)) {
         await client.query(
-          "UPDATE reservas SET estado = 'finalizada' WHERE id = $1 AND estado = 'confirmada'",
+          "UPDATE reservas SET estado = 'finalizada', estado_operativo = 'finalizada' WHERE id = $1 AND estado = 'confirmada'",
           [operation.reserva_id]
         );
       }
     }
-    if (operation.reserva_id && !operation.requerimiento_id && ["en_curso", "completada"].includes(nextState)) {
-      await client.query(
-        "UPDATE reservas SET estado = $1 WHERE id = $2 AND estado NOT IN ('cancelada', 'finalizada')",
-        [nextState === "completada" ? "finalizada" : "en_curso", operation.reserva_id]
-      );
-    }
     if (operation.reserva_id && !operation.requerimiento_id && nextState === "cancelada") {
       await client.query(
         `UPDATE reservas
-         SET vehiculo_id = NULL, conductor_id = NULL
+         SET vehiculo_id = NULL, conductor_id = NULL, estado_operativo = NULL
          WHERE id = $1 AND estado = 'confirmada'`,
         [operation.reserva_id]
       );
@@ -913,7 +924,7 @@ const reabrirOperacion = async (req: any, res: any) => {
         return res.status(409).json({ success: false, error: "La reserva vinculada ya no está confirmada" });
       }
       await client.query(
-        "UPDATE reservas SET vehiculo_id = NULL, conductor_id = NULL WHERE id = $1",
+        "UPDATE reservas SET vehiculo_id = NULL, conductor_id = NULL, estado_operativo = NULL WHERE id = $1",
         [operation.reserva_id]
       );
     }

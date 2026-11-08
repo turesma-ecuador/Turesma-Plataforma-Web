@@ -123,6 +123,14 @@ export const AdminShell = ({ children }: AdminShellProps) => {
   const mobileMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const { user, checkingSession } = useAdminGuard();
   const isAdmin = normalizeRole(user?.rol) === "admin";
+  const profileInitials = (user?.nombre || "Admin")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join("")
+    .toUpperCase();
+  const profileRole = isAdmin ? "Administrador" : "Operativo";
 
   const badges = useAdminBadges(!checkingSession);
   useMobileMenuAccessibility(isMobileMenuOpen, setIsMobileMenuOpen, mobileMenuRef, mobileMenuTriggerRef);
@@ -254,16 +262,22 @@ export const AdminShell = ({ children }: AdminShellProps) => {
           <div className="bg-white/5 rounded-[1.5rem] p-4 border border-white/5 shadow-inner">
             <div className="flex items-center gap-3 mb-4">
               <div className="relative">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-gray-700 to-gray-800 flex items-center justify-center text-sm font-black border border-white/10 text-white" suppressHydrationWarning>
-                  {user ? String(user.nombre || "AD").slice(0, 2).toUpperCase() : "AD"}
-                </div>
+                {user?.imagen_url ? (
+                  <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-white/10 bg-slate-800">
+                    <Image src={user.imagen_url} alt={user.nombre || profileRole} fill sizes="40px" className="object-cover" unoptimized />
+                  </div>
+                ) : (
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-gradient-to-tr from-gray-700 to-gray-800 text-sm font-black text-white" suppressHydrationWarning>
+                    {profileInitials}
+                  </div>
+                )}
                 <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-[#0b0f1a] rounded-full shadow-lg"></div>
               </div>
               <div className="overflow-hidden">
                 <p className="text-sm font-bold truncate text-white">
-                  {user?.nombre || "Admin"}
+                  <span title={user?.nombre || profileRole}>{user?.nombre || profileRole}</span>
                 </p>
-                <p className="text-[10px] text-gray-400 truncate">Administrador</p>
+                <p className="text-[10px] text-gray-400 truncate">{profileRole}</p>
               </div>
             </div>
             <button
@@ -381,16 +395,16 @@ export const AdminShell = ({ children }: AdminShellProps) => {
 
             <div className="flex items-center gap-3 border-l border-gray-200 pl-3 md:pl-6">
               <div className="hidden sm:block text-right">
-                <p className="text-sm font-semibold text-gray-900 leading-tight">{user?.nombre || "Administrador"}</p>
-                <p className="text-[11px] text-gray-400">Administrador</p>
+                <p className="max-w-48 truncate text-sm font-semibold leading-tight text-gray-900" title={user?.nombre || profileRole}>{user?.nombre || profileRole}</p>
+                <p className="text-[11px] text-gray-400">{profileRole}</p>
               </div>
               {user?.imagen_url ? (
-                <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm border border-slate-200">
+                <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-sm">
                   <Image src={user.imagen_url} alt={user?.nombre || "Administrador"} fill sizes="40px" className="object-cover" unoptimized />
                 </div>
               ) : (
-                <div className="w-10 h-10 rounded-xl bg-[#E31E24] flex items-center justify-center text-white shadow-sm">
-                  <User size={20} strokeWidth={2.2} />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E31E24] text-xs font-black text-white shadow-sm" aria-label={`Iniciales de ${user?.nombre || profileRole}`}>
+                  {profileInitials}
                 </div>
               )}
             </div>

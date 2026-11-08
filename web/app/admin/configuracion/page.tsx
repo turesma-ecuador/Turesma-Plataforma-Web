@@ -36,6 +36,8 @@ export default function AdminConfiguracionPage() {
       if (handleUnauthorized(res.status)) return;
       if (res.ok) {
         const u: Perfil = (await res.json()).user;
+        const stored = getStoredUser();
+        setStoredUser(stored ? { ...stored, ...u } : u);
         setPerfil(u); setNombre(u.nombre || ""); setTelefono(u.telefono || ""); setImagenUrl(u.imagen_url || null);
       }
     } catch { /* silencio */ }

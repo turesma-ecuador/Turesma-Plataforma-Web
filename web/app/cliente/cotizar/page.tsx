@@ -705,7 +705,10 @@ export default function ClienteCotizarPage() {
             {/* PASO 1: PREFERENCIA DE CATEGORÍA */}
             <div className="space-y-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Car size={12} /> 3. Elige una categoría de vehículo</p>
-              <p className="text-xs text-slate-500">Las fotos son referenciales y muestran vehículos de la flota por categoría. Esta selección es una preferencia, no reserva una unidad ni una placa específica; Despacho asignará el vehículo después de confirmar el pago.</p>
+              <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
+                <AlertCircle size={16} className="mt-0.5 shrink-0 text-blue-700" />
+                <p>Las fotos son referenciales. Elegir una categoría indica tu preferencia, pero <strong>no reserva un vehículo ni una placa específica</strong>. Despacho asignará una unidad disponible después de confirmar el pago.</p>
+              </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {categorias.map(({ tipo, capacidad, imagen_url }) => {
                   const selected = tipoSeleccionado === tipo;
@@ -714,8 +717,8 @@ export default function ClienteCotizarPage() {
                     <button key={tipo} type="button" disabled={exceedsCapacity}
                       onClick={() => setForm(p => ({ ...p, tipo_vehiculo: tipo }))}
                       aria-pressed={selected}
-                      className={`overflow-hidden rounded-2xl border-2 text-left transition ${selected ? "border-[#E31E24] bg-red-50 ring-2 ring-red-100" : "border-slate-200 bg-white hover:border-slate-300"} ${exceedsCapacity ? "cursor-not-allowed opacity-45" : ""}`}>
-                      <span className="relative block h-36 w-full overflow-hidden bg-slate-100">
+                      className={`flex h-full flex-col overflow-hidden rounded-2xl border-2 text-left transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-200 ${selected ? "border-[#E31E24] bg-red-50/70 ring-4 ring-red-100 shadow-md shadow-red-100" : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"} ${exceedsCapacity ? "cursor-not-allowed opacity-45" : ""}`}>
+                      <span className="relative block aspect-[16/9] w-full overflow-hidden bg-slate-100">
                         {imagen_url ? (
                           <Image
                             src={imagen_url}
@@ -734,11 +737,15 @@ export default function ClienteCotizarPage() {
                         <span className="absolute bottom-2 left-2 rounded-full bg-slate-950/75 px-2.5 py-1 text-[9px] font-black uppercase tracking-wide text-white">
                           Foto referencial
                         </span>
+                        {selected && (
+                          <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-[#E31E24] px-2.5 py-1 text-[9px] font-black uppercase tracking-wide text-white shadow">
+                            <CheckCircle2 size={12} /> Seleccionado
+                          </span>
+                        )}
                       </span>
-                      <span className="block p-4">
+                      <span className="block flex-1 p-4">
                       <span className="flex items-center justify-between">
                         <span className="flex items-center gap-2 font-black capitalize text-slate-800"><Bus size={18} className="text-[#E31E24]" />{tipo}</span>
-                        {selected && <CheckCircle2 size={17} className="text-[#E31E24]" />}
                       </span>
                       <span className="mt-2 block text-xs font-semibold text-slate-500">Hasta {capacidad} pasajeros</span>
                       <span className="mt-1 block text-xs font-bold text-slate-700">Precio según cotización del administrador</span>

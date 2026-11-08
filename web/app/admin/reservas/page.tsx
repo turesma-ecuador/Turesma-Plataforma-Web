@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
-import { getAuthHeaders } from "../../../lib/session";
+import { getAuthHeaders, normalizeRole } from "../../../lib/session";
 import { useAutoRefresh } from "../../../lib/use-auto-refresh";
 import { descargarExcel } from "../../../lib/download";
 import { useRouter } from "next/navigation";
@@ -53,6 +53,21 @@ type ReservaHistoryEntry = {
   usuario_nombre: string | null;
   usuario_apellido: string | null;
 };
+type CambioDestinoAdmin = {
+  id: number;
+  reserva_id: number;
+  estado: string;
+  origen_anterior: string | null;
+  destino_anterior: string | null;
+  origen_solicitado: string;
+  destino_solicitado: string;
+  total_anterior: number;
+  total_propuesto: number | null;
+  nota_admin: string | null;
+  cliente_nombre: string;
+  cliente_email: string;
+  pago_id: number | null;
+};
 
 const ESTADOS = ["pendiente", "pendiente_pago", "confirmada", "en_curso", "finalizada", "cancelada"];
 const createEmptyForm = () => ({
@@ -94,8 +109,8 @@ const ESTADO_ICON: Record<string, React.ReactNode> = {
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
   pendiente: ["confirmada", "cancelada"],
   pendiente_pago: ["confirmada", "cancelada"],
-  confirmada: ["en_curso", "cancelada"],
-  en_curso: ["finalizada"],
+  confirmada: ["cancelada"],
+  en_curso: ["confirmada"],
   finalizada: [],
   cancelada: [],
 };
@@ -103,7 +118,8 @@ const TRANSICIONES_VALIDAS: Record<string, string[]> = {
 const INPUT_CLS = "w-full rounded-xl border-2 border-slate-100 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 outline-none transition-all focus:border-[#E31E24] focus:bg-white placeholder:font-normal";
 
 export default function AdminReservasPage() {
-  const { checkingSession } = useAdminGuard();
+  const { user, checkingSession } = useAdminGuard();
+  const isAdmin = normalizeRole(user?.rol) === "admin";
   const router = useRouter();
   const confirmar = useConfirm();
   const [reservas, setReservas] = useState<Reserva[]>([]);
@@ -126,12 +142,15 @@ export default function AdminReservasPage() {
   // Modal cambio de estado
   const [estadoModal, setEstadoModal] = useState<Reserva | null>(null);
   const [nuevoEstado, setNuevoEstado] = useState("");
+  const [motivoEstado, setMotivoEstado] = useState("");
   const [estadoLoading, setEstadoLoading] = useState(false);
   const [historyReservation, setHistoryReservation] = useState<Reserva | null>(null);
   const [reservationHistory, setReservationHistory] = useState<ReservaHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [focusedReservationId, setFocusedReservationId] = useState<number | null>(null);
+  const [solicitudesCambioDestino, setSolicitudesCambioDestino] = useState<CambioDestinoAdmin[]>([]);
+  const [propuestasCambio, setPropuestasCambio] = useState<Record<number, { total: string; nota: string; referencia: string }>>({});
 
   const h = getAuthHeaders();
 
@@ -186,20 +205,32 @@ export default function AdminReservasPage() {
   const load = async (silencioso = false) => {
     if (!silencioso) setLoading(true);
     try {
-      const [rRes, uRes] = await Promise.all([
+      const [rRes, uRes, cambiosRes] = await Promise.all([
         fetch(`${API_URL}/api/admin/reservas`, { headers: h }),
         fetch(`${API_URL}/api/admin/usuarios`, { headers: h }),
+        isAdmin ? fetch(`${API_URL}/api/admin/solicitudes-cambio-destino`, { headers: h }) : Promise.resolve(null),
       ]);
       if (rRes.ok) setReservas(await rRes.json());
       if (uRes.ok) {
         const usuarios = await uRes.json();
         setClientes(usuarios.filter((u: any) => u.rol === "cliente"));
       }
+      if (cambiosRes?.ok) {
+        const changes = await cambiosRes.json();
+        setSolicitudesCambioDestino(changes);
+        setPropuestasCambio((previous) => {
+          const next = { ...previous };
+          for (const change of changes as CambioDestinoAdmin[]) {
+            next[change.id] ||= { total: String(change.total_anterior || ""), nota: "", referencia: "" };
+          }
+          return next;
+        });
+      }
     } catch { /* silencio */ }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { if (!checkingSession) load(); }, [checkingSession]);
+  useEffect(() => { if (!checkingSession) load();   }, [checkingSession, isAdmin]);
 
   useAutoRefresh(() => load(true), { enabled: !checkingSession, immediate: false });
 
@@ -267,7 +298,7 @@ export default function AdminReservasPage() {
       origen: adminOrigin ? adminOrigin.label : (form.origen || null),
       destino: adminDestination ? adminDestination.label : (form.destino || null),
       notas: form.notas || null,
-      estado: editingId ? form.estado : "pendiente_pago",
+      ...(editingId ? {} : { estado: "pendiente_pago" }),
     };
     const url = editingId ? `${API_URL}/api/admin/reservas/${editingId}` : `${API_URL}/api/admin/reservas`;
     const method = editingId ? "PUT" : "POST";
@@ -300,17 +331,44 @@ export default function AdminReservasPage() {
       const res = await fetch(`${API_URL}/api/admin/reservas/${estadoModal.id}/estado-viaje`, {
         method: "PATCH",
         headers: h,
-        body: JSON.stringify({ estado: nuevoEstado }),
+        body: JSON.stringify({ estado: nuevoEstado, motivo: motivoEstado }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al cambiar estado");
       setMsg(`Estado actualizado a "${nuevoEstado}"`);
       setEstadoModal(null);
+      setMotivoEstado("");
       load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Error al cambiar estado");
     } finally {
       setEstadoLoading(false);
+    }
+  };
+
+  const actualizarSolicitudCambio = async (id: number, action: "propuesta" | "rechazar" | "devolucion") => {
+    const form = propuestasCambio[id] || { total: "", nota: "", referencia: "" };
+    const endpoint = action === "devolucion"
+      ? `/api/admin/solicitudes-cambio-destino/${id}/devolucion`
+      : `/api/admin/solicitudes-cambio-destino/${id}/${action}`;
+    const payload = action === "propuesta"
+      ? { total_propuesto: Number(form.total), nota_admin: form.nota }
+      : action === "devolucion"
+        ? { referencia_externa: form.referencia }
+        : { nota_admin: form.nota };
+    setErr(""); setMsg("");
+    try {
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: "POST",
+        headers: { ...h, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo procesar la solicitud");
+      setMsg(data.message || "Solicitud actualizada");
+      await load(true);
+    } catch (requestError) {
+      setErr(requestError instanceof Error ? requestError.message : "No se pudo procesar la solicitud");
     }
   };
 
@@ -354,6 +412,68 @@ export default function AdminReservasPage() {
           Nueva Reserva
         </button>
       </div>
+
+      {isAdmin && solicitudesCambioDestino.length > 0 && (
+        <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+          <div className="border-b border-amber-100 bg-amber-50 px-5 py-4">
+            <h2 className="font-black text-amber-950">Solicitudes de cambio de destino</h2>
+            <p className="mt-1 text-xs text-amber-800">El cliente acepta el nuevo precio antes de cualquier cambio. Una devolución se registra solo después de ejecutarla fuera del sistema.</p>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {solicitudesCambioDestino.map((change) => {
+              const proposalForm = propuestasCambio[change.id] || { total: "", nota: "", referencia: "" };
+              const difference = Number(change.total_propuesto || 0) - Number(change.total_anterior || 0);
+              return (
+                <article key={change.id} className="space-y-3 p-4 sm:p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-black text-slate-900">Reserva #{change.reserva_id} · {change.cliente_nombre}</p>
+                      <p className="text-xs text-slate-500">{change.cliente_email}</p>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase text-slate-600">{change.estado.replaceAll("_", " ")}</span>
+                  </div>
+                  <div className="grid gap-2 text-sm sm:grid-cols-2">
+                    <p className="rounded-lg bg-slate-50 p-3"><span className="text-xs font-bold text-slate-500">Ruta actual:</span><br />{change.origen_anterior || "—"} → {change.destino_anterior || "—"}</p>
+                    <p className="rounded-lg bg-blue-50 p-3 text-blue-900"><span className="text-xs font-bold text-blue-700">Solicitada:</span><br />{change.origen_solicitado} → {change.destino_solicitado}</p>
+                  </div>
+                  {change.estado === "pendiente_admin" && (
+                    <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)_auto_auto]">
+                      <label className="text-[10px] font-black uppercase text-slate-500">Nuevo total ($)
+                        <input type="number" min="0.01" step="0.01" value={proposalForm.total} onChange={(event) => setPropuestasCambio((old) => ({ ...old, [change.id]: { ...proposalForm, total: event.target.value } }))} className={`${INPUT_CLS} mt-1`} />
+                      </label>
+                      <label className="text-[10px] font-black uppercase text-slate-500">Detalle para el cliente
+                        <input maxLength={500} value={proposalForm.nota} onChange={(event) => setPropuestasCambio((old) => ({ ...old, [change.id]: { ...proposalForm, nota: event.target.value } }))} className={`${INPUT_CLS} mt-1`} placeholder="Motivo del precio propuesto" />
+                      </label>
+                      <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "propuesta")} disabled={Number(proposalForm.total) <= 0 || proposalForm.nota.trim().length < 5} className="self-end rounded-xl bg-emerald-600 px-4 py-3 text-xs font-black uppercase text-white disabled:opacity-50">Enviar propuesta</button>
+                      <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "rechazar")} disabled={proposalForm.nota.trim().length < 5} className="self-end rounded-xl bg-red-50 px-4 py-3 text-xs font-black uppercase text-red-700 disabled:opacity-50">Rechazar</button>
+                    </div>
+                  )}
+                  {change.estado === "pendiente_admin" && <p className="text-xs text-slate-500">Reserva pagada: ${Number(change.total_anterior).toFixed(2)}. Revisa ruta, disponibilidad y despacho antes de proponer.</p>}
+                  {change.estado === "propuesta_cliente" && (
+                    <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-800">
+                      Esperando respuesta del cliente: ${Number(change.total_anterior).toFixed(2)} → ${Number(change.total_propuesto).toFixed(2)}. {change.nota_admin}
+                    </p>
+                  )}
+                  {change.estado === "pago_pendiente" && (
+                    <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+                      El cliente aceptó el aumento de ${difference.toFixed(2)}. La nueva ruta se aplicará cuando el pago quede confirmado.
+                    </p>
+                  )}
+                  {change.estado === "devolucion_pendiente" && (
+                    <div className="space-y-2 rounded-xl border border-orange-200 bg-orange-50 p-3">
+                      <p className="text-sm font-bold text-orange-900">Devolver ${Math.abs(difference).toFixed(2)} externamente antes de registrar. El sistema solo guardará la referencia y aplicará el cambio.</p>
+                      <div className="flex flex-wrap gap-2">
+                        <input maxLength={120} value={proposalForm.referencia} onChange={(event) => setPropuestasCambio((old) => ({ ...old, [change.id]: { ...proposalForm, referencia: event.target.value } }))} className={`${INPUT_CLS} min-w-[220px] flex-1`} placeholder="Referencia de la transferencia de devolución" />
+                        <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "devolucion")} disabled={proposalForm.referencia.trim().length < 3} className="rounded-xl bg-orange-700 px-4 py-3 text-xs font-black uppercase text-white disabled:opacity-50">Registrar devolución aplicada</button>
+                      </div>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -618,14 +738,32 @@ export default function AdminReservasPage() {
                 >
                   <option value="">Seleccionar...</option>
                   {(TRANSICIONES_VALIDAS[estadoModal.estado] || []).map(s => (
-                    <option key={s} value={s}>{ESTADO_LABEL[s] || s.replace("_", " ")}</option>
+                    <option key={s} value={s}>
+                      {estadoModal.estado === "en_curso" && s === "confirmada"
+                        ? "Corregir a confirmada (solo si fue un error)"
+                        : ESTADO_LABEL[s] || s.replace("_", " ")}
+                    </option>
                   ))}
                 </select>
+                {estadoModal.estado === "en_curso" && nuevoEstado === "confirmada" && (
+                  <label className="mt-4 block text-[10px] font-black uppercase text-slate-400">
+                    Motivo obligatorio de corrección
+                    <textarea
+                      value={motivoEstado}
+                      onChange={(event) => setMotivoEstado(event.target.value)}
+                      maxLength={500}
+                      minLength={10}
+                      rows={3}
+                      className={`${INPUT_CLS} mt-1 resize-none normal-case`}
+                      placeholder="Ej.: Se marcó en curso por error; el conductor confirma que el servicio no ha iniciado."
+                    />
+                  </label>
+                )}
                 <div className="flex gap-3 mt-5">
-                  <button onClick={() => setEstadoModal(null)} className="flex-1 py-3 rounded-xl border-2 border-slate-200 text-slate-600 font-black text-xs uppercase">Cancelar</button>
+                  <button onClick={() => { setEstadoModal(null); setMotivoEstado(""); }} className="flex-1 py-3 rounded-xl border-2 border-slate-200 text-slate-600 font-black text-xs uppercase">Cancelar</button>
                   <button
                     onClick={handleCambiarEstado}
-                    disabled={estadoLoading || !nuevoEstado}
+                    disabled={estadoLoading || !nuevoEstado || (estadoModal.estado === "en_curso" && nuevoEstado === "confirmada" && motivoEstado.trim().length < 10)}
                     className="flex-1 py-3 rounded-xl bg-[#E31E24] text-white font-black text-xs uppercase disabled:opacity-60"
                   >
                     {estadoLoading ? "Guardando..." : "Confirmar cambio"}
@@ -669,9 +807,10 @@ export default function AdminReservasPage() {
                 <div>
                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Estado</label>
                   {editingId ? (
-                    <select value={form.estado} onChange={e => setForm(p => ({ ...p, estado: e.target.value }))} className={INPUT_CLS}>
-                      {ESTADOS.map(s => <option key={s} value={s}>{ESTADO_LABEL[s] || s.replace("_", " ")}</option>)}
-                    </select>
+                    <div className={`${INPUT_CLS} cursor-not-allowed text-slate-500`}>
+                      {ESTADO_LABEL[editingReservation?.estado || form.estado] || (editingReservation?.estado || form.estado).replace("_", " ")}
+                      <span className="ml-2 text-[10px] font-semibold text-slate-400">Se administra desde sus acciones</span>
+                    </div>
                   ) : (
                     <div className={`${INPUT_CLS} cursor-not-allowed text-orange-700`}>Pendiente de pago</div>
                   )}

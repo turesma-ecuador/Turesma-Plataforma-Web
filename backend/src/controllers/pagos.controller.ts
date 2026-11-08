@@ -9,6 +9,7 @@ const { emitirFacturaPorReserva } = require("../config/sriFacturacion");
 const { buildProformaDataDeReserva, generarProformaPDF } = require("../config/proforma");
 const { prepararDespachoRequerimiento } = require("../config/requerimientosDespacho");
 const { resolveStoredUploadPath } = require("../config/storage");
+const { aplicarCambioDestinoTrasPago } = require("./cambios-destino.controller");
 
 const METODOS_VALIDOS = ["transferencia", "link_pago", "payphone"];
 
@@ -132,6 +133,7 @@ const confirmarPagoPayphone = async (req: any, res: any) => {
         "UPDATE reservas SET estado = 'confirmada' WHERE id = $1 AND estado = 'pendiente_pago'",
         [reservaId]
       );
+      await aplicarCambioDestinoTrasPago(reservaId, userId);
       try {
         await emitirFacturaPorReserva(reservaId);
       } catch (error: any) {

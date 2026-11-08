@@ -371,7 +371,11 @@ const listarMisReservas = async (req: any, res: any) => {
          r.usuario_id,
          r.vehiculo_id,
          r.conductor_id,
-         r.estado,
+         CASE
+           WHEN r.estado = 'confirmada' AND r.estado_operativo = 'en_curso' THEN 'en_curso'
+           ELSE r.estado
+         END AS estado,
+         r.estado_operativo,
          r.fecha_reserva,
          r.fecha_fin,
          r.origen,
@@ -387,6 +391,20 @@ const listarMisReservas = async (req: any, res: any) => {
          r.fecha_regreso,
          r.hora_regreso,
          r.fecha_creacion AS creado_en,
+         (
+           SELECT json_build_object(
+             'id', s.id, 'estado', s.estado,
+             'origen_solicitado', s.origen_solicitado,
+             'destino_solicitado', s.destino_solicitado,
+             'total_anterior', s.total_anterior,
+             'total_propuesto', s.total_propuesto,
+             'nota_admin', s.nota_admin
+           )
+           FROM solicitudes_cambio_destino s
+           WHERE s.reserva_id = r.id
+           ORDER BY s.creado_en DESC, s.id DESC
+           LIMIT 1
+         ) AS cambio_destino,
          t.titulo AS tour_titulo,
          v.placa AS vehiculo_placa,
          v.modelo AS vehiculo_modelo,

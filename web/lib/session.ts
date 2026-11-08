@@ -55,6 +55,7 @@ export const getStoredUser = (): SessionUser | null => {
 export const setStoredUser = (user: SessionUser) => {
   if (typeof window === "undefined") return;
   localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+  window.dispatchEvent(new Event("turesma-user-updated"));
 };
 
 export const getStoredToken = (): string | null => {

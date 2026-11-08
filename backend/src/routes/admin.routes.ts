@@ -73,6 +73,12 @@ const {
 const { uploadVehiculoImagen, uploadViajeImagenes } = require("../controllers/admin/uploads.admin.controller");
 const { serveComprobante } = require("../controllers/uploads.controller");
 const { listarPagosAdmin, descargarReciboPagoAdmin, descargarFacturaAdmin, emitirFacturaAdmin, reenviarFacturaAdmin, aprobarPago, rechazarPago, actualizarLinkPago, registrarPagoManual, registrarReembolso } = require("../controllers/admin/pagos.admin.controller");
+const {
+  listarSolicitudesCambioDestinoAdmin,
+  proponerCambioDestino,
+  rechazarSolicitudCambioDestino,
+  registrarDevolucionCambioDestino,
+} = require("../controllers/cambios-destino.controller");
 const { historialReservaAdmin } = require("../controllers/admin/reservas-historial.admin.controller");
 const { getDashboardData } = require("../controllers/admin/dashboard.admin.controller");
 const { getControlOperativo, getAnomalias } = require("../controllers/admin/control-operativo.admin.controller");
@@ -214,7 +220,11 @@ router.post("/reservas", crearReserva);
 router.put("/reservas/:id", editarReserva);
 router.delete("/reservas/:id", eliminarReserva);
 router.get("/reservas/:id/estado-viaje", verEstadoViaje);
-router.patch("/reservas/:id/estado-viaje", actualizarEstadoViaje);
+router.patch("/reservas/:id/estado-viaje", requireRole("admin"), actualizarEstadoViaje);
+router.get("/solicitudes-cambio-destino", requireRole("admin"), listarSolicitudesCambioDestinoAdmin);
+router.post("/solicitudes-cambio-destino/:solicitudId/propuesta", requireRole("admin"), proponerCambioDestino);
+router.post("/solicitudes-cambio-destino/:solicitudId/rechazar", requireRole("admin"), rechazarSolicitudCambioDestino);
+router.post("/solicitudes-cambio-destino/:solicitudId/devolucion", requireRole("admin"), registrarDevolucionCambioDestino);
 
 router.get("/vehiculos", listarVehiculos);
 router.post("/vehiculos", registrarVehiculo);

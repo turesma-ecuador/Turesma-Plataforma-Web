@@ -22,6 +22,12 @@ const { enviarVerificacion, miVerificacion, subirDocumentoVerificacion } = requi
 const { listarGaleriaPublica } = require("../controllers/galeria.controller");
 const { listarViajesPublicos, reservarViajePublicado } = require("../controllers/viajes.controller");
 const { getPublicHomeShowcaseImages } = require("../controllers/home-showcase.controller");
+const {
+  crearSolicitudCambioDestino,
+  listarSolicitudesCambioDestinoCliente,
+  aceptarPropuestaCambioDestino,
+  rechazarPropuestaCambioDestino,
+} = require("../controllers/cambios-destino.controller");
 
 const router = express.Router();
 
@@ -39,6 +45,10 @@ router.get("/mis-reservas", verifyToken, listarMisReservas);
 router.post("/viajes/:id/reservar", verifyToken, reservarViajePublicado);
 router.patch("/mis-reservas/:id/cancelar", verifyToken, cancelarMiReserva);
 router.patch("/mis-reservas/:id/reprogramar", verifyToken, reprogramarMiReserva);
+router.get("/mis-reservas/:id/cambio-destino", verifyToken, listarSolicitudesCambioDestinoCliente);
+router.post("/mis-reservas/:id/cambio-destino", verifyToken, crearSolicitudCambioDestino);
+router.post("/mis-reservas/cambio-destino/:solicitudId/aceptar", verifyToken, aceptarPropuestaCambioDestino);
+router.post("/mis-reservas/cambio-destino/:solicitudId/rechazar", verifyToken, rechazarPropuestaCambioDestino);
 router.patch("/mis-reservas/:id/calificar", verifyToken, calificarMiReserva);
 router.get("/mis-reservas/:id/ubicacion", verifyToken, seguimientoMiReserva);
 router.post("/mis-reservas/:id/pagos", verifyToken, crearPagoReserva);
