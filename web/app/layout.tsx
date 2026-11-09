@@ -8,14 +8,17 @@ const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://turesma.co
 
 export const metadata: Metadata = {
   metadataBase: siteUrl ? new URL(siteUrl) : undefined,
-  title: "Transporte turístico y ejecutivo en Manta | Turesma",
-  description: "Transporte turístico, ejecutivo y empresarial desde Manta a todo Ecuador. Viaja con Turesma S.A.: seguridad, puntualidad y comodidad.",
+  title: "Transporte turístico en Manta | Turesma S.A.",
+  description: "Transporte turístico, ejecutivo, empresarial y logístico desde Manta a todo Ecuador. Solicita tu cotización con Turesma S.A.",
   applicationName: "Turesma",
   keywords: [
     "transporte turístico en Manta",
     "transporte ejecutivo en Manta",
     "transporte empresarial en Ecuador",
     "alquiler de buses para turismo",
+    "transporte logístico en Manta",
+    "tours turísticos en Ecuador",
+    "traslados al aeropuerto de Manta",
     "Turesma",
   ],
   alternates: siteUrl ? { canonical: siteUrl } : undefined,
@@ -23,8 +26,8 @@ export const metadata: Metadata = {
     type: "website",
     locale: "es_EC",
     siteName: "Turesma S.A.",
-    title: "Transporte turístico y ejecutivo en Manta | Turesma",
-    description: "Transporte turístico, ejecutivo y empresarial desde Manta a todo Ecuador.",
+    title: "Transporte turístico en Manta | Turesma S.A.",
+    description: "Transporte turístico, ejecutivo, empresarial y logístico desde Manta a todo Ecuador.",
     url: siteUrl,
   },
   robots: {
@@ -74,6 +77,23 @@ export default function RootLayout({
                 { "@type": "City", name: "Manta" },
                 { "@type": "Country", name: "Ecuador" },
               ],
+                hasOfferCatalog: {
+                  "@type": "OfferCatalog",
+                  name: "Servicios de transporte Turesma",
+                  itemListElement: [
+                    "Transporte turístico",
+                    "Transporte ejecutivo",
+                    "Transporte empresarial",
+                    "Alquiler de buses",
+                    "Traslados al aeropuerto",
+                    "Transporte para eventos",
+                    "Transporte logístico",
+                    "Tours turísticos",
+                  ].map((name) => ({
+                    "@type": "Offer",
+                    itemOffered: { "@type": "Service", name },
+                  })),
+                },
               ...(siteUrl ? { url: siteUrl, logo: `${siteUrl}/logo.png` } : {}),
             }),
           }}
