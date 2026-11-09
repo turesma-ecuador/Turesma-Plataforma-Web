@@ -8,7 +8,7 @@ const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://turesma.co
 
 export const metadata: Metadata = {
   metadataBase: siteUrl ? new URL(siteUrl) : undefined,
-  title: "Transporte turístico en Manta | Turesma S.A.",
+  title: "TURESMA S.A. | Transporte turístico y ejecutivo en Manta",
   description: "Transporte turístico, ejecutivo, empresarial y logístico desde Manta a todo Ecuador. Solicita tu cotización con Turesma S.A.",
   applicationName: "Turesma",
   keywords: [
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     type: "website",
     locale: "es_EC",
     siteName: "Turesma S.A.",
-    title: "Transporte turístico en Manta | Turesma S.A.",
+    title: "TURESMA S.A. | Transporte turístico y ejecutivo en Manta",
     description: "Transporte turístico, ejecutivo, empresarial y logístico desde Manta a todo Ecuador.",
     url: siteUrl,
   },
@@ -55,7 +55,7 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <Script id="tab-title" strategy="beforeInteractive">
-          {`document.title = "TURESMA S.A | Transporte turístico y ejecutivo en Manta";`}
+          {`document.title = "TURESMA S.A. | Transporte turístico y ejecutivo en Manta";`}
         </Script>
         <script
           type="application/ld+json"
