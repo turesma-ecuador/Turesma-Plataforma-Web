@@ -68,7 +68,8 @@ const buildProformaData = async (cotizacionId: number) => {
             c.notas, c.tipo_vehiculo, c.proforma_numero,
             COALESCE(c.precio_final, c.precio_estimado, 0)::numeric AS precio,
             u.nombre AS cliente_nombre, u.email AS cliente_email,
-            u.telefono AS cliente_telefono, u.cedula AS cliente_cedula
+            u.telefono AS cliente_telefono, u.cedula AS cliente_cedula,
+            u.tipo_identificacion AS cliente_tipo_identificacion
      FROM cotizaciones c JOIN usuarios u ON u.id = c.usuario_id
      WHERE c.id = $1 LIMIT 1`,
     [cotizacionId]
@@ -88,7 +89,7 @@ const buildProformaData = async (cotizacionId: number) => {
     numero: c.proforma_numero,
     fecha: new Date().toISOString().slice(0, 10),
     empresa: EMPRESA,
-    cliente: { nombre: c.cliente_nombre, email: c.cliente_email, telefono: c.cliente_telefono, cedula: c.cliente_cedula },
+    cliente: { nombre: c.cliente_nombre, email: c.cliente_email, telefono: c.cliente_telefono, cedula: c.cliente_cedula, tipo_identificacion: c.cliente_tipo_identificacion },
     servicio: {
       origen: c.origen, destino: c.destino, fecha_servicio: c.fecha_servicio, hora_salida: c.hora_salida,
       fecha_regreso: c.fecha_regreso, hora_regreso: c.hora_regreso,
@@ -107,7 +108,8 @@ const buildProformaDataDeReserva = async (reservaId: number, usuarioId: number) 
             r.num_personas, r.notas, COALESCE(r.tipo_vehiculo, v.tipo) AS tipo_vehiculo,
             r.total::numeric AS precio,
             u.nombre AS cliente_nombre, u.email AS cliente_email,
-            u.telefono AS cliente_telefono, u.cedula AS cliente_cedula
+            u.telefono AS cliente_telefono, u.cedula AS cliente_cedula,
+            u.tipo_identificacion AS cliente_tipo_identificacion
      FROM reservas r
      JOIN usuarios u ON u.id = r.usuario_id
      LEFT JOIN vehiculos v ON v.id = r.vehiculo_id
@@ -159,6 +161,7 @@ const buildProformaDataDeReserva = async (reservaId: number, usuarioId: number) 
       email: reservation.cliente_email,
       telefono: reservation.cliente_telefono,
       cedula: reservation.cliente_cedula,
+      tipo_identificacion: reservation.cliente_tipo_identificacion,
     },
     servicio: {
       origen: reservation.origen,
@@ -181,7 +184,8 @@ const buildProformaDataRequerimiento = async (requerimientoId: number, usuarioId
   const result = await pool.query(
     `SELECT r.id, r.organizacion, r.detalles, r.service_groups, r.precio_final,
             r.estado, u.nombre AS cliente_nombre, u.email AS cliente_email,
-            u.telefono AS cliente_telefono, u.cedula AS cliente_cedula
+            u.telefono AS cliente_telefono, u.cedula AS cliente_cedula,
+            u.tipo_identificacion AS cliente_tipo_identificacion
      FROM requerimientos_personalizados r
      JOIN usuarios u ON u.id = r.usuario_id
      WHERE r.id = $1 ${ownershipFilter}
@@ -221,6 +225,7 @@ const buildProformaDataRequerimiento = async (requerimientoId: number, usuarioId
       email: request.cliente_email,
       telefono: request.cliente_telefono,
       cedula: request.cliente_cedula,
+      tipo_identificacion: request.cliente_tipo_identificacion,
     },
     servicio: {
       origen: "Varios grupos de servicio",
@@ -278,8 +283,9 @@ const generarProformaMultigrupoPDF = (d: any): Promise<Buffer> => new Promise((r
     doc.font("Helvetica-Bold").fontSize(11).text(String(d.cliente.nombre || "").toUpperCase(), left, titleY, { width: 300 });
     doc.text(`PROFORMA. ${d.numero}`, 340, titleY, { width: right - 340, align: "right" });
     doc.moveDown(0.6);
-    const esRuc = d.cliente.cedula && String(d.cliente.cedula).length === 13;
-    doc.font("Helvetica").fontSize(10).text(`${esRuc ? "RUC" : "CÉDULA"}:   ${d.cliente.cedula || "—"}`, left);
+    const tipoIdentificacion = d.cliente.tipo_identificacion || (String(d.cliente.cedula || "").length === 13 ? "ruc" : "cedula");
+    const etiquetaIdentificacion = tipoIdentificacion === "pasaporte" ? "PASAPORTE" : tipoIdentificacion === "ruc" ? "RUC" : "CÉDULA";
+    doc.font("Helvetica").fontSize(10).text(`${etiquetaIdentificacion}:   ${d.cliente.cedula || "—"}`, left);
     doc.text(`FECHA:   ${fmtFecha(d.fecha)}`, left);
     doc.moveDown(0.8);
 
@@ -419,9 +425,10 @@ const generarProformaPDF = (d: any): Promise<Buffer> => new Promise((resolve, re
     doc.font("Helvetica-Bold").fontSize(11).text(String(d.cliente.nombre || "").toUpperCase(), left, y, { width: 360 });
     doc.font("Helvetica-Bold").fontSize(11).text(`PROFORMA. ${d.numero}`, 360, y, { width: width - 320, align: "right" });
     doc.moveDown(0.6);
-    const esRuc = d.cliente.cedula && String(d.cliente.cedula).length === 13;
+    const tipoIdentificacion = d.cliente.tipo_identificacion || (String(d.cliente.cedula || "").length === 13 ? "ruc" : "cedula");
+    const etiquetaIdentificacion = tipoIdentificacion === "pasaporte" ? "PASAPORTE" : tipoIdentificacion === "ruc" ? "RUC" : "CÉDULA";
     doc.font("Helvetica").fontSize(10);
-    doc.text(`${esRuc ? "RUC" : "CÉDULA"}:   ${d.cliente.cedula || "—"}`, left);
+    doc.text(`${etiquetaIdentificacion}:   ${d.cliente.cedula || "—"}`, left);
     doc.text(`FECHA:   ${fmtFecha(d.fecha)}`, left);
     doc.moveDown(0.8);
 

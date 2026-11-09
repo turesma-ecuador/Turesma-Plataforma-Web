@@ -9,6 +9,7 @@ const {
   createEmailVerificationToken,
   sendEmailVerification,
 } = require("../../config/emailVerification");
+const { normalizeIdentification } = require("../../config/identificacion");
 
 const parsePositiveInt = (value) => {
   const parsed = Number(value);
@@ -41,6 +42,7 @@ const crearUsuarioAdmin = async (req, res) => {
     placa,
     telefono,
     cedula,
+    tipo_identificacion,
     imagen_url,
     tipo_vehiculo,
     modelo_vehiculo,
@@ -68,10 +70,12 @@ const crearUsuarioAdmin = async (req, res) => {
   let capacidadPasajerosValue = null;
   let placaValue = null;
   const telefonoValue = String(telefono).trim();
-  const cedulaValue = cedula === undefined || cedula === null ? null : String(cedula).trim();
+  const identification = normalizedRole === "cliente"
+    ? normalizeIdentification(tipo_identificacion || "cedula", cedula)
+    : null;
 
-  if (normalizedRole === "cliente" && (!cedulaValue || !/^\d{10}$/.test(cedulaValue))) {
-    return res.status(400).json({ error: "La cédula debe tener 10 dígitos" });
+  if (normalizedRole === "cliente" && !identification.value) {
+    return res.status(400).json({ error: identification.error });
   }
 
   if (normalizedRole === "vehiculo") {
@@ -111,10 +115,10 @@ const crearUsuarioAdmin = async (req, res) => {
     }
 
     const insertResult = await pool.query(
-      `INSERT INTO usuarios (nombre, email, password_hash, rol, edad, capacidad_pasajeros, telefono, cedula, imagen_url, activo)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
-       RETURNING id, nombre, email, rol, edad, capacidad_pasajeros, telefono, cedula, imagen_url, activo, creado_en`,
-      [nombre, email, hashedPassword, normalizedRole, edadValue, capacidadPasajerosValue, telefonoValue, cedulaValue, imagen_url || null]
+      `INSERT INTO usuarios (nombre, email, password_hash, rol, edad, capacidad_pasajeros, telefono, cedula, tipo_identificacion, imagen_url, activo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
+       RETURNING id, nombre, email, rol, edad, capacidad_pasajeros, telefono, cedula, tipo_identificacion, imagen_url, activo, creado_en`,
+      [nombre, email, hashedPassword, normalizedRole, edadValue, capacidadPasajerosValue, telefonoValue, identification?.value || null, identification?.type || "cedula", imagen_url || null]
     );
 
     const createdUser = insertResult.rows[0];
@@ -159,7 +163,7 @@ const crearUsuarioAdmin = async (req, res) => {
     });
   } catch (error) {
     if (error.code === "23505") {
-      return res.status(409).json({ error: "El email ya está registrado" });
+      return res.status(409).json({ error: "El correo o número de identificación ya está registrado" });
     }
 
     console.error("Error creando usuario admin:", error);
@@ -171,7 +175,7 @@ const listarUsuariosAdmin = async (req, res) => {
   try {
     const { rol } = req.query;
 
-    let query = `SELECT id, nombre, email, pending_email, email_verified_at, rol, edad, capacidad_pasajeros, telefono, cedula, imagen_url, activo, creado_en FROM usuarios`;
+    let query = `SELECT id, nombre, email, pending_email, email_verified_at, rol, edad, capacidad_pasajeros, telefono, cedula, tipo_identificacion, imagen_url, activo, creado_en FROM usuarios`;
     const params: unknown[] = [];
 
     if (rol && typeof rol === "string") {
@@ -202,7 +206,7 @@ const editarUsuarioAdmin = async (req, res) => {
 
   try {
     const currentResult = await pool.query(
-      "SELECT id, nombre, email, rol, activo, password_hash, imagen_url, cedula FROM usuarios WHERE id = $1 LIMIT 1",
+      "SELECT id, nombre, email, rol, activo, password_hash, imagen_url, cedula, tipo_identificacion FROM usuarios WHERE id = $1 LIMIT 1",
       [userId]
     );
 
@@ -223,8 +227,12 @@ const editarUsuarioAdmin = async (req, res) => {
     const email = current.email;
     const telefono = req.body.telefono !== undefined ? (String(req.body.telefono).trim() || null) : undefined;
     const cedula = req.body.cedula !== undefined ? String(req.body.cedula).trim() : undefined;
-    if (cedula !== undefined && cedula && !/^\d{10}$/.test(cedula)) {
-      return res.status(400).json({ error: "La cédula debe tener 10 dígitos" });
+    const tipoIdentificacion = req.body.tipo_identificacion !== undefined
+      ? String(req.body.tipo_identificacion).trim().toLowerCase()
+      : current.tipo_identificacion || "cedula";
+    if (cedula !== undefined) {
+      const identification = normalizeIdentification(tipoIdentificacion, cedula);
+      if (!identification.value) return res.status(400).json({ error: identification.error });
     }
     let passwordHash = current.password_hash;
 
@@ -244,10 +252,11 @@ const editarUsuarioAdmin = async (req, res) => {
            password_hash = $3,
            imagen_url = $4,
            telefono = COALESCE($5, telefono),
-           cedula = COALESCE($6, cedula)
-       WHERE id = $7
-       RETURNING id, nombre, email, rol, telefono, cedula, activo, imagen_url, creado_en`,
-      [nombre, email, passwordHash, imagenUrl, telefono === undefined ? null : telefono, cedula || null, userId]
+           cedula = COALESCE($6, cedula),
+           tipo_identificacion = COALESCE($7, tipo_identificacion)
+       WHERE id = $8
+       RETURNING id, nombre, email, rol, telefono, cedula, tipo_identificacion, activo, imagen_url, creado_en`,
+      [nombre, email, passwordHash, imagenUrl, telefono === undefined ? null : telefono, cedula || null, tipoIdentificacion, userId]
     );
 
     return res.status(200).json({
@@ -257,7 +266,7 @@ const editarUsuarioAdmin = async (req, res) => {
   } catch (error) {
     console.error("Error editando usuario desde administración:", error);
     if (error.code === "23505") {
-      return res.status(409).json({ error: "El email ya está registrado" });
+      return res.status(409).json({ error: "El correo o número de identificación ya está registrado" });
     }
     return res.status(500).json({ error: "Error interno del servidor", details: String(error.message) });
   }

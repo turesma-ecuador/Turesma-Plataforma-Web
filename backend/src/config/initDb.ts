@@ -78,6 +78,7 @@ const initDatabase = async () => {
   await pool.query(`
     ALTER TABLE usuarios
     ADD COLUMN IF NOT EXISTS cedula VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS tipo_identificacion VARCHAR(20) NOT NULL DEFAULT 'cedula',
     ADD COLUMN IF NOT EXISTS cedula_url VARCHAR(600),
     ADD COLUMN IF NOT EXISTS selfie_cedula_url VARCHAR(600),
     ADD COLUMN IF NOT EXISTS estado_verificacion VARCHAR(20) DEFAULT 'no_verificado',
@@ -89,6 +90,11 @@ const initDatabase = async () => {
     ADD COLUMN IF NOT EXISTS email_verification_expires_at TIMESTAMP,
     ADD COLUMN IF NOT EXISTS pending_email VARCHAR(100),
     ADD COLUMN IF NOT EXISTS session_version INT NOT NULL DEFAULT 0;
+  `);
+  await pool.query(`
+    UPDATE usuarios
+    SET tipo_identificacion = 'ruc'
+    WHERE cedula ~ '^[0-9]{13}$' AND tipo_identificacion = 'cedula';
   `);
 
   await pool.query(`

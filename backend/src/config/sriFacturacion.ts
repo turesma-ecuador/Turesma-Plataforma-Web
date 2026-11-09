@@ -122,6 +122,9 @@ const signXml = async (xml: string) => {
 
 const buildInvoiceXml = (invoice: any, config = sriConfig()) => {
   const customerId = invoice.cliente_cedula || invoice.cliente_ruc || "9999999999999";
+  const identificationType = invoice.cliente_tipo_identificacion
+    || (customerId.length === 13 ? "ruc" : "cedula");
+  const sriIdentificationType = identificationType === "pasaporte" ? "06" : identificationType === "ruc" ? "04" : "05";
   const total = Number(invoice.total);
   const root = create({ version: "1.0", encoding: "UTF-8" })
     .ele("factura", { id: "comprobante", version: "1.1.0" })
@@ -141,7 +144,7 @@ const buildInvoiceXml = (invoice: any, config = sriConfig()) => {
     .ele("fechaEmision").txt(dateInvoice(invoice.fecha_emision)).up()
     .ele("dirEstablecimiento").txt(config.direccionMatriz).up()
     .ele("obligadoContabilidad").txt("SI").up()
-    .ele("tipoIdentificacionComprador").txt(customerId.length === 13 ? "04" : "05").up()
+    .ele("tipoIdentificacionComprador").txt(sriIdentificationType).up()
     .ele("razonSocialComprador").txt(invoice.cliente_nombre).up()
     .ele("identificacionComprador").txt(customerId).up()
     .ele("totalSinImpuestos").txt(amount(total)).up()
@@ -279,6 +282,9 @@ const generatePdf = (invoice: any, config: ReturnType<typeof sriConfig>) => new 
     box(x, y, width, height);
   };
   const customerId = invoice.cliente_cedula || invoice.cliente_ruc || "9999999999999";
+  const identificationType = invoice.cliente_tipo_identificacion
+    || (customerId.length === 13 ? "ruc" : "cedula");
+  const identificationLabel = identificationType === "pasaporte" ? "PASAPORTE" : identificationType === "ruc" ? "RUC" : "CÉDULA";
   const customerName = invoice.cliente_nombre || "CONSUMIDOR FINAL";
   const vehiclePlate = invoice.vehiculo_placa || "POR ASIGNAR";
   const description = `Servicio de transporte turístico: ${invoice.origen || "—"} - ${invoice.destino || "—"}`;
@@ -339,7 +345,7 @@ const generatePdf = (invoice: any, config: ReturnType<typeof sriConfig>) => new 
   const customerY = 374;
   doc.roundedRect(14, customerY, pageWidth, 73, 14).stroke(border);
   cell(`Razón Social / Nombres y Apellidos: ${customerName}`, 14, customerY, 360, 24);
-  cell(`RUC / CI: ${customerId}`, 14, customerY + 24, 220, 24);
+  cell(`${identificationLabel}: ${customerId}`, 14, customerY + 24, 220, 24);
   cell(`Fecha Emisión: ${dateInvoice(invoice.fecha_emision)}`, 234, customerY + 24, 190, 24);
   cell("Guía Remisión:", 424, customerY + 24, 153, 24);
   cell(`Dirección: ${config.direccionMatriz}`, 14, customerY + 48, 360, 25);
@@ -379,7 +385,8 @@ const emitirFacturaPorReserva = async (reservaId: number) => {
   if (existing.rowCount && existing.rows[0].estado === "autorizada") return existing.rows[0];
   const result = await pool.query(
     `SELECT r.id AS reserva_id, r.total, r.origen, r.destino, v.placa AS vehiculo_placa,
-            u.nombre AS cliente_nombre, u.email AS cliente_email, u.cedula AS cliente_cedula
+            u.nombre AS cliente_nombre, u.email AS cliente_email, u.cedula AS cliente_cedula,
+            u.tipo_identificacion AS cliente_tipo_identificacion
      FROM reservas r JOIN usuarios u ON u.id = r.usuario_id
      LEFT JOIN tours t ON t.id = r.tour_id
      LEFT JOIN vehiculos v ON v.id = COALESCE(r.vehiculo_id, t.vehiculo_id)

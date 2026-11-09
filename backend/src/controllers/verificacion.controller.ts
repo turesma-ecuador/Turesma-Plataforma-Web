@@ -3,6 +3,7 @@ export {};
 const pool = require("../config/db");
 const multer = require("multer");
 const { uploadImage } = require("../config/storage");
+const { normalizeIdentification } = require("../config/identificacion");
 
 const verificationUpload = multer({
   storage: multer.memoryStorage(),
@@ -42,30 +43,29 @@ const enviarVerificacion = async (req: any, res: any) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: "No autenticado" });
 
-  const cedula = typeof req.body.cedula === "string" ? req.body.cedula.trim() : "";
+  const identification = normalizeIdentification(
+    req.body.tipo_identificacion || "cedula",
+    req.body.cedula
+  );
+  const cedula = identification.value;
   const cedulaUrl = typeof req.body.cedula_url === "string" ? req.body.cedula_url.trim() : "";
   const selfieUrl = typeof req.body.selfie_cedula_url === "string" ? req.body.selfie_cedula_url.trim() : "";
 
-  if (!/^\d{10}$/.test(cedula)) {
-    return res.status(400).json({ error: "La cédula debe tener 10 dígitos" });
-  }
-  if (!cedulaUrl || !selfieUrl) return res.status(400).json({ error: "Debes subir la cédula y la selfie sosteniendo la cédula" });
+  if (!cedula) return res.status(400).json({ error: identification.error });
+  if (!cedulaUrl || !selfieUrl) return res.status(400).json({ error: "Debes subir tu documento de identificación y una selfie sosteniéndolo" });
   try {
     await pool.query(
       `UPDATE usuarios
-       SET cedula = $1, cedula_url = $2, selfie_cedula_url = $3, estado_verificacion = 'pendiente',
+       SET cedula = $1, tipo_identificacion = $2, cedula_url = $3, selfie_cedula_url = $4, estado_verificacion = 'pendiente',
            notas_verificacion = NULL, fecha_verificacion = NULL, verificado_por = NULL
-       WHERE id = $4`,
-      [cedula, cedulaUrl, selfieUrl, userId]
+       WHERE id = $5`,
+      [cedula, identification.type, cedulaUrl, selfieUrl, userId]
     );
 
-    const userRes = await pool.query("SELECT nombre, email FROM usuarios WHERE id = $1", [userId]);
-    const user = userRes.rows[0];
     return res.status(200).json({ message: "Tus documentos fueron enviados para revisión." });
   } catch (error: any) {
-    // 23505 = violación de unicidad: esa cédula ya está en otra cuenta.
     if (error?.code === "23505") {
-      return res.status(409).json({ error: "La cédula ya se encuentra registrada. Si crees que es un error, comunícate con un administrador." });
+      return res.status(409).json({ error: "El número de identificación ya se encuentra registrado. Si crees que es un error, comunícate con un administrador." });
     }
     console.error("Error enviando verificación:", error);
     return res.status(500).json({ error: "Error interno del servidor" });
@@ -79,7 +79,7 @@ const miVerificacion = async (req: any, res: any) => {
 
   try {
     const r = await pool.query(
-      `      SELECT cedula, cedula_url, selfie_cedula_url, email_verified_at, pending_email,
+      `      SELECT cedula, tipo_identificacion, cedula_url, selfie_cedula_url, email_verified_at, pending_email,
               COALESCE(estado_verificacion, 'no_verificado') AS estado_verificacion,
               notas_verificacion, fecha_verificacion
        FROM usuarios WHERE id = $1 LIMIT 1`,

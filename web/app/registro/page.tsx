@@ -40,6 +40,7 @@ export default function RegistroPage() {
     nombre: "",
     email: "",
     telefono: "",
+    tipoIdentificacion: "cedula",
     cedula: "",
     password: "",
     confirmarPassword: "",
@@ -100,8 +101,18 @@ export default function RegistroPage() {
       setError("Debes ingresar un numero de telefono");
       return;
     }
-    if (!/^\d{10}$/.test(form.cedula.trim())) {
-      setError("La cédula debe tener 10 dígitos");
+    const identification = form.cedula.trim();
+    const validIdentification = form.tipoIdentificacion === "cedula"
+      ? /^\d{10}$/.test(identification)
+      : form.tipoIdentificacion === "ruc"
+        ? /^\d{13}$/.test(identification)
+        : /^[A-Z0-9]{5,20}$/.test(identification);
+    if (!validIdentification) {
+      setError(form.tipoIdentificacion === "cedula"
+        ? "La cédula debe tener 10 dígitos"
+        : form.tipoIdentificacion === "ruc"
+          ? "El RUC debe tener 13 dígitos"
+          : "El pasaporte debe tener entre 5 y 20 letras o números");
       return;
     }
 
@@ -117,6 +128,7 @@ export default function RegistroPage() {
           nombre: form.nombre.trim(),
           email: form.email.trim().toLowerCase(),
           telefono: form.telefono.trim(),
+          tipo_identificacion: form.tipoIdentificacion,
           cedula: form.cedula.trim(),
           password: form.password,
           foto_url: fotoUrl,
@@ -195,7 +207,9 @@ export default function RegistroPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* NOMBRE */}
             <div className="space-y-1.5">
-              <label htmlFor="register-name" className="text-xs font-bold text-slate-700">Nombre completo</label>
+              <label htmlFor="register-name" className="text-xs font-bold text-slate-700">
+                {form.tipoIdentificacion === "ruc" ? "Nombre o razón social" : "Nombre completo"}
+              </label>
               <div className="relative group">
                 <User size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E31E24] transition-colors" />
                 <input
@@ -249,12 +263,29 @@ export default function RegistroPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="register-id" className="text-xs font-bold text-slate-700">Número de cédula</label>
+                <label htmlFor="register-id-type" className="text-xs font-bold text-slate-700">Tipo de identificación</label>
+                <select
+                  id="register-id-type"
+                  value={form.tipoIdentificacion}
+                  onChange={(e) => setForm((prev) => ({
+                    ...prev,
+                    tipoIdentificacion: e.target.value,
+                    cedula: "",
+                  }))}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm text-slate-900 outline-none focus:border-[#E31E24] focus:bg-white focus:ring-4 focus:ring-red-100"
+                >
+                  <option value="cedula">Cédula ecuatoriana</option>
+                  <option value="pasaporte">Pasaporte</option>
+                  <option value="ruc">RUC ecuatoriano</option>
+                </select>
+                <label htmlFor="register-id" className="text-xs font-bold text-slate-700">
+                  {form.tipoIdentificacion === "cedula" ? "Número de cédula" : form.tipoIdentificacion === "ruc" ? "Número de RUC" : "Número de pasaporte"}
+                </label>
                 <div className="relative group">
                   <IdCard size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E31E24] transition-colors" />
-                  <input id="register-id" type="text" required inputMode="numeric" maxLength={10} value={form.cedula}
-                    onChange={(e) => setForm((prev) => ({ ...prev, cedula: e.target.value.replace(/\D/g, "").slice(0, 10) }))}
-                    placeholder="10 dígitos"
+                  <input id="register-id" type="text" required inputMode={form.tipoIdentificacion === "pasaporte" ? "text" : "numeric"} maxLength={form.tipoIdentificacion === "cedula" ? 10 : form.tipoIdentificacion === "ruc" ? 13 : 20} value={form.cedula}
+                    onChange={(e) => setForm((prev) => ({ ...prev, cedula: prev.tipoIdentificacion === "pasaporte" ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) : e.target.value.replace(/\D/g, "").slice(0, prev.tipoIdentificacion === "cedula" ? 10 : 13) }))}
+                    placeholder={form.tipoIdentificacion === "cedula" ? "10 dígitos" : form.tipoIdentificacion === "ruc" ? "13 dígitos" : "5 a 20 letras o números"}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-4 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 hover:border-slate-300 focus:border-[#E31E24] focus:bg-white focus:ring-4 focus:ring-red-100" />
                 </div>
               </div>

@@ -248,7 +248,7 @@ function AdminCotizacionesContent() {
           <p class="cliname">${escapeReportHtml(d.cliente.nombre || "")}</p>
           <p class="prof">PROFORMA. ${escapeReportHtml(d.numero)}</p>
         </div>
-        <p class="dato"><b>${d.cliente.cedula && String(d.cliente.cedula).length === 13 ? "RUC" : "CÉDULA"}:</b>&nbsp;&nbsp;${escapeReportHtml(d.cliente.cedula || "—")}</p>
+        <p class="dato"><b>${d.cliente.tipo_identificacion === "pasaporte" ? "PASAPORTE" : d.cliente.tipo_identificacion === "ruc" || (!d.cliente.tipo_identificacion && String(d.cliente.cedula || "").length === 13) ? "RUC" : "CÉDULA"}:</b>&nbsp;&nbsp;${escapeReportHtml(d.cliente.cedula || "—")}</p>
         <p class="dato"><b>FECHA:</b>&nbsp;&nbsp;${escapeReportHtml(fmtFechaProf(d.fecha))}</p>
 
         <table>

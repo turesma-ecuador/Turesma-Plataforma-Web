@@ -15,7 +15,7 @@ const listarVerificaciones = async (req: any, res: any) => {
     const params = estado && estado !== "todos" ? [estado] : [];
 
     const result = await pool.query(
-      `SELECT u.id, u.nombre, u.email, u.telefono, u.cedula, u.cedula_url, u.selfie_cedula_url,
+      `SELECT u.id, u.nombre, u.email, u.telefono, u.cedula, u.tipo_identificacion, u.cedula_url, u.selfie_cedula_url,
               COALESCE(u.estado_verificacion, 'no_verificado') AS estado_verificacion,
               u.notas_verificacion, u.fecha_verificacion
        FROM usuarios u
@@ -114,7 +114,7 @@ const rechazarVerificacion = async (req: any, res: any) => {
     await crearNotificacion(
       req.user?.id,
       clienteId,
-      `Tu verificación de identidad fue RECHAZADA${notas ? ": " + notas : ""}. Puedes volver a enviar tu cédula.`,
+      `Tu verificación de identidad fue RECHAZADA${notas ? ": " + notas : ""}. Puedes volver a enviar tu documento.`,
       null,
       null,
       null

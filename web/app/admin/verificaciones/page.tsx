@@ -13,7 +13,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 type Verificacion = {
   id: number; nombre: string; email: string; telefono: string | null;
-  cedula: string | null; cedula_url: string | null; selfie_cedula_url: string | null;
+  cedula: string | null; tipo_identificacion?: string | null; cedula_url: string | null; selfie_cedula_url: string | null;
   estado_verificacion: string; notas_verificacion: string | null; fecha_verificacion: string | null;
 };
 
@@ -168,12 +168,12 @@ export default function AdminVerificacionesPage() {
               </div>
 
               <div className="flex items-center gap-4 text-[11px] text-slate-500">
-                <span className="flex items-center gap-1.5"><IdCard size={13} className="text-slate-400" /> {v.cedula || "—"}</span>
+                <span className="flex items-center gap-1.5"><IdCard size={13} className="text-slate-400" /> {(v.tipo_identificacion || "cedula").toUpperCase()}: {v.cedula || "—"}</span>
                 {v.telefono && <span className="flex items-center gap-1.5"><Phone size={13} className="text-slate-400" /> {v.telefono}</span>}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                {[{ url: v.cedula_url, label: "Cédula" }, { url: v.selfie_cedula_url, label: "Selfie con cédula" }].map(doc => doc.url ? (
+                {[{ url: v.cedula_url, label: "Documento de identidad" }, { url: v.selfie_cedula_url, label: "Selfie sosteniendo el documento" }].map(doc => doc.url ? (
                   <button key={doc.label} onClick={() => setZoomImg(doc.url)} className="block">
                     <VerificationImage src={doc.url} alt={doc.label} className="w-full h-32 object-cover rounded-xl border border-slate-200 hover:opacity-80 transition-all" />
                     <span className="text-[10px] text-slate-500">{doc.label}</span>

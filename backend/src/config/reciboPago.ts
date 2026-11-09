@@ -29,7 +29,8 @@ const obtenerPagoAprobado = async (pagoId: number, usuarioId?: number) => {
     `SELECT p.id, p.reserva_id, p.monto, p.metodo, p.proveedor_id, p.creado_en,
             p.revisado_en, r.total AS reserva_total, r.monto_pagado,
             r.estado_pago, r.origen, r.destino, u.nombre AS cliente_nombre,
-            u.email AS cliente_email, u.cedula AS cliente_cedula
+            u.email AS cliente_email, u.cedula AS cliente_cedula,
+            u.tipo_identificacion AS cliente_tipo_identificacion
      FROM pagos_reserva p
      JOIN reservas r ON r.id = p.reserva_id
      JOIN usuarios u ON u.id = p.usuario_id
@@ -74,7 +75,7 @@ const generarReciboPago = (pago: any): Promise<Buffer> => new Promise((resolve, 
       ["N.° de recibo", `REC-${String(pago.id).padStart(6, "0")}`],
       ["Fecha de pago aprobado", fmtFecha(pago.revisado_en || pago.creado_en)],
       ["Cliente", String(pago.cliente_nombre || "—")],
-      ["Cédula", String(pago.cliente_cedula || "—")],
+      [pago.cliente_tipo_identificacion === "pasaporte" ? "Pasaporte" : pago.cliente_tipo_identificacion === "ruc" ? "RUC" : "Cédula", String(pago.cliente_cedula || "—")],
       ["Correo", String(pago.cliente_email || "—")],
       ["Reserva", `#${pago.reserva_id}`],
       ["Ruta", `${pago.origen || "—"} -> ${pago.destino || "—"}`],

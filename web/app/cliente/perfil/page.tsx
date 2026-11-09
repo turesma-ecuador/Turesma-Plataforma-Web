@@ -14,7 +14,7 @@ import { LocalizedContent } from "../../../lib/i18n";
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 type Perfil = { id: number; nombre: string; email: string; pending_email?: string | null; rol: string; telefono?: string | null; imagen_url?: string | null };
-type Verif = { estado_verificacion: string; cedula: string | null; cedula_url?: string | null; selfie_cedula_url?: string | null; email_verified_at?: string | null; pending_email?: string | null; notas_verificacion: string | null };
+type Verif = { estado_verificacion: string; cedula: string | null; tipo_identificacion?: string | null; cedula_url?: string | null; selfie_cedula_url?: string | null; email_verified_at?: string | null; pending_email?: string | null; notas_verificacion: string | null };
 
 const INPUT = "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition-all focus:border-[#E31E24] focus:ring-2 focus:ring-[#E31E24]/10 disabled:bg-slate-50 disabled:text-slate-400";
 
@@ -43,6 +43,7 @@ export default function ClientePerfilPage() {
   // Verificación de identidad
   const [verif, setVerif] = useState<Verif | null>(null);
   const [cedula, setCedula] = useState("");
+  const [tipoIdentificacion, setTipoIdentificacion] = useState("cedula");
   const [cedulaFile, setCedulaFile] = useState<File | null>(null);
   const [selfieFile, setSelfieFile] = useState<File | null>(null);
   const [enviandoVerif, setEnviandoVerif] = useState(false);
@@ -59,7 +60,7 @@ export default function ClientePerfilPage() {
       const vres = await fetch(`${API}/api/usuarios/verificacion`, { headers: getAuthHeaders() });
       if (vres.ok) {
         const vd: Verif = await vres.json();
-        setVerif(vd); setCedula(vd.cedula || "");
+        setVerif(vd); setCedula(vd.cedula || ""); setTipoIdentificacion(vd.tipo_identificacion || "cedula");
       }
     } catch { /* silencio */ }
     finally { setLoading(false); }
@@ -117,8 +118,13 @@ export default function ClientePerfilPage() {
 
   const enviarVerif = async () => {
     setErr(""); setMsg("");
-    if (!/^\d{10}$/.test(cedula.trim())) { setErr("La cédula debe tener 10 dígitos"); return; }
-    if (!cedulaFile || !selfieFile) { setErr("Debes adjuntar una foto de la cédula y una selfie sosteniendo la cédula"); return; }
+    const validIdentification = tipoIdentificacion === "cedula"
+      ? /^\d{10}$/.test(cedula.trim())
+      : tipoIdentificacion === "ruc"
+        ? /^\d{13}$/.test(cedula.trim())
+        : /^[A-Z0-9]{5,20}$/.test(cedula.trim().toUpperCase());
+    if (!validIdentification) { setErr("Revisa el tipo y formato de tu identificación"); return; }
+    if (!cedulaFile || !selfieFile) { setErr("Debes adjuntar una foto de tu documento de identificación y una selfie sosteniéndolo"); return; }
     setEnviandoVerif(true);
     try {
       const subir = async (file: File, tipo: string) => {
@@ -134,12 +140,12 @@ export default function ClientePerfilPage() {
       const selfieUrl = await subir(selfieFile, "selfie");
       const res = await fetch(`${API}/api/usuarios/verificacion`, {
         method: "POST", headers: getAuthHeaders(),
-        body: JSON.stringify({ cedula: cedula.trim(), cedula_url: cedulaUrl, selfie_cedula_url: selfieUrl }),
+        body: JSON.stringify({ cedula: cedula.trim(), tipo_identificacion: tipoIdentificacion, cedula_url: cedulaUrl, selfie_cedula_url: selfieUrl }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "No se pudo enviar");
       setMsg(data.message || "Documento enviado para verificación");
-      setVerif({ estado_verificacion: "pendiente", cedula: cedula.trim(), cedula_url: cedulaUrl, selfie_cedula_url: selfieUrl, notas_verificacion: null });
+      setVerif({ estado_verificacion: "pendiente", cedula: cedula.trim(), tipo_identificacion: tipoIdentificacion, cedula_url: cedulaUrl, selfie_cedula_url: selfieUrl, notas_verificacion: null });
     } catch (e) { setErr(e instanceof Error ? e.message : "Error inesperado"); }
     finally { setEnviandoVerif(false); }
   };
@@ -193,20 +199,28 @@ export default function ClientePerfilPage() {
         ) : estado === "pendiente" ? (
           <div className="flex items-center gap-3 bg-amber-50 rounded-xl p-4 text-amber-700">
             <Clock size={22} className="shrink-0" />
-            <p className="text-sm font-medium">Tus fotos están en revisión. El administrador verificará tu cédula y tu selfie.</p>
+            <p className="text-sm font-medium">Tus fotos están en revisión. El administrador verificará tu documento y tu selfie.</p>
           </div>
         ) : (
           <>
-            <p className="text-xs text-slate-500">Para solicitar servicios necesitas verificar tu identidad. Sube una foto clara de tu cédula y una selfie sosteniéndola; luego confirma tu correo electrónico.</p>
+            <p className="text-xs text-slate-500">Para solicitar servicios necesitas verificar tu identidad. Sube una foto clara de tu documento y una selfie sosteniéndolo; luego confirma tu correo electrónico.</p>
             {estado === "rechazado" && verif?.notas_verificacion && (
               <div className="flex items-start gap-2 bg-red-50 rounded-lg p-3 text-red-600 text-xs font-medium">
                 <XCircle size={16} className="shrink-0 mt-0.5" /> Rechazado: {verif.notas_verificacion}. Vuelve a intentarlo.
               </div>
             )}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-500">Número de cédula</label>
+              <label className="text-xs font-semibold text-slate-500">Tipo de identificación</label>
+              <select value={tipoIdentificacion} onChange={e => setTipoIdentificacion(e.target.value)} className={INPUT}>
+                <option value="cedula">Cédula ecuatoriana</option>
+                <option value="pasaporte">Pasaporte</option>
+                <option value="ruc">RUC ecuatoriano</option>
+              </select>
+              <label className="text-xs font-semibold text-slate-500">
+                {tipoIdentificacion === "cedula" ? "Número de cédula" : tipoIdentificacion === "ruc" ? "Número de RUC" : "Número de pasaporte"}
+              </label>
               <div className="relative"><IdCard size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-                <input value={cedula} onChange={e => setCedula(e.target.value.replace(/\D/g, "").slice(0, 10))} className={INPUT + " pl-9"} placeholder="10 dígitos" inputMode="numeric" />
+                <input value={cedula} onChange={e => setCedula(tipoIdentificacion === "pasaporte" ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) : e.target.value.replace(/\D/g, "").slice(0, tipoIdentificacion === "cedula" ? 10 : 13))} className={INPUT + " pl-9"} placeholder={tipoIdentificacion === "cedula" ? "10 dígitos" : tipoIdentificacion === "ruc" ? "13 dígitos" : "5 a 20 letras o números"} inputMode={tipoIdentificacion === "pasaporte" ? "text" : "numeric"} />
               </div>
             </div>
 
@@ -227,12 +241,12 @@ export default function ClientePerfilPage() {
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <label className="rounded-xl border border-dashed border-slate-300 p-4 text-xs text-slate-500 cursor-pointer hover:border-[#E31E24]">
-                <span className="font-semibold block mb-1">Foto frontal de cédula</span>
+                <span className="font-semibold block mb-1">Foto frontal del documento</span>
                 <span>{cedulaFile?.name || "Seleccionar imagen"}</span>
                 <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => setCedulaFile(e.target.files?.[0] || null)} />
               </label>
               <label className="rounded-xl border border-dashed border-slate-300 p-4 text-xs text-slate-500 cursor-pointer hover:border-[#E31E24]">
-                <span className="font-semibold block mb-1">Selfie sosteniendo la cédula</span>
+                <span className="font-semibold block mb-1">Selfie sosteniendo el documento</span>
                 <span>{selfieFile?.name || "Seleccionar imagen"}</span>
                 <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => setSelfieFile(e.target.files?.[0] || null)} />
               </label>

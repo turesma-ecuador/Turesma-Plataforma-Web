@@ -27,6 +27,7 @@ type Cliente = {
   email: string;
   telefono: string | null;
   cedula?: string | null;
+  tipo_identificacion?: "cedula" | "pasaporte" | "ruc" | null;
   imagen_url?: string | null;
   pending_email?: string | null;
   email_verified_at?: string | null;
@@ -44,7 +45,7 @@ type ReservaCliente = {
 
 const INPUT = "w-full rounded-xl border-2 border-slate-100 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 outline-none transition-all focus:border-[#E31E24] focus:bg-white placeholder:font-normal";
 
-const EMPTY: Partial<Cliente> = { nombre: "", email: "", telefono: "", cedula: "", imagen_url: null };
+const EMPTY: Partial<Cliente> = { nombre: "", email: "", telefono: "", tipo_identificacion: "cedula", cedula: "", imagen_url: null };
 
 export default function AdminClientesPage() {
   const { user, checkingSession } = useAdminGuard();
@@ -206,7 +207,7 @@ export default function AdminClientesPage() {
 
   const openNew = () => { setForm(EMPTY); setFormPass(""); setFormConfirmPass(""); setEditId(null); setModal(true); };
   const openEdit = (c: Cliente) => {
-    setForm({ nombre: c.nombre, email: c.email, telefono: c.telefono ?? "", cedula: c.cedula ?? "", imagen_url: c.imagen_url ?? null });
+    setForm({ nombre: c.nombre, email: c.email, telefono: c.telefono ?? "", tipo_identificacion: c.tipo_identificacion ?? "cedula", cedula: c.cedula ?? "", imagen_url: c.imagen_url ?? null });
     setFormPass("");
     setFormConfirmPass("");
     setEditId(c.id);
@@ -234,6 +235,7 @@ export default function AdminClientesPage() {
         email: form.email || "",
         telefono: form.telefono || "",
         cedula: form.cedula || "",
+        tipo_identificacion: form.tipo_identificacion || "cedula",
         imagen_url: form.imagen_url || null,
         rol: "cliente",
         ...(!editId ? { password: formPass } : {}),
@@ -486,8 +488,16 @@ export default function AdminClientesPage() {
                 <input className={INPUT} required value={form.telefono ?? ""} onChange={(e) => setForm({ ...form, telefono: e.target.value })} placeholder="0999999999" />
               </div>
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">Número de cédula</label>
-                <input className={INPUT} required maxLength={10} inputMode="numeric" value={form.cedula ?? ""} onChange={(e) => setForm({ ...form, cedula: e.target.value.replace(/\D/g, "").slice(0, 10) })} placeholder="10 dígitos" />
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">Tipo de identificación</label>
+                <select className={INPUT} value={form.tipo_identificacion ?? "cedula"} onChange={(e) => setForm({ ...form, tipo_identificacion: e.target.value as NonNullable<Cliente["tipo_identificacion"]>, cedula: "" })}>
+                  <option value="cedula">Cédula ecuatoriana</option>
+                  <option value="pasaporte">Pasaporte</option>
+                  <option value="ruc">RUC ecuatoriano</option>
+                </select>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
+                  {form.tipo_identificacion === "cedula" ? "Número de cédula" : form.tipo_identificacion === "ruc" ? "Número de RUC" : "Número de pasaporte"}
+                </label>
+                <input className={INPUT} required maxLength={form.tipo_identificacion === "cedula" ? 10 : form.tipo_identificacion === "ruc" ? 13 : 20} inputMode={form.tipo_identificacion === "pasaporte" ? "text" : "numeric"} value={form.cedula ?? ""} onChange={(e) => setForm({ ...form, cedula: form.tipo_identificacion === "pasaporte" ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) : e.target.value.replace(/\D/g, "").slice(0, form.tipo_identificacion === "cedula" ? 10 : 13) })} placeholder={form.tipo_identificacion === "cedula" ? "10 dígitos" : form.tipo_identificacion === "ruc" ? "13 dígitos" : "5 a 20 letras o números"} />
               </div>
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">Foto de perfil (opcional)</label>
