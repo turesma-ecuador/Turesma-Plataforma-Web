@@ -4,7 +4,7 @@ import "./globals.css";
 import { ConfirmProvider } from "../components/confirm-dialog";
 import { LocaleProvider } from "../lib/i18n";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, "");
+const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://turesma.com").replace(/\/+$/, "");
 
 export const metadata: Metadata = {
   metadataBase: siteUrl ? new URL(siteUrl) : undefined,
