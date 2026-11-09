@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
@@ -16,6 +17,7 @@ import {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 export default function RecuperarPasswordPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [pin, setPin] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -83,9 +85,7 @@ export default function RecuperarPasswordPage() {
         throw new Error(data.error || "No se pudo actualizar la contraseña");
       }
 
-      setMessage(data.message || "Contraseña actualizada correctamente");
-      setPin("");
-      setNewPassword("");
+      router.replace("/login");
     } catch (submitError) {
       setError(
         submitError instanceof Error

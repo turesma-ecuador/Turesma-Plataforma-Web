@@ -149,14 +149,26 @@ const register = async (req, res) => {
     );
 
     const newUser = result.rows[0];
+    let verificationSent = false;
     try {
-      await createEmailVerification(newUser.id, newUser.email, newUser.nombre);
+      const delivery = await createEmailVerification(newUser.id, newUser.email, newUser.nombre);
+      verificationSent = delivery?.sent === true;
+      if (!verificationSent) {
+        console.error("No se pudo enviar la verificación de correo al registrar usuario:", {
+          userId: newUser.id,
+          reason: delivery?.reason || "unknown",
+          code: delivery?.code,
+        });
+      }
     } catch (mailError) {
       console.error("Error enviando verificación por correo:", mailError);
     }
 
     return res.status(201).json({
-      message: "Cuenta creada correctamente. Verifica tu correo antes de iniciar sesión.",
+      message: verificationSent
+        ? "Cuenta creada correctamente. Verifica tu correo antes de iniciar sesión."
+        : "La cuenta se creó, pero no se pudo enviar el enlace de verificación. Contacta al administrador para revisar el envío.",
+      verification_sent: verificationSent,
       user: newUser,
     });
   } catch (error) {

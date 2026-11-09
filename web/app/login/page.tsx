@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Mail,
   Lock,
@@ -25,12 +25,16 @@ import {
 } from "../../lib/session";
 import AuthCarousel from "../../components/auth-carousel";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [error, setError] = useState("");
+  const registrationNotice = searchParams.get("registro") === "exitoso"
+    ? "Cuenta creada correctamente. Revisa tu correo y verifica la cuenta antes de iniciar sesión."
+    : "";
   const [fieldErrors, setFieldErrors] = useState<{ email: string; password: string }>({ email: "", password: "" });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -174,6 +178,13 @@ export default function LoginPage() {
               </div>
             )}
 
+            {registrationNotice && (
+              <div role="status" className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
+                <Mail size={18} className="mt-0.5 shrink-0" />
+                <span>{registrationNotice}</span>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <div className="space-y-2">
                 <label htmlFor="login-email" className="text-xs font-bold text-slate-700">Correo electrónico</label>
@@ -282,5 +293,13 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-white flex items-center justify-center p-6"><Loader2 size={28} className="animate-spin text-[#E31E24]" /></main>}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

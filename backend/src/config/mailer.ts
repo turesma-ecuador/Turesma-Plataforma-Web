@@ -39,7 +39,16 @@ const getMailTransporter = () => {
 const enviarCorreo = async ({ to, subject, html, text, attachments }: { to: string; subject: string; html?: string; text?: string; attachments?: any[] }) => {
   try {
     const transporter = getMailTransporter();
-    if (!transporter || !to) return { sent: false, reason: "not_configured" };
+    if (!transporter || !to) {
+      const missing = [
+        !process.env.SMTP_SERVICE && !process.env.SMTP_HOST ? "SMTP_SERVICE or SMTP_HOST" : null,
+        !process.env.SMTP_USER ? "SMTP_USER" : null,
+        !process.env.SMTP_PASS ? "SMTP_PASS" : null,
+        !to ? "recipient" : null,
+      ].filter(Boolean);
+      console.error(`Email not sent; missing configuration: ${missing.join(", ") || "transporter unavailable"}`);
+      return { sent: false, reason: "not_configured" };
+    }
 
     await transporter.sendMail({
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
@@ -51,8 +60,10 @@ const enviarCorreo = async ({ to, subject, html, text, attachments }: { to: stri
     });
     return { sent: true };
   } catch (e: any) {
-    console.error("Error enviando correo:", e?.message || e);
-    return { sent: false, reason: "error" };
+    const code = typeof e?.code === "string" ? e.code : undefined;
+    const command = typeof e?.command === "string" ? e.command : undefined;
+    console.error("Error enviando correo:", { code, command, message: e?.message || String(e) });
+    return { sent: false, reason: "error", code };
   }
 };
 

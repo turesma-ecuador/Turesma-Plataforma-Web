@@ -33,6 +33,7 @@ export default function RegistroPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [verificationDeliveryFailed, setVerificationDeliveryFailed] = useState(false);
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -83,6 +84,7 @@ export default function RegistroPage() {
     e.preventDefault();
     setError("");
     setSuccess("");
+    setVerificationDeliveryFailed(false);
 
     if (!passwordMatch) {
       setError("Las contrasenas no coinciden");
@@ -127,11 +129,17 @@ export default function RegistroPage() {
         throw new Error(data?.error || "No se pudo crear la cuenta");
       }
 
-      setSuccess("Cuenta creada correctamente. Te redirigimos al login...");
+      if (data.verification_sent === false) {
+        setVerificationDeliveryFailed(true);
+        setSuccess(data.message || "La cuenta se creó, pero no se pudo enviar el enlace de verificación. Contacta al administrador.");
+        return;
+      }
+
+      setSuccess(data.message || "Cuenta creada correctamente. Revisa tu correo para verificarla.");
 
       setTimeout(() => {
-        router.push("/login");
-      }, 1300);
+        router.push("/login?registro=exitoso");
+      }, 1800);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Ocurrio un error inesperado");
     } finally {
@@ -178,8 +186,8 @@ export default function RegistroPage() {
           )}
 
           {success && (
-            <div role="status" className="mb-6 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-700">
-              <CheckCircle2 size={18} className="shrink-0" />
+            <div role="status" className={`mb-6 flex items-center gap-3 rounded-xl border p-4 text-sm font-medium ${verificationDeliveryFailed ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+              {verificationDeliveryFailed ? <AlertCircle size={18} className="shrink-0" /> : <CheckCircle2 size={18} className="shrink-0" />}
               {success}
             </div>
           )}
