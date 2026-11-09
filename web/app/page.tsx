@@ -638,10 +638,10 @@ export default function RootPage() {
         <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 lg:flex lg:items-center">
           <div className="lg:w-2/3">
             <h1 className="hero-intro hero-intro-title mb-6 text-5xl font-black leading-[1.1] tracking-tight text-white md:text-8xl italic">
-              TRANSPORTE TURÍSTICO <span className="text-yellow-400">EN MANTA.</span>
+              VIAJA CON <span className="text-yellow-400">EXCELENCIA.</span>
             </h1>
             <p className="hero-intro hero-intro-copy mb-10 max-w-2xl text-xl font-medium leading-relaxed text-gray-300 md:text-2xl">
-              Transporte ejecutivo, empresarial y logístico desde Manta a todo Ecuador. Puntualidad, confort y seguridad en cada recorrido.
+              Soluciones de transporte de alta gama en Manta. Puntualidad, confort y seguridad en cada kilómetro del Ecuador.
             </p>
             <div className="hero-intro hero-intro-actions flex flex-wrap gap-4">
               <a href="#flota" onClick={(event) => scrollToSection(event, "flota")} className="home-button group flex items-center gap-3 rounded-2xl bg-white px-8 py-4 font-black uppercase tracking-widest text-black transition-all hover:bg-yellow-400">
