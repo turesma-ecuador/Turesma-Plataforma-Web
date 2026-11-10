@@ -9,7 +9,7 @@ import {
   Images, Loader2, UploadCloud, Trash2, Eye, EyeOff, X, Plus, CheckCircle2, Video, MapPin, GripVertical, ArrowUpRight,
 } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = process.env.NEXT_PUBLIC_API_URL || "https://api.turesma.com";
 
 const createVideoPoster = (file: File): Promise<Blob | null> => new Promise((resolve) => {
   const sourceUrl = URL.createObjectURL(file);
