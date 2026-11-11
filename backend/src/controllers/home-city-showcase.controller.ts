@@ -86,7 +86,7 @@ const updateHomeCityShowcase = async (req: any, res: any) => {
          primary_position_x, primary_position_y, primary_zoom,
          secondary_position_x, secondary_position_y, secondary_zoom,
          eyebrow, title, description, label, actualizado_en)
-       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
        ON CONFLICT (id) DO UPDATE SET
          primary_image_url = EXCLUDED.primary_image_url,
          secondary_image_url = EXCLUDED.secondary_image_url,
