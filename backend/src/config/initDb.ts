@@ -1370,12 +1370,28 @@ const initDatabase = async () => {
       secondary_image_url TEXT NOT NULL,
       primary_alt VARCHAR(300) NOT NULL,
       secondary_alt VARCHAR(300) NOT NULL,
+      primary_position_x NUMERIC(5,2) NOT NULL DEFAULT 50,
+      primary_position_y NUMERIC(5,2) NOT NULL DEFAULT 50,
+      primary_zoom NUMERIC(5,2) NOT NULL DEFAULT 100,
+      secondary_position_x NUMERIC(5,2) NOT NULL DEFAULT 50,
+      secondary_position_y NUMERIC(5,2) NOT NULL DEFAULT 50,
+      secondary_zoom NUMERIC(5,2) NOT NULL DEFAULT 100,
       eyebrow VARCHAR(180) NOT NULL,
       title VARCHAR(300) NOT NULL,
       description TEXT NOT NULL,
       label VARCHAR(180) NOT NULL,
       actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE homepage_city_showcase
+      ADD COLUMN IF NOT EXISTS primary_position_x NUMERIC(5,2) NOT NULL DEFAULT 50,
+      ADD COLUMN IF NOT EXISTS primary_position_y NUMERIC(5,2) NOT NULL DEFAULT 50,
+      ADD COLUMN IF NOT EXISTS primary_zoom NUMERIC(5,2) NOT NULL DEFAULT 100,
+      ADD COLUMN IF NOT EXISTS secondary_position_x NUMERIC(5,2) NOT NULL DEFAULT 50,
+      ADD COLUMN IF NOT EXISTS secondary_position_y NUMERIC(5,2) NOT NULL DEFAULT 50,
+      ADD COLUMN IF NOT EXISTS secondary_zoom NUMERIC(5,2) NOT NULL DEFAULT 100;
   `);
 
   await pool.query(`

@@ -65,6 +65,12 @@ type HomeCityShowcase = {
   secondary_image_url: string;
   primary_alt: string;
   secondary_alt: string;
+  primary_position_x: number;
+  primary_position_y: number;
+  primary_zoom: number;
+  secondary_position_x: number;
+  secondary_position_y: number;
+  secondary_zoom: number;
   eyebrow: string;
   title: string;
   description: string;
@@ -320,6 +326,12 @@ export default function RootPage() {
     secondary_image_url: "/manta-flag.png",
     primary_alt: "Vista de la costa y la ciudad de Manta, Ecuador",
     secondary_alt: "Bandera y escudo de Manta frente a la costa de la ciudad",
+    primary_position_x: 50,
+    primary_position_y: 50,
+    primary_zoom: 100,
+    secondary_position_x: 50,
+    secondary_position_y: 50,
+    secondary_zoom: 100,
     eyebrow: "Desde Manta para el Ecuador",
     title: "Una empresa que conecta personas, destinos y experiencias en todo el Ecuador.",
     description: "En TURESMA S.A. redefinimos el transporte turístico con un compromiso inquebrantable con la seguridad y la elegancia. Nuestra operación nace en Manta y acompaña cada recorrido con servicio, comodidad y confianza.",
@@ -814,7 +826,10 @@ export default function RootPage() {
                 sizes="(max-width: 1024px) 100vw, 55vw"
                 quality={95}
                 className="object-cover brightness-105 saturate-[1.08] transition-transform duration-700 hover:scale-105"
-                style={{ objectPosition: "62% center" }}
+                style={{
+                  objectPosition: `${cityShowcase.primary_position_x}% ${cityShowcase.primary_position_y}%`,
+                  transform: `scale(${cityShowcase.primary_zoom / 100})`,
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent" />
                 <figcaption className="absolute bottom-3 left-4 text-[10px] font-medium text-white/65 drop-shadow-md">
@@ -829,6 +844,10 @@ export default function RootPage() {
                   sizes="(max-width: 640px) 128px, 160px"
                   quality={95}
                   className="object-cover"
+                  style={{
+                    objectPosition: `${cityShowcase.secondary_position_x}% ${cityShowcase.secondary_position_y}%`,
+                    transform: `scale(${cityShowcase.secondary_zoom / 100})`,
+                  }}
                 />
                 <figcaption className="absolute inset-x-1 bottom-1 rounded-md bg-slate-950/65 px-1 py-1 text-center text-[8px] font-bold uppercase tracking-wide text-white">
                   Manta, Manabí

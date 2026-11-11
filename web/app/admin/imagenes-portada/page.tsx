@@ -22,6 +22,12 @@ type CityShowcase = {
   secondary_image_url: string;
   primary_alt: string;
   secondary_alt: string;
+  primary_position_x: number;
+  primary_position_y: number;
+  primary_zoom: number;
+  secondary_position_x: number;
+  secondary_position_y: number;
+  secondary_zoom: number;
   eyebrow: string;
   title: string;
   description: string;
@@ -52,6 +58,12 @@ const defaultCityShowcase: CityShowcase = {
   secondary_image_url: "/manta-flag.png",
   primary_alt: "Vista de la costa y la ciudad de Manta, Ecuador",
   secondary_alt: "Bandera y escudo de Manta frente a la costa de la ciudad",
+  primary_position_x: 50,
+  primary_position_y: 50,
+  primary_zoom: 100,
+  secondary_position_x: 50,
+  secondary_position_y: 50,
+  secondary_zoom: 100,
   eyebrow: "Desde Manta para el Ecuador",
   title: "Una empresa que conecta personas, destinos y experiencias en todo el Ecuador.",
   description: "En TURESMA S.A. redefinimos el transporte turístico con un compromiso inquebrantable con la seguridad y la elegancia. Nuestra operación nace en Manta y acompaña cada recorrido con servicio, comodidad y confianza.",
@@ -346,6 +358,10 @@ export default function AdminImagenesPortadaPage() {
     setCityPreviews((current) => ({ ...current, [slot]: preview }));
   };
 
+  const updateCityCrop = (slot: "primary" | "secondary", key: "position_x" | "position_y" | "zoom", value: number) => {
+    setCityShowcase((current) => ({ ...current, [`${slot}_${key}`]: value }));
+  };
+
   const saveCityShowcase = async () => {
     setSavingCity(true);
     setError("");
@@ -436,10 +452,18 @@ export default function AdminImagenesPortadaPage() {
           {(["primary", "secondary"] as const).map((slot) => {
             const imageKey = slot === "primary" ? "primary_image_url" : "secondary_image_url";
             const altKey = slot === "primary" ? "primary_alt" : "secondary_alt";
+            const positionX = cityShowcase[`${slot}_position_x`];
+            const positionY = cityShowcase[`${slot}_position_y`];
+            const zoom = cityShowcase[`${slot}_zoom`];
             return (
               <div key={slot} className="space-y-3 rounded-xl bg-slate-50 p-4">
                 <div className="relative h-40 overflow-hidden rounded-xl bg-slate-200">
-                  <img src={cityPreviews[slot] || cityShowcase[imageKey]} alt={cityShowcase[altKey]} className="h-full w-full object-cover" />
+                  <img
+                    src={cityPreviews[slot] || cityShowcase[imageKey]}
+                    alt={cityShowcase[altKey]}
+                    className="h-full w-full object-cover"
+                    style={{ objectPosition: `${positionX}% ${positionY}%`, transform: `scale(${zoom / 100})` }}
+                  />
                 </div>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
                   <UploadCloud size={15} /> Cambiar imagen
@@ -449,9 +473,46 @@ export default function AdminImagenesPortadaPage() {
                   Texto alternativo
                   <input value={cityShowcase[altKey]} onChange={(event) => setCityShowcase((current) => ({ ...current, [altKey]: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-800" />
                 </label>
+                <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
+                    <span>Encuadre</span>
+                    <button type="button" onClick={() => setCityShowcase((current) => ({ ...current, [`${slot}_position_x`]: 50, [`${slot}_position_y`]: 50, [`${slot}_zoom`]: 100 }))} className="text-[#E31E24]">Restablecer</button>
+                  </div>
+                  {([
+                    ["Horizontal", "position_x", 0, 100, positionX],
+                    ["Vertical", "position_y", 0, 100, positionY],
+                    ["Acercamiento", "zoom", 100, 200, zoom],
+                  ] as const).map(([label, key, min, max, value]) => (
+                    <label key={key} className="block text-[10px] font-semibold text-slate-500">
+                      <span className="flex justify-between"><span>{label}</span><span>{Math.round(value)}{key === "zoom" ? "%" : "%"}</span></span>
+                      <input type="range" min={min} max={max} value={value} onChange={(event) => updateCityCrop(slot, key, Number(event.target.value))} disabled={savingCity} className="w-full accent-[#E31E24]" />
+                    </label>
+                  ))}
+                </div>
               </div>
             );
           })}
+        </div>
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-[#f7f8fa] p-4">
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Vista previa en la sección pública</h3>
+            <p className="mt-1 text-xs text-slate-500">Así se verán las fotos dentro de “Sobre nosotros”.</p>
+          </div>
+          <div className="mx-auto flex min-h-[260px] max-w-[620px] items-center gap-5 rounded-xl bg-white p-5">
+            <div className="relative h-[220px] w-[52%] shrink-0">
+              <div className="absolute inset-y-0 left-0 right-8 overflow-hidden rounded-[2rem] bg-slate-200 shadow-lg">
+                <img src={cityPreviews.primary || cityShowcase.primary_image_url} alt="" className="h-full w-full object-cover" style={{ objectPosition: `${cityShowcase.primary_position_x}% ${cityShowcase.primary_position_y}%`, transform: `scale(${cityShowcase.primary_zoom / 100})` }} />
+              </div>
+              <div className="absolute bottom-1 right-0 top-6 w-24 overflow-hidden rounded-2xl border-4 border-white bg-slate-200 shadow-lg">
+                <img src={cityPreviews.secondary || cityShowcase.secondary_image_url} alt="" className="h-full w-full object-cover" style={{ objectPosition: `${cityShowcase.secondary_position_x}% ${cityShowcase.secondary_position_y}%`, transform: `scale(${cityShowcase.secondary_zoom / 100})` }} />
+              </div>
+            </div>
+            <div className="hidden min-w-0 md:block">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#E31E24]">{cityShowcase.eyebrow}</p>
+              <p className="mt-2 text-lg font-black leading-tight text-slate-900">{cityShowcase.title}</p>
+              <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-500">{cityShowcase.description}</p>
+            </div>
+          </div>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           {([
