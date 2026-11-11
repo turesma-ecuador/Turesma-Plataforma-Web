@@ -426,7 +426,9 @@ export default function AdminImagenesPortadaPage() {
       });
       if (handleUnauthorized(response.status)) return;
       const data = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(data?.error || "No se pudo guardar la presentación de Manta");
+      if (!response.ok) {
+        throw new Error(data?.error || `La API rechazó el guardado (HTTP ${response.status})`);
+      }
       setCityShowcase(data);
       setCityFiles({ primary: null, secondary: null });
       setCityPreviews({ primary: null, secondary: null });
