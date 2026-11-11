@@ -1495,6 +1495,36 @@ export default function RootPage() {
                 answer:
                   "Claro. Te enviamos una cotización previa sin compromiso para que conozcas tarifas, condiciones y tiempos estimados.",
               },
+              {
+                question: "¿Ofrecen transporte turístico para grupos?",
+                answer:
+                  "Sí. Ofrecemos transporte turístico para grupos desde Manta hacia destinos de Manabí y todo Ecuador. La unidad se coordina según la cantidad de pasajeros y las características del recorrido.",
+              },
+              {
+                question: "¿Realizan traslados ejecutivos desde Manta?",
+                answer:
+                  "Sí. Realizamos traslados ejecutivos, corporativos, al aeropuerto y entre ciudades, con planificación previa para cada servicio.",
+              },
+              {
+                question: "¿Ofrecen transporte para empresas y eventos?",
+                answer:
+                  "Sí. Coordinamos soluciones de transporte para empresas, congresos, bodas, eventos institucionales, grupos turísticos y recorridos especiales.",
+              },
+              {
+                question: "¿Qué alternativas de transporte tienen disponibles?",
+                answer:
+                  "Contamos con autos, camionetas, SUV, vans, minibuses y buses, sujetos a disponibilidad y al número de pasajeros.",
+              },
+              {
+                question: "¿A qué destinos realizan traslados?",
+                answer:
+                  "Operamos desde Manta hacia destinos de Manabí y otras ciudades del Ecuador. Revisamos cada ruta, fecha y disponibilidad al momento de preparar la cotización.",
+              },
+              {
+                question: "¿Qué información necesito para solicitar una cotización?",
+                answer:
+                  "Solo necesitamos la fecha, hora, origen, destino y cantidad de pasajeros. También puedes indicarnos si llevarás equipaje o si se trata de un evento o recorrido especial.",
+              },
             ].map((faq, index) => {
               const isOpen = openFaqIndex === index;
 

@@ -142,6 +142,54 @@ export default function RootLayout({
                     text: "Claro. Te enviamos una cotización previa sin compromiso para que conozcas tarifas, condiciones y tiempos estimados.",
                   },
                 },
+                {
+                  "@type": "Question",
+                  name: "¿Ofrecen transporte turístico para grupos?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Sí. Ofrecemos transporte turístico para grupos desde Manta hacia destinos de Manabí y todo Ecuador. La unidad se coordina según la cantidad de pasajeros y las características del recorrido.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "¿Realizan traslados ejecutivos desde Manta?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Sí. Realizamos traslados ejecutivos, corporativos, al aeropuerto y entre ciudades, con planificación previa para cada servicio.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "¿Ofrecen transporte para empresas y eventos?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Sí. Coordinamos soluciones de transporte para empresas, congresos, bodas, eventos institucionales, grupos turísticos y recorridos especiales.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "¿Qué alternativas de transporte tienen disponibles?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Contamos con autos, camionetas, SUV, vans, minibuses y buses, sujetos a disponibilidad y al número de pasajeros.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "¿A qué destinos realizan traslados?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Operamos desde Manta hacia destinos de Manabí y otras ciudades del Ecuador. Revisamos cada ruta, fecha y disponibilidad al momento de preparar la cotización.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "¿Qué información necesito para solicitar una cotización?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Solo necesitamos la fecha, hora, origen, destino y cantidad de pasajeros. También puedes indicarnos si llevarás equipaje o si se trata de un evento o recorrido especial.",
+                  },
+                },
               ],
             }),
           }}
