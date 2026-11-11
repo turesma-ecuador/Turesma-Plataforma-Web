@@ -136,6 +136,15 @@ export default function AdminImagenesPortadaPage() {
     width: number;
     height: number;
   } | null>(null);
+  const cityDragStart = useRef<{
+    slot: "primary" | "secondary";
+    pointerX: number;
+    pointerY: number;
+    positionX: number;
+    positionY: number;
+    width: number;
+    height: number;
+  } | null>(null);
 
   useEffect(() => {
     if (checkingSession) return;
@@ -362,6 +371,33 @@ export default function AdminImagenesPortadaPage() {
     setCityShowcase((current) => ({ ...current, [`${slot}_${key}`]: value }));
   };
 
+  const startCityDragging = (slot: "primary" | "secondary", event: ReactPointerEvent<HTMLDivElement>) => {
+    if (savingCity) return;
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cityDragStart.current = {
+      slot,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      positionX: cityShowcase[`${slot}_position_x`],
+      positionY: cityShowcase[`${slot}_position_y`],
+      width: bounds.width,
+      height: bounds.height,
+    };
+  };
+
+  const dragCityImage = (slot: "primary" | "secondary", event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = cityDragStart.current;
+    if (!start || start.slot !== slot) return;
+    updateCityCrop(slot, "position_x", clamp(start.positionX - ((event.clientX - start.pointerX) / start.width) * 100, 0, 100));
+    updateCityCrop(slot, "position_y", clamp(start.positionY - ((event.clientY - start.pointerY) / start.height) * 100, 0, 100));
+  };
+
+  const stopCityDragging = () => {
+    cityDragStart.current = null;
+  };
+
   const saveCityShowcase = async () => {
     setSavingCity(true);
     setError("");
@@ -457,13 +493,25 @@ export default function AdminImagenesPortadaPage() {
             const zoom = cityShowcase[`${slot}_zoom`];
             return (
               <div key={slot} className="space-y-3 rounded-xl bg-slate-50 p-4">
-                <div className="relative h-40 overflow-hidden rounded-xl bg-slate-200">
+                <div
+                  className="relative h-40 cursor-grab touch-none select-none overflow-hidden rounded-xl bg-slate-200 active:cursor-grabbing"
+                  onPointerDown={(event) => startCityDragging(slot, event)}
+                  onPointerMove={(event) => dragCityImage(slot, event)}
+                  onPointerUp={stopCityDragging}
+                  onPointerCancel={stopCityDragging}
+                  aria-label={`Arrastra para mover la imagen de ${slot === "primary" ? "la ciudad de Manta" : "la bandera de Manta"}`}
+                  title="Arrastra la imagen para ajustar su encuadre"
+                >
                   <img
                     src={cityPreviews[slot] || cityShowcase[imageKey]}
                     alt={cityShowcase[altKey]}
-                    className="h-full w-full object-cover"
+                    draggable={false}
+                    className="pointer-events-none h-full w-full object-cover"
                     style={{ objectPosition: `${positionX}% ${positionY}%`, transform: `scale(${zoom / 100})` }}
                   />
+                  <span className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-950/70 px-2.5 py-1 text-[10px] font-bold text-white">
+                    Arrastra para mover
+                  </span>
                 </div>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
                   <UploadCloud size={15} /> Cambiar imagen
