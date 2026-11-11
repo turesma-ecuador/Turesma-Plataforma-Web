@@ -137,6 +137,7 @@ export default function AdminReservasPage() {
   const [adminDestination, setAdminDestination] = useState<Punto | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(createEmptyForm);
+  const [savingReservation, setSavingReservation] = useState(false);
   const [prefilledClientId, setPrefilledClientId] = useState<string | null>(null);
 
   // Modal cambio de estado
@@ -288,6 +289,29 @@ export default function AdminReservasPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErr(""); setMsg("");
+    const origin = adminOrigin?.label || form.origen.trim();
+    const destination = adminDestination?.label || form.destino.trim();
+    if (!form.usuario_id) {
+      setErr("Selecciona un cliente para continuar");
+      return;
+    }
+    if (!form.fecha_reserva) {
+      setErr("Selecciona la fecha de reserva");
+      return;
+    }
+    if (!Number.isInteger(Number(form.num_personas)) || Number(form.num_personas) < 1) {
+      setErr("El número de personas debe ser al menos 1");
+      return;
+    }
+    if (!origin || !destination) {
+      setErr("Marca la salida y el destino en el mapa para continuar");
+      return;
+    }
+    if (form.fecha_salida && form.fecha_llegada && form.fecha_llegada < form.fecha_salida) {
+      setErr("La fecha de llegada no puede ser anterior a la fecha de salida");
+      return;
+    }
+    setSavingReservation(true);
     const payload: Record<string, any> = {
       usuario_id: Number(form.usuario_id),
       fecha_reserva: form.fecha_reserva,
@@ -295,20 +319,26 @@ export default function AdminReservasPage() {
       fecha_llegada: form.fecha_llegada || null,
       num_personas: Number(form.num_personas),
       total: form.total ? Number(form.total) : null,
-      origen: adminOrigin ? adminOrigin.label : (form.origen || null),
-      destino: adminDestination ? adminDestination.label : (form.destino || null),
+      origen: origin,
+      destino: destination,
       notas: form.notas || null,
       ...(editingId ? {} : { estado: "pendiente_pago" }),
     };
     const url = editingId ? `${API_URL}/api/admin/reservas/${editingId}` : `${API_URL}/api/admin/reservas`;
     const method = editingId ? "PUT" : "POST";
-    const res = await fetch(url, { method, headers: h, body: JSON.stringify(payload) });
-    const data = await res.json();
-    if (!res.ok) { setErr(data.error || "Error al guardar"); return; }
-    setMsg(editingId ? "Reserva actualizada correctamente" : "Reserva creada correctamente");
-    setModalOpen(false);
-    setAdminOrigin(null); setAdminDestination(null);
-    load();
+    try {
+      const res = await fetch(url, { method, headers: h, body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (!res.ok) { setErr(data.error || "Error al guardar"); return; }
+      setMsg(editingId ? "Reserva actualizada correctamente" : "Reserva creada correctamente");
+      setModalOpen(false);
+      setAdminOrigin(null); setAdminDestination(null);
+      load();
+    } catch (saveError) {
+      setErr(saveError instanceof Error ? saveError.message : "No se pudo guardar la reserva");
+    } finally {
+      setSavingReservation(false);
+    }
   };
 
   const handleDelete = async (r: Reserva) => {
@@ -387,6 +417,15 @@ export default function AdminReservasPage() {
     finalizadas: reservas.filter(r => r.estado === "finalizada").length,
   };
   const editingReservation = reservas.find((reserva) => reserva.id === editingId);
+  const canSubmitReservation = Boolean(
+    form.usuario_id
+    && form.fecha_reserva
+    && Number.isInteger(Number(form.num_personas))
+    && Number(form.num_personas) >= 1
+    && (adminOrigin?.label || form.origen.trim())
+    && (adminDestination?.label || form.destino.trim())
+    && (!form.fecha_salida || !form.fecha_llegada || form.fecha_llegada >= form.fecha_salida)
+  );
 
   if (checkingSession) return (
     <div className="flex h-64 items-center justify-center">
@@ -777,9 +816,9 @@ export default function AdminReservasPage() {
 
       {/* MODAL CREAR / EDITAR RESERVA */}
       {modalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
-          <div className="w-full max-w-2xl my-4 bg-white rounded-2xl shadow-2xl overflow-hidden">
-            <div className="bg-slate-900 p-5 text-white flex items-center justify-between">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3 sm:p-5">
+          <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between bg-slate-900 p-4 text-white sm:p-5">
               <div className="flex items-center gap-3">
                 <div className="bg-[#E31E24] p-2 rounded-xl"><Calendar size={18} /></div>
                 <h2 className="font-black italic uppercase text-lg">{editingId ? "Editar Reserva" : "Nueva Reserva"}</h2>
@@ -787,78 +826,91 @@ export default function AdminReservasPage() {
               <button onClick={() => setModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full"><X size={18} /></button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 grid gap-4 max-h-[75vh] overflow-y-auto">
-              <div className="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-800">
-                El vehículo y el conductor se asignan o cambian únicamente desde Despacho, después de confirmar la reserva.
+            <form onSubmit={handleSubmit} className="min-h-0 overflow-y-auto p-4 sm:p-6">
+              <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-semibold leading-relaxed text-blue-800">
+                <span className="font-black">Disponibilidad y despacho:</span> el vehículo y el conductor se asignan o cambian únicamente desde Despacho, después de confirmar la reserva.
                 {editingReservation && (
                   <span className="mt-1 block text-blue-700">
                     Asignación actual: {editingReservation.vehiculo_placa || "sin vehículo"} · {editingReservation.conductor_nombre || "sin conductor"}.
                   </span>
                 )}
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Cliente *</label>
-                  <select value={form.usuario_id} onChange={e => setForm(p => ({ ...p, usuario_id: e.target.value }))} className={INPUT_CLS} required>
-                    <option value="">Seleccionar cliente...</option>
-                    {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre} — {c.email}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Estado</label>
-                  {editingId ? (
-                    <div className={`${INPUT_CLS} cursor-not-allowed text-slate-500`}>
-                      {ESTADO_LABEL[editingReservation?.estado || form.estado] || (editingReservation?.estado || form.estado).replace("_", " ")}
-                      <span className="ml-2 text-[10px] font-semibold text-slate-400">Se administra desde sus acciones</span>
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
+                <div className="space-y-5">
+                  <section>
+                    <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">1. Datos de la reserva</p>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Cliente *</label>
+                        <select value={form.usuario_id} onChange={e => setForm(p => ({ ...p, usuario_id: e.target.value }))} className={INPUT_CLS} required>
+                          <option value="">Seleccionar cliente...</option>
+                          {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre} — {c.email}</option>)}
+                        </select>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Estado</label>
+                          <div className={`${INPUT_CLS} flex cursor-not-allowed items-center text-orange-700`}>
+                            {ESTADO_LABEL[editingReservation?.estado || form.estado] || (editingReservation?.estado || form.estado).replace("_", " ")}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Num. personas *</label>
+                          <input type="number" min="1" value={form.num_personas} onChange={e => setForm(p => ({ ...p, num_personas: e.target.value }))} className={INPUT_CLS} required />
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <div className={`${INPUT_CLS} cursor-not-allowed text-orange-700`}>Pendiente de pago</div>
+                  </section>
+
+                  <section>
+                    <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">2. Fechas y valor</p>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Fecha de reserva *</label>
+                        <VehiculoCalendario vehiculoId={null} value={form.fecha_reserva} onSelect={(f) => setForm(p => ({ ...p, fecha_reserva: f }))} />
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Salida</label>
+                          <input type="datetime-local" value={form.fecha_salida} onChange={e => setForm(p => ({ ...p, fecha_salida: e.target.value }))} className={INPUT_CLS} />
+                        </div>
+                        <div>
+                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Llegada</label>
+                          <input type="datetime-local" value={form.fecha_llegada} onChange={e => setForm(p => ({ ...p, fecha_llegada: e.target.value }))} className={INPUT_CLS} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Total ($)</label>
+                        <input type="number" step="0.01" min="0" value={form.total} onChange={e => setForm(p => ({ ...p, total: e.target.value }))} className={INPUT_CLS} placeholder="0.00" />
+                      </div>
+                    </div>
+                  </section>
+
+                  <section>
+                    <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">3. Notas</p>
+                    <textarea value={form.notas} onChange={e => setForm(p => ({ ...p, notas: e.target.value }))} rows={3} className={INPUT_CLS + " resize-none"} placeholder="Observaciones para despacho..." />
+                  </section>
+                </div>
+
+                <section className="min-w-0">
+                  <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">4. Ruta del viaje</p>
+                  {(form.origen || form.destino) && !adminOrigin && !adminDestination && (
+                    <p className="mb-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+                      Ruta actual: <b>{form.origen || "—"}</b> → <b>{form.destino || "—"}</b>
+                    </p>
                   )}
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Fecha reserva * {form.fecha_reserva && <span className="text-[#E31E24]">({form.fecha_reserva})</span>}</label>
-                  <VehiculoCalendario vehiculoId={null} value={form.fecha_reserva} onSelect={(f) => setForm(p => ({ ...p, fecha_reserva: f }))} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Num. personas</label>
-                  <input type="number" min="1" value={form.num_personas} onChange={e => setForm(p => ({ ...p, num_personas: e.target.value }))} className={INPUT_CLS} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Fecha salida</label>
-                  <input type="datetime-local" value={form.fecha_salida} onChange={e => setForm(p => ({ ...p, fecha_salida: e.target.value }))} className={INPUT_CLS} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Fecha llegada</label>
-                  <input type="datetime-local" value={form.fecha_llegada} onChange={e => setForm(p => ({ ...p, fecha_llegada: e.target.value }))} className={INPUT_CLS} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Total ($)</label>
-                  <input type="number" step="0.01" min="0" value={form.total} onChange={e => setForm(p => ({ ...p, total: e.target.value }))} className={INPUT_CLS} placeholder="0.00" />
-                </div>
+                  <MapPicker origin={adminOrigin} destination={adminDestination} onChange={(which, val) => which === "origin" ? setAdminOrigin(val) : setAdminDestination(val)} />
+                </section>
               </div>
 
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Origen y destino (selecciona en el mapa)</label>
-                {(form.origen || form.destino) && !adminOrigin && !adminDestination && (
-                  <p className="text-[11px] text-slate-500 mb-2 bg-slate-50 rounded-lg px-3 py-2">
-                    Actual: <b>{form.origen || "—"}</b> → <b>{form.destino || "—"}</b>. Marca en el mapa para cambiar.
-                  </p>
-                )}
-                <MapPicker origin={adminOrigin} destination={adminDestination} onChange={(which, val) => which === "origin" ? setAdminOrigin(val) : setAdminDestination(val)} />
-              </div>
-              <div>
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-1 block mb-1">Notas</label>
-                <textarea value={form.notas} onChange={e => setForm(p => ({ ...p, notas: e.target.value }))} rows={2} className={INPUT_CLS + " resize-none"} placeholder="Observaciones..." />
-              </div>
+              {err && <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{err}</p>}
 
-              {err && <p className="text-red-600 text-sm font-bold">{err}</p>}
-
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setModalOpen(false)} className="flex-1 py-3 rounded-2xl border-2 border-slate-100 text-slate-500 font-black text-xs uppercase tracking-widest hover:border-slate-300 transition-all">
+              <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setModalOpen(false)} className="rounded-2xl border-2 border-slate-100 px-6 py-3 text-xs font-black uppercase tracking-widest text-slate-500 transition-all hover:border-slate-300">
                   Cancelar
                 </button>
-                <button type="submit" className="flex-1 py-3 rounded-2xl bg-[#E31E24] text-white font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-lg shadow-red-200">
-                  {editingId ? "Guardar Cambios" : "Crear Reserva"}
+                <button type="submit" disabled={savingReservation || !canSubmitReservation} className="rounded-2xl bg-[#E31E24] px-8 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-red-200 transition-all hover:bg-black disabled:cursor-not-allowed disabled:opacity-50">
+                  {savingReservation ? "Guardando..." : editingId ? "Guardar cambios" : "Crear reserva"}
                 </button>
               </div>
             </form>
