@@ -603,7 +603,7 @@ export default function AdminImagenesPortadaPage() {
                   className={`absolute overflow-hidden bg-slate-200 shadow-xl ${
                     slot === "primary"
                       ? "left-[3%] top-0 h-[88%] w-[68%] rounded-[48%_48%_38%_38%]"
-                      : "bottom-[2%] right-[2%] h-[48%] w-[55%] rounded-[46%_46%_30%_30%] border-[5px] border-[#f7f8fa]"
+                      : "bottom-[2%] right-[2%] h-[43%] w-[43%] rounded-[46%_46%_30%_30%] border-[5px] border-[#f7f8fa]"
                   }`}
                 >
                   <ShowcasePreviewImage

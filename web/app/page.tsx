@@ -836,7 +836,7 @@ export default function RootPage() {
                   Manta, Manabí, Ecuador
                 </figcaption>
               </figure>
-              <figure className="relative ml-auto h-44 w-32 overflow-hidden rounded-2xl border-2 border-white/90 bg-white shadow-[0_16px_30px_-18px_rgba(15,23,42,0.8)] sm:absolute sm:bottom-4 sm:right-0 sm:top-4 sm:ml-0 sm:h-auto sm:w-40">
+              <figure className="relative ml-auto aspect-square w-36 overflow-hidden rounded-2xl border-2 border-white/90 bg-white shadow-[0_16px_30px_-18px_rgba(15,23,42,0.8)] sm:absolute sm:bottom-4 sm:right-0 sm:top-auto sm:ml-0 sm:h-40 sm:w-40">
                 <Image
                   src={getSafeImageSource(cityShowcase.secondary_image_url)}
                   alt={cityShowcase.secondary_alt}
