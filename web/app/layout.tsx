@@ -11,6 +11,11 @@ export const metadata: Metadata = {
   title: "TURESMA S.A. | Transporte turístico y ejecutivo en Manta",
   description: "Transporte turístico, ejecutivo, empresarial y logístico desde Manta a todo Ecuador. Solicita tu cotización con Turesma S.A.",
   applicationName: "Turesma",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
+  },
   keywords: [
     "transporte turístico en Manta",
     "transporte ejecutivo en Manta",
