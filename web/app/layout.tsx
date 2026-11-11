@@ -103,6 +103,49 @@ export default function RootLayout({
             }),
           }}
         />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              mainEntity: [
+                {
+                  "@type": "Question",
+                  name: "¿Cómo hago una reserva?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Puedes reservar por medio de nuestro sistema web, WhatsApp o con un asesor. Solo necesitamos fecha, hora, origen, destino y cantidad de pasajeros para confirmar tu unidad.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "¿Atienden viajes dentro y fuera de Manta?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Sí. Operamos en Manta y realizamos traslados a nivel provincial y nacional, según disponibilidad y planificación de ruta.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "¿Cómo elijo el vehículo adecuado para mi viaje?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "La mejor opción depende del número de pasajeros, el equipaje y el tipo de recorrido. Al cotizar, cuéntanos esos detalles y te ayudaremos a elegir el vehículo adecuado.",
+                  },
+                },
+                {
+                  "@type": "Question",
+                  name: "¿Puedo pedir una cotización antes de reservar?",
+                  acceptedAnswer: {
+                    "@type": "Answer",
+                    text: "Claro. Te enviamos una cotización previa sin compromiso para que conozcas tarifas, condiciones y tiempos estimados.",
+                  },
+                },
+              ],
+            }),
+          }}
+        />
         <LocaleProvider>
           <ConfirmProvider>{children}</ConfirmProvider>
         </LocaleProvider>
