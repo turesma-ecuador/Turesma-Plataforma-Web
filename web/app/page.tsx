@@ -817,8 +817,8 @@ export default function RootPage() {
             <div className="h-1.5 w-32 bg-yellow-400 rounded-full mt-2 mx-auto"></div>
           </div>
           <div className="mb-16 grid items-center gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
-            <div className="flex flex-col gap-3 sm:relative sm:min-h-[390px] sm:block sm:pr-14">
-              <figure className="relative h-[280px] overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-900 shadow-[0_18px_45px_-24px_rgba(15,23,42,0.65)] sm:absolute sm:inset-y-0 sm:left-0 sm:right-10 sm:h-auto">
+            <div className="relative min-h-[380px] pr-4 sm:min-h-[390px] sm:pr-14">
+              <figure className="absolute left-0 right-0 top-0 h-[320px] overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-900 shadow-[0_18px_45px_-24px_rgba(15,23,42,0.65)] sm:inset-y-0 sm:right-10 sm:h-auto">
               <Image
                 src={getSafeImageSource(cityShowcase.primary_image_url)}
                 alt={cityShowcase.primary_alt}
@@ -836,7 +836,7 @@ export default function RootPage() {
                   Manta, Manabí, Ecuador
                 </figcaption>
               </figure>
-              <figure className="relative ml-auto aspect-square w-36 overflow-hidden rounded-2xl border-2 border-white/90 bg-white shadow-[0_16px_30px_-18px_rgba(15,23,42,0.8)] sm:absolute sm:bottom-4 sm:right-0 sm:top-auto sm:ml-0 sm:h-40 sm:w-40">
+              <figure className="absolute bottom-0 right-0 aspect-square w-36 overflow-hidden rounded-2xl border-2 border-white/90 bg-white shadow-[0_16px_30px_-18px_rgba(15,23,42,0.8)] sm:bottom-4 sm:h-40 sm:w-40">
                 <Image
                   src={getSafeImageSource(cityShowcase.secondary_image_url)}
                   alt={cityShowcase.secondary_alt}
