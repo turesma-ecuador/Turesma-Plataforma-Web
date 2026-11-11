@@ -766,14 +766,55 @@ export default function RootPage() {
       </section>
 
       {/* SECCIÓN NOSOTROS */}
-      <section id="nosotros" className="relative py-24 bg-white border-b border-gray-50">
+      <section id="nosotros" className="relative scroll-mt-24 border-b border-gray-50 bg-white py-32">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8" data-reveal>
-          <div className="text-center mb-16">
+          <div className="mb-12 text-center">
             <h2 className="text-4xl font-black italic tracking-tighter text-[#E31E24] md:text-6xl uppercase">Sobre Nosotros</h2>
             <div className="h-1.5 w-32 bg-yellow-400 rounded-full mt-2 mx-auto"></div>
-            <p className="mt-6 text-xl text-gray-600 max-w-3xl mx-auto font-medium">
-              En TURESMA S.A. redefinimos el transporte turístico con un compromiso inquebrantable con la seguridad y la elegancia. Desde Manta, servimos a todo el Ecuador.
-            </p>
+          </div>
+          <div className="mb-16 grid items-center gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
+            <div className="flex flex-col gap-3 sm:relative sm:min-h-[390px] sm:block sm:pr-14">
+              <figure className="relative h-[280px] overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-900 shadow-[0_18px_45px_-24px_rgba(15,23,42,0.65)] sm:absolute sm:inset-y-0 sm:left-0 sm:right-10 sm:h-auto">
+              <Image
+                src="/manta-city.jpg"
+                alt="Vista de la costa y la ciudad de Manta, Ecuador"
+                fill
+                sizes="(max-width: 1024px) 100vw, 55vw"
+                quality={95}
+                className="object-cover brightness-105 saturate-[1.08] transition-transform duration-700 hover:scale-105"
+                style={{ objectPosition: "62% center" }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent" />
+                <figcaption className="absolute bottom-3 left-4 text-[10px] font-medium text-white/65 drop-shadow-md">
+                  Manta, Manabí, Ecuador
+                </figcaption>
+              </figure>
+              <figure className="relative ml-auto h-44 w-32 overflow-hidden rounded-2xl border-2 border-white/90 bg-white shadow-[0_16px_30px_-18px_rgba(15,23,42,0.8)] sm:absolute sm:bottom-4 sm:right-0 sm:top-4 sm:ml-0 sm:h-auto sm:w-40">
+                <Image
+                  src="/manta-flag.png"
+                  alt="Bandera y escudo de Manta frente a la costa de la ciudad"
+                  fill
+                  sizes="(max-width: 640px) 128px, 160px"
+                  quality={95}
+                  className="object-cover"
+                />
+                <figcaption className="absolute inset-x-1 bottom-1 rounded-md bg-slate-950/65 px-1 py-1 text-center text-[8px] font-bold uppercase tracking-wide text-white">
+                  Manta, Manabí
+                </figcaption>
+              </figure>
+            </div>
+            <div className="text-center lg:text-left">
+              <p className="mb-4 text-sm font-black uppercase tracking-[0.24em] text-[#E31E24]">Desde Manta para el Ecuador</p>
+              <h3 className="text-3xl font-black leading-tight tracking-tight text-gray-950 sm:text-4xl">
+                Una empresa que conecta personas, destinos y experiencias en todo el Ecuador.
+              </h3>
+              <p className="mt-5 text-lg font-medium leading-relaxed text-gray-600">
+                En TURESMA S.A. redefinimos el transporte turístico con un compromiso inquebrantable con la seguridad y la elegancia. Nuestra operación nace en Manta y acompaña cada recorrido con servicio, comodidad y confianza.
+              </p>
+              <p className="mt-5 text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+                Servicio turístico, ejecutivo y empresarial
+              </p>
+            </div>
           </div>
           <div className="grid grid-cols-1 gap-12 md:grid-cols-4">
             {[
