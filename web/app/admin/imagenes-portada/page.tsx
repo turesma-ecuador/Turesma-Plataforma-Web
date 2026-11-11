@@ -17,6 +17,16 @@ type HomeShowcaseData = Record<Slot, {
   position_y: number;
   zoom: number;
 } | null>;
+type CityShowcase = {
+  primary_image_url: string;
+  secondary_image_url: string;
+  primary_alt: string;
+  secondary_alt: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  label: string;
+};
 
 const slotInfo: Record<Slot, { title: string; description: string; shape: string }> = {
   primary: {
@@ -36,6 +46,16 @@ const defaultCrop: CropSettings = { positionX: 50, positionY: 50, zoom: 100 };
 const fallbackImages: Record<Slot, string> = {
   primary: "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=2069&auto=format&fit=crop",
   secondary: "/destinos/puerto-lopez.jpg",
+};
+const defaultCityShowcase: CityShowcase = {
+  primary_image_url: "/manta-city.jpg",
+  secondary_image_url: "/manta-flag.png",
+  primary_alt: "Vista de la costa y la ciudad de Manta, Ecuador",
+  secondary_alt: "Bandera y escudo de Manta frente a la costa de la ciudad",
+  eyebrow: "Desde Manta para el Ecuador",
+  title: "Una empresa que conecta personas, destinos y experiencias en todo el Ecuador.",
+  description: "En TURESMA S.A. redefinimos el transporte turístico con un compromiso inquebrantable con la seguridad y la elegancia. Nuestra operación nace en Manta y acompaña cada recorrido con servicio, comodidad y confianza.",
+  label: "Servicio turístico, ejecutivo y empresarial",
 };
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -89,6 +109,10 @@ export default function AdminImagenesPortadaPage() {
   const [savingSlot, setSavingSlot] = useState<Slot | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [cityShowcase, setCityShowcase] = useState<CityShowcase>(defaultCityShowcase);
+  const [cityFiles, setCityFiles] = useState<{ primary: File | null; secondary: File | null }>({ primary: null, secondary: null });
+  const [cityPreviews, setCityPreviews] = useState<{ primary: string | null; secondary: string | null }>({ primary: null, secondary: null });
+  const [savingCity, setSavingCity] = useState(false);
   const previewUrls = useRef<Record<Slot, string | null>>({ primary: null, secondary: null });
   const filePickerScrollPosition = useRef<{ main: number; section: number } | null>(null);
   const dragStart = useRef<{
@@ -155,6 +179,24 @@ export default function AdminImagenesPortadaPage() {
     return () => {
       isCurrent = false;
     };
+  }, [checkingSession]);
+
+  useEffect(() => {
+    if (checkingSession) return;
+    fetch(`${API}/api/admin/home-city-showcase`, {
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(15_000),
+    })
+      .then(async (response) => {
+        if (handleUnauthorized(response.status)) return null;
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.error || "No se pudo cargar la presentación de Manta");
+        return data as CityShowcase;
+      })
+      .then((data) => {
+        if (data) setCityShowcase((current) => ({ ...current, ...data }));
+      })
+      .catch((loadError: unknown) => setError(loadError instanceof Error ? loadError.message : "No se pudo cargar la presentación de Manta"));
   }, [checkingSession]);
 
   useEffect(() => {
@@ -294,6 +336,56 @@ export default function AdminImagenesPortadaPage() {
     }
   };
 
+  const selectCityImage = (slot: "primary" | "secondary", file: File | null) => {
+    if (!file || !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setError("Selecciona una imagen JPG, PNG o WEBP de máximo 5 MB.");
+      return;
+    }
+    const preview = URL.createObjectURL(file);
+    setCityFiles((current) => ({ ...current, [slot]: file }));
+    setCityPreviews((current) => ({ ...current, [slot]: preview }));
+  };
+
+  const saveCityShowcase = async () => {
+    setSavingCity(true);
+    setError("");
+    setMessage("");
+    try {
+      const values = { ...cityShowcase };
+      for (const slot of ["primary", "secondary"] as const) {
+        const file = cityFiles[slot];
+        if (!file) continue;
+        const formData = new FormData();
+        formData.append("imagen", file);
+        const uploadResponse = await fetch(`${API}/api/admin/uploads/galeria-imagen`, {
+          method: "POST",
+          headers: getAuthHeaders().Authorization ? { Authorization: getAuthHeaders().Authorization } : {},
+          body: formData,
+        });
+        if (handleUnauthorized(uploadResponse.status)) return;
+        const uploadData = await uploadResponse.json().catch(() => null);
+        if (!uploadResponse.ok || typeof uploadData?.imageUrl !== "string") throw new Error(uploadData?.error || "No se pudo subir la imagen");
+        values[slot === "primary" ? "primary_image_url" : "secondary_image_url"] = uploadData.imageUrl;
+      }
+      const response = await fetch(`${API}/api/admin/home-city-showcase`, {
+        method: "PUT",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      if (handleUnauthorized(response.status)) return;
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "No se pudo guardar la presentación de Manta");
+      setCityShowcase(data);
+      setCityFiles({ primary: null, secondary: null });
+      setCityPreviews({ primary: null, secondary: null });
+      setMessage("Presentación de Manta actualizada correctamente.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "No se pudo guardar la presentación de Manta");
+    } finally {
+      setSavingCity(false);
+    }
+  };
+
   if (checkingSession) {
     return (
       <div role="status" className="flex h-64 items-center justify-center gap-3 text-sm font-semibold text-slate-600">
@@ -334,6 +426,55 @@ export default function AdminImagenesPortadaPage() {
           <XCircle size={17} /> {error}
         </div>
       )}
+
+      <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div>
+          <h2 className="text-lg font-black text-slate-900">Presentación de Manta</h2>
+          <p className="mt-1 text-sm text-slate-500">Administra las imágenes y el texto del bloque «Sobre nosotros» de la página pública.</p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {(["primary", "secondary"] as const).map((slot) => {
+            const imageKey = slot === "primary" ? "primary_image_url" : "secondary_image_url";
+            const altKey = slot === "primary" ? "primary_alt" : "secondary_alt";
+            return (
+              <div key={slot} className="space-y-3 rounded-xl bg-slate-50 p-4">
+                <div className="relative h-40 overflow-hidden rounded-xl bg-slate-200">
+                  <img src={cityPreviews[slot] || cityShowcase[imageKey]} alt={cityShowcase[altKey]} className="h-full w-full object-cover" />
+                </div>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                  <UploadCloud size={15} /> Cambiar imagen
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => selectCityImage(slot, event.target.files?.[0] || null)} />
+                </label>
+                <label className="block text-xs font-bold text-slate-600">
+                  Texto alternativo
+                  <input value={cityShowcase[altKey]} onChange={(event) => setCityShowcase((current) => ({ ...current, [altKey]: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-800" />
+                </label>
+              </div>
+            );
+          })}
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {([
+            ["eyebrow", "Texto superior"],
+            ["label", "Etiqueta de servicios"],
+            ["title", "Título"],
+            ["description", "Descripción"],
+          ] as const).map(([key, label]) => (
+            <label key={key} className={`block text-xs font-bold text-slate-600 ${key === "title" || key === "description" ? "md:col-span-2" : ""}`}>
+              {label}
+              {key === "description" ? (
+                <textarea value={cityShowcase[key]} onChange={(event) => setCityShowcase((current) => ({ ...current, [key]: event.target.value }))} rows={3} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-800" />
+              ) : (
+                <input value={cityShowcase[key]} onChange={(event) => setCityShowcase((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-800" />
+              )}
+            </label>
+          ))}
+        </div>
+        <button type="button" onClick={saveCityShowcase} disabled={loading || savingCity} className="inline-flex items-center gap-2 rounded-xl bg-[#E31E24] px-4 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+          {savingCity ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+          {savingCity ? "Guardando..." : "Guardar presentación de Manta"}
+        </button>
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-4">

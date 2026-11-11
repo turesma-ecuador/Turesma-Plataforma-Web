@@ -60,6 +60,17 @@ type GaleriaFoto = {
   licencia_url?: string | null;
 };
 
+type HomeCityShowcase = {
+  primary_image_url: string;
+  secondary_image_url: string;
+  primary_alt: string;
+  secondary_alt: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  label: string;
+};
+
 const getVideoAspectRatio = (video: GaleriaFoto) => (
   video.video_format === "vertical"
     ? 9 / 16
@@ -292,6 +303,7 @@ export default function RootPage() {
     primary: null,
     secondary: null,
   });
+  const [homeCityShowcase, setHomeCityShowcase] = useState<HomeCityShowcase | null>(null);
   const [shouldLoadGallery, setShouldLoadGallery] = useState(false);
   const flotaRef = useRef<HTMLDivElement | null>(null);
   const galleryTriggerRef = useRef<HTMLDivElement | null>(null);
@@ -303,6 +315,16 @@ export default function RootPage() {
   const videosGaleria = galeria.filter((contenido) => contenido.categoria !== "destinos" && contenido.tipo === "video");
   const imagenPrincipal = getSafeImageSource(homeShowcaseImages.primary?.image_url || HERO_IMAGE_URL);
   const imagenSecundaria = getSafeImageSource(homeShowcaseImages.secondary?.image_url || "/destinos/puerto-lopez.jpg");
+  const cityShowcase = homeCityShowcase || {
+    primary_image_url: "/manta-city.jpg",
+    secondary_image_url: "/manta-flag.png",
+    primary_alt: "Vista de la costa y la ciudad de Manta, Ecuador",
+    secondary_alt: "Bandera y escudo de Manta frente a la costa de la ciudad",
+    eyebrow: "Desde Manta para el Ecuador",
+    title: "Una empresa que conecta personas, destinos y experiencias en todo el Ecuador.",
+    description: "En TURESMA S.A. redefinimos el transporte turístico con un compromiso inquebrantable con la seguridad y la elegancia. Nuestra operación nace en Manta y acompaña cada recorrido con servicio, comodidad y confianza.",
+    label: "Servicio turístico, ejecutivo y empresarial",
+  };
   const mosaicosVideos = createVideoMosaics(videosGaleria);
   const fotosDestinos = galeria.filter((contenido) => contenido.categoria === "destinos" && contenido.tipo !== "video");
 
@@ -412,6 +434,16 @@ export default function RootPage() {
         console.error("Error cargando los vehículos públicos:", error);
       })
       .finally(() => setLoadingVehiculos(false));
+  }, []);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/usuarios/home-city-showcase`, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`No se pudo cargar la presentación de Manta (${response.status})`);
+        return response.json();
+      })
+      .then((data: HomeCityShowcase) => setHomeCityShowcase(data))
+      .catch((error: unknown) => console.error("Error cargando la presentación de Manta:", error));
   }, []);
 
   useEffect(() => {
@@ -776,8 +808,8 @@ export default function RootPage() {
             <div className="flex flex-col gap-3 sm:relative sm:min-h-[390px] sm:block sm:pr-14">
               <figure className="relative h-[280px] overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-900 shadow-[0_18px_45px_-24px_rgba(15,23,42,0.65)] sm:absolute sm:inset-y-0 sm:left-0 sm:right-10 sm:h-auto">
               <Image
-                src="/manta-city.jpg"
-                alt="Vista de la costa y la ciudad de Manta, Ecuador"
+                src={getSafeImageSource(cityShowcase.primary_image_url)}
+                alt={cityShowcase.primary_alt}
                 fill
                 sizes="(max-width: 1024px) 100vw, 55vw"
                 quality={95}
@@ -791,8 +823,8 @@ export default function RootPage() {
               </figure>
               <figure className="relative ml-auto h-44 w-32 overflow-hidden rounded-2xl border-2 border-white/90 bg-white shadow-[0_16px_30px_-18px_rgba(15,23,42,0.8)] sm:absolute sm:bottom-4 sm:right-0 sm:top-4 sm:ml-0 sm:h-auto sm:w-40">
                 <Image
-                  src="/manta-flag.png"
-                  alt="Bandera y escudo de Manta frente a la costa de la ciudad"
+                  src={getSafeImageSource(cityShowcase.secondary_image_url)}
+                  alt={cityShowcase.secondary_alt}
                   fill
                   sizes="(max-width: 640px) 128px, 160px"
                   quality={95}
@@ -804,15 +836,15 @@ export default function RootPage() {
               </figure>
             </div>
             <div className="text-center lg:text-left">
-              <p className="mb-4 text-sm font-black uppercase tracking-[0.24em] text-[#E31E24]">Desde Manta para el Ecuador</p>
+              <p className="mb-4 text-sm font-black uppercase tracking-[0.24em] text-[#E31E24]">{cityShowcase.eyebrow}</p>
               <h3 className="text-3xl font-black leading-tight tracking-tight text-gray-950 sm:text-4xl">
-                Una empresa que conecta personas, destinos y experiencias en todo el Ecuador.
+                {cityShowcase.title}
               </h3>
               <p className="mt-5 text-lg font-medium leading-relaxed text-gray-600">
-                En TURESMA S.A. redefinimos el transporte turístico con un compromiso inquebrantable con la seguridad y la elegancia. Nuestra operación nace en Manta y acompaña cada recorrido con servicio, comodidad y confianza.
+                {cityShowcase.description}
               </p>
               <p className="mt-5 text-xs font-black uppercase tracking-[0.2em] text-slate-500">
-                Servicio turístico, ejecutivo y empresarial
+                {cityShowcase.label}
               </p>
             </div>
           </div>

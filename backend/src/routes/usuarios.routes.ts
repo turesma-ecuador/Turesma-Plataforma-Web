@@ -22,6 +22,7 @@ const { enviarVerificacion, miVerificacion, subirDocumentoVerificacion } = requi
 const { listarGaleriaPublica } = require("../controllers/galeria.controller");
 const { listarViajesPublicos, reservarViajePublicado } = require("../controllers/viajes.controller");
 const { getPublicHomeShowcaseImages } = require("../controllers/home-showcase.controller");
+const { getPublicHomeCityShowcase } = require("../controllers/home-city-showcase.controller");
 const {
   crearSolicitudCambioDestino,
   listarSolicitudesCambioDestinoCliente,
@@ -38,6 +39,7 @@ router.post("/vehiculos/recomendacion", verifyToken, recomendarVehiculo);
 router.get("/vehiculos/:id/disponibilidad", verDisponibilidadVehiculoCliente);
 router.get("/galeria", listarGaleriaPublica);
 router.get("/home-showcase-images", getPublicHomeShowcaseImages);
+router.get("/home-city-showcase", getPublicHomeCityShowcase);
 router.get("/viajes", listarViajesPublicos);
 
 // Rutas protegidas por token

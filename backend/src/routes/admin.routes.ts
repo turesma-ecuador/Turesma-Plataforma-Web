@@ -154,6 +154,10 @@ const {
   updateHomeShowcaseImage,
 } = require("../controllers/home-showcase.controller");
 const {
+  getAdminHomeCityShowcase,
+  updateHomeCityShowcase,
+} = require("../controllers/home-city-showcase.controller");
+const {
   listarViajesAdmin,
   crearViajeAdmin,
   actualizarViajeAdmin,
@@ -172,6 +176,8 @@ router.get("/tarifas", getTarifas);
 router.put("/tarifas", updateTarifas);
 router.get("/home-showcase-images", getAdminHomeShowcaseImages);
 router.put("/home-showcase-images/:slot", updateHomeShowcaseImage);
+router.get("/home-city-showcase", getAdminHomeCityShowcase);
+router.put("/home-city-showcase", updateHomeCityShowcase);
 
 // ── DASHBOARD PRINCIPAL ───────────────────────────────────────────────────────
 router.get("/dashboard", getDashboardData);

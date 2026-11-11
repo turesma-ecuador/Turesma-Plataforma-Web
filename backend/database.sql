@@ -53,6 +53,19 @@ CREATE TABLE IF NOT EXISTS homepage_showcase_images (
     actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS homepage_city_showcase (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    primary_image_url TEXT NOT NULL,
+    secondary_image_url TEXT NOT NULL,
+    primary_alt VARCHAR(300) NOT NULL,
+    secondary_alt VARCHAR(300) NOT NULL,
+    eyebrow VARCHAR(180) NOT NULL,
+    title VARCHAR(300) NOT NULL,
+    description TEXT NOT NULL,
+    label VARCHAR(180) NOT NULL,
+    actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Usuarios: crear por API para evitar credenciales hardcodeadas
 -- Ejemplo POST http://localhost:4000/api/usuarios
 -- {

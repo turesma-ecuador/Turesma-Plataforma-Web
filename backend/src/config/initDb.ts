@@ -1364,6 +1364,21 @@ const initDatabase = async () => {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS homepage_city_showcase (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      primary_image_url TEXT NOT NULL,
+      secondary_image_url TEXT NOT NULL,
+      primary_alt VARCHAR(300) NOT NULL,
+      secondary_alt VARCHAR(300) NOT NULL,
+      eyebrow VARCHAR(180) NOT NULL,
+      title VARCHAR(300) NOT NULL,
+      description TEXT NOT NULL,
+      label VARCHAR(180) NOT NULL,
+      actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await pool.query(`
     INSERT INTO homepage_showcase_images (slot, image_url)
     SELECT
       CASE WHEN ranked.position = 1 THEN 'primary' ELSE 'secondary' END,
