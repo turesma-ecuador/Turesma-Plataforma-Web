@@ -396,7 +396,7 @@ export default function AdminImagenesPortadaPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto flex max-w-5xl flex-col space-y-6">
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-start gap-4">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-[#E31E24]">
@@ -427,7 +427,7 @@ export default function AdminImagenesPortadaPage() {
         </div>
       )}
 
-      <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <section className="order-4 space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div>
           <h2 className="text-lg font-black text-slate-900">Presentación de Manta</h2>
           <p className="mt-1 text-sm text-slate-500">Administra las imágenes y el texto del bloque «Sobre nosotros» de la página pública.</p>
@@ -476,7 +476,7 @@ export default function AdminImagenesPortadaPage() {
         </button>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <section className="order-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="mb-4">
           <h2 className="text-sm font-black uppercase tracking-wide text-slate-800">Vista previa en la portada</h2>
           <p className="mt-1 text-xs text-slate-500">Así se verán las fotos en el bloque de inicio mientras ajustas el encuadre.</p>
@@ -514,7 +514,7 @@ export default function AdminImagenesPortadaPage() {
         </div>
       </section>
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="order-3 grid gap-5 md:grid-cols-2">
         {SLOTS.map((slot) => {
           const currentPreview = previews[slot] || images[slot];
           const source = currentPreview || fallbackImages[slot];
