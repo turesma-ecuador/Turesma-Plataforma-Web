@@ -120,13 +120,20 @@ export function NotificationBell({ userId, accent = "blue", portal }: Props) {
         headers: getAuthHeaders(),
       });
       if (!res.ok) {
-        setUnreadCount(0);
-        setItems([]);
-        return;
+        if (res.status === 401) {
+          setUnreadCount(0);
+          setItems([]);
+          return;
+        }
+        throw new Error(`El servidor respondió HTTP ${res.status}`);
       }
 
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : { notifications: [], unread_count: 0 };
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.toLowerCase().includes("json")) {
+        throw new Error(`El servidor devolvió una respuesta no JSON (HTTP ${res.status})`);
+      }
+
+      const data = await res.json();
       const notifications: NotificationItem[] = Array.isArray(data.notifications) ? data.notifications : [];
       setUnreadCount(Number(data.unread_count || 0));
       setItems(notifications);
@@ -143,8 +150,6 @@ export function NotificationBell({ userId, accent = "blue", portal }: Props) {
       }
     } catch (error) {
       console.warn("No se pudieron cargar las notificaciones:", error);
-      setUnreadCount(0);
-      setItems([]);
     } finally {
       loadingRef.current = false;
       setLoading(false);
