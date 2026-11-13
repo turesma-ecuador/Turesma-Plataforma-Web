@@ -1,6 +1,7 @@
 export {};
 
 const pool = require("../../config/db");
+const { notificarClienteReserva } = require("../../config/reservaMailer");
 
 const ACTIVE_STATES = ["programada", "asignada", "en_curso", "incidencia"];
 const VALID_STATES = ["programada", "asignada", "en_curso", "completada", "cancelada", "incidencia"];
@@ -359,6 +360,7 @@ const asignarOperacion = async (req: any, res: any) => {
     const operation = await client.query("SELECT * FROM operaciones WHERE id = $1 FOR UPDATE", [operationId]);
     if (!operation.rowCount) return reject(404, { success: false, error: "Operación no encontrada" });
     const current = operation.rows[0];
+    const hasPreviousAssignment = Boolean(current.vehiculo_id || current.conductor_id);
     if (!["programada", "asignada", "incidencia"].includes(current.estado)) {
       return reject(409, { success: false, error: "La operación no permite cambiar la asignación en su estado actual" });
     }
@@ -485,6 +487,8 @@ const asignarOperacion = async (req: any, res: any) => {
     if (!driver.rowCount) return reject(404, { success: false, error: "El usuario no tiene un perfil de conductor configurado" });
     const driverData = driver.rows[0];
     const driverId = Number(driverData.id);
+    const assignmentChanged = Number(current.vehiculo_id || 0) !== vehicleId
+      || Number(current.conductor_id || 0) !== driverId;
     if (!driverData.activo || ["inactivo", "mantenimiento"].includes(driverData.estado)) {
       return reject(409, { success: false, error: "El conductor no está disponible" });
     }
@@ -641,6 +645,14 @@ const asignarOperacion = async (req: any, res: any) => {
     await recordHistory(client, operationId, req.user?.id || null, "asignacion", current.estado, "asignada", { vehiculo_id: vehicleId, conductor_id: driverId });
     const updated = await getOperation(client, operationId);
     await client.query("COMMIT");
+    if (current.reserva_id && !current.requerimiento_id && assignmentChanged) {
+      await notificarClienteReserva(
+        Number(current.reserva_id),
+        "conductor_asignado",
+        req.user?.id || null,
+        hasPreviousAssignment
+      );
+    }
     return res.json({ success: true, data: updated });
   } catch (error) {
     await client.query("ROLLBACK");

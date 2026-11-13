@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 import {
   Bus, ArrowRight, DollarSign, Loader2,
-  Star, CheckCircle2, MapPin, Phone, Navigation, CreditCard, X,
+  Star, CheckCircle2, MapPin, Navigation, CreditCard, X,
   Building2, UploadCloud, Clock, AlertTriangle, ImageIcon, FileDown,
 } from "lucide-react";
 import { getAuthHeaders, getStoredToken, handleUnauthorized } from "../../../lib/session";
@@ -36,6 +36,7 @@ type Reserva = {
   fecha_regreso?: string | null; hora_regreso?: string | null;
   origen?: string | null; destino?: string | null; num_personas: number; total: number;
   vehiculo_placa?: string | null; vehiculo_modelo?: string | null;
+  vehiculo_imagen_url?: string | null;
   conductor_nombre?: string | null; conductor_telefono?: string | null;
   calificacion?: number | null; comentario_calificacion?: string | null;
   monto_pagado?: number | null; estado_pago?: string | null;
@@ -572,7 +573,32 @@ export default function ClienteHistorialPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
                   <div className="bg-slate-50 rounded-xl p-2.5"><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Fecha</p><p className="font-bold text-slate-700">{formatLocalizedDate(r.fecha_reserva, language)}{r.fecha_fin && r.fecha_fin !== r.fecha_reserva ? ` → ${formatLocalizedDate(r.fecha_fin, language)}` : ""}{r.fecha_regreso ? ` · Regreso: ${formatLocalizedDate(r.fecha_regreso, language)}${r.hora_regreso ? ` ${r.hora_regreso}` : ""}` : ""}</p></div>
                   <div className="bg-slate-50 rounded-xl p-2.5"><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Personas</p><p className="font-bold text-slate-700">{r.num_personas}</p></div>
-                  <div className="bg-slate-50 rounded-xl p-2.5"><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Vehículo</p><p className="font-bold text-slate-700 truncate">{r.vehiculo_placa ? <span data-no-translate>{r.vehiculo_placa}</span> : "Por asignar"}</p></div>
+                  <div className="bg-slate-50 rounded-xl p-2.5">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Vehículo asignado</p>
+                    <div className="mt-1.5 flex min-w-0 items-center gap-2">
+                      {r.vehiculo_imagen_url ? (
+                        <Image
+                          src={r.vehiculo_imagen_url}
+                          alt={`Vehículo asignado ${r.vehiculo_placa || ""}`}
+                          width={52}
+                          height={42}
+                          sizes="52px"
+                          className="h-10 w-12 shrink-0 rounded-lg border border-slate-200 object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-10 w-12 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-300">
+                          <Bus size={20} aria-hidden="true" />
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate font-bold text-slate-700">
+                          {r.vehiculo_placa ? <span data-no-translate>{r.vehiculo_placa}</span> : "Por asignar"}
+                        </p>
+                        {r.vehiculo_modelo && <p className="truncate text-[10px] text-slate-500">{r.vehiculo_modelo}</p>}
+                        {!r.vehiculo_imagen_url && r.vehiculo_placa && <p className="text-[9px] text-slate-400">Foto no disponible</p>}
+                      </div>
+                    </div>
+                  </div>
                   <div className="bg-slate-50 rounded-xl p-2.5"><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Conductor</p><p className="font-bold text-slate-700 truncate">{r.conductor_nombre ? <span data-no-translate>{r.conductor_nombre}</span> : "Por asignar"}</p></div>
                 </div>
 
@@ -608,10 +634,15 @@ export default function ClienteHistorialPage() {
                 <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
                   {Number(r.total) > 0 && <div className="flex items-center gap-1 text-emerald-600"><DollarSign size={14} /><span className="text-base font-black">${Number(r.total).toFixed(2)}</span></div>}
                   {r.conductor_telefono && (
-                    <span className="flex items-center gap-2">
-                      <span className="text-[10px] text-slate-400 flex items-center gap-1"><Phone size={11} />{r.conductor_telefono}</span>
-                      <WhatsAppButton telefono={r.conductor_telefono} title={`WhatsApp de ${r.conductor_nombre || "conductor"}`} mensaje={`Hola, soy el cliente de la reserva #${r.id} de Turesma.`} />
-                    </span>
+                    <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
+                      <span className="text-[10px] font-bold text-emerald-900">¿Necesitas coordinar con {r.conductor_nombre || "el conductor"}?</span>
+                      <WhatsAppButton
+                        telefono={r.conductor_telefono}
+                        variant="full"
+                        title={`WhatsApp de ${r.conductor_nombre || "conductor"}`}
+                        mensaje={`Hola, soy el cliente de la reserva #${r.id} de Turesma.`}
+                      />
+                    </div>
                   )}
                 </div>
 

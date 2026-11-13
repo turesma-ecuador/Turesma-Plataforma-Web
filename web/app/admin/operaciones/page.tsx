@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, Plus, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, Info, Plus, RefreshCw, X } from "lucide-react";
 import { getAuthHeaders } from "../../../lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -659,57 +659,161 @@ export default function OperacionesPage() {
       {showCreate && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><form onSubmit={createOperation} className="w-full max-w-2xl space-y-4 rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-xl font-black text-slate-950">Nueva operación</h2><button type="button" onClick={() => setShowCreate(false)} aria-label="Cerrar formulario"><X /></button></div><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold text-slate-600">Tipo de servicio<input value={form.tipo_servicio} onChange={(e) => setForm({ ...form, tipo_servicio: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><label className="text-sm font-bold text-slate-600">Pasajeros<input type="number" min="1" value={form.pasajeros} onChange={(e) => setForm({ ...form, pasajeros: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><label className="text-sm font-bold text-slate-600">Fecha<input type="date" value={form.fecha_programada} onChange={(e) => setForm({ ...form, fecha_programada: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><div className="grid grid-cols-2 gap-2"><label className="text-sm font-bold text-slate-600">Inicio<input type="time" value={form.hora_inicio} onChange={(e) => setForm({ ...form, hora_inicio: e.target.value })} className="mt-1 w-full rounded-xl border p-3" /></label><label className="text-sm font-bold text-slate-600">Fin<input type="time" value={form.hora_fin} onChange={(e) => setForm({ ...form, hora_fin: e.target.value })} className="mt-1 w-full rounded-xl border p-3" /></label></div><label className="text-sm font-bold text-slate-600">Origen<input value={form.origen} onChange={(e) => setForm({ ...form, origen: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><label className="text-sm font-bold text-slate-600">Destino<input value={form.destino} onChange={(e) => setForm({ ...form, destino: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label></div><button disabled={saving} className="w-full rounded-xl bg-red-600 py-3 font-black text-white transition hover:bg-red-700 disabled:opacity-50">{saving ? "Guardando..." : "Crear operación"}</button></form></div>}
 
       {assignment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-5">
           <form
             onSubmit={assignOperation}
-            className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-3xl bg-white p-6 shadow-2xl"
+            className="max-h-[calc(100dvh-1.5rem)] w-full max-w-lg space-y-5 overflow-y-auto overscroll-contain rounded-3xl border border-white/70 bg-white p-5 shadow-2xl sm:max-h-[calc(100dvh-2.5rem)] sm:p-6"
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-red-600">
+            <header className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-red-600">
                   Operación #{assignment.id}{assignment.reserva_id ? ` · Reserva #${assignment.reserva_id}` : ""}
                 </p>
-                <h2 className="text-xl font-black text-slate-950">Asignar recursos</h2>
+                <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Asignar recursos</h2>
+                <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                  Selecciona el vehículo y el conductor para este servicio.
+                </p>
               </div>
-              <button type="button" onClick={() => setAssignment(null)} aria-label="Cerrar asignación">
-                <X />
-              </button>
-            </div>
-            {assignmentResourcesLoading && <p role="status" className="rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-800">Cargando vehículos y conductores...</p>}
-            {assignmentResourcesError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700">{assignmentResourcesError}</p>}
-            <label className="block text-sm font-bold text-slate-600">
-              Vehículo
-              <select
-                name="vehiculo_id"
-                value={selectedVehicleId}
-                onChange={(event) => setSelectedVehicleId(event.target.value)}
-                className="mt-1 w-full rounded-xl border p-3 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)}
-                required
+              <button
+                type="button"
+                onClick={() => setAssignment(null)}
+                aria-label="Cerrar asignación"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
               >
-                <option value="">{vehicles.length ? "Selecciona un vehículo" : "No hay vehículos disponibles"}</option>
-                {vehicles.map((vehicle) => (
-                  <option key={vehicle.id} value={vehicle.id}>{vehicle.placa} · {vehicle.modelo} · {vehicle.capacidad} pax</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm font-bold text-slate-600">
-              Conductor
-              <select name="conductor_id" value={selectedDriverId} onChange={(event) => setSelectedDriverId(event.target.value)} className="mt-1 w-full rounded-xl border p-3 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)} required>
-                <option value="">{drivers.length ? "Selecciona un conductor" : "No hay conductores disponibles"}</option>
-                {drivers.map((driver) => (
-                  <option key={driver.id} value={driver.id}>
-                    {driver.nombre} {driver.apellido || ""} · {driver.licencia || "sin licencia"}
+                <X size={18} />
+              </button>
+            </header>
+
+            <section aria-label="Resumen del servicio" className="grid grid-cols-2 gap-2.5 rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Fecha y hora</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">
+                  {formatDate(assignment.fecha_programada)} · {formatTime(assignment.hora_inicio) || "Hora pendiente"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Pasajeros</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">
+                  {assignment.pasajeros} {assignment.pasajeros === 1 ? "persona" : "personas"}
+                </p>
+              </div>
+              <div className="col-span-2 border-t border-slate-200 pt-2.5">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Ruta</p>
+                <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold leading-relaxed text-slate-800">
+                  <span>{assignment.origen || "Origen pendiente"}</span>
+                  <ArrowRight size={14} className="shrink-0 text-slate-400" />
+                  <span>{assignment.destino || "Destino pendiente"}</span>
+                </p>
+              </div>
+            </section>
+
+            {assignmentResourcesLoading && (
+              <div role="status" className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3.5 text-sm font-semibold text-blue-800">
+                <RefreshCw size={17} className="shrink-0 animate-spin" />
+                Buscando vehículos y conductores disponibles...
+              </div>
+            )}
+            {assignmentResourcesError && (
+              <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-800">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" />
+                <div>
+                  <p className="font-black">No fue posible cargar los recursos</p>
+                  <p className="mt-0.5 leading-relaxed">{assignmentResourcesError}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <label className="block text-sm font-bold text-slate-700">
+                <span className="mb-1.5 flex items-center justify-between gap-3">
+                  <span>Vehículo</span>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">
+                    {assignmentResourcesLoading ? "Buscando..." : assignmentResourcesError ? "No consultado" : `${vehicles.length} disponible${vehicles.length === 1 ? "" : "s"}`}
+                  </span>
+                </span>
+                <select
+                  name="vehiculo_id"
+                  value={selectedVehicleId}
+                  onChange={(event) => setSelectedVehicleId(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white p-3.5 text-sm font-semibold text-slate-800 shadow-sm transition focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                  disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)}
+                  required
+                >
+                  <option value="">
+                    {assignmentResourcesLoading
+                      ? "Buscando vehículos..."
+                      : assignmentResourcesError
+                        ? "Disponibilidad no consultada"
+                        : vehicles.length ? "Selecciona un vehículo" : "Sin vehículos disponibles"}
                   </option>
-                ))}
-              </select>
-            </label>
-            <p className="rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">
-              Solo se muestran recursos disponibles para este servicio. El backend vuelve a validar la disponibilidad al confirmar.
-            </p>
-            <button disabled={saving || assignmentResourcesLoading || Boolean(assignmentResourcesError)} className="w-full rounded-xl bg-red-600 py-3 font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
-              {saving ? "Validando..." : "Confirmar asignación"}
-            </button>
+                  {vehicles.map((vehicle) => (
+                    <option key={vehicle.id} value={vehicle.id}>{vehicle.placa} · {vehicle.modelo} · {vehicle.capacidad} pax</option>
+                  ))}
+                </select>
+                {!assignmentResourcesLoading && !assignmentResourcesError && vehicles.length === 0 && (
+                  <span className="mt-1.5 block text-xs font-medium text-slate-500">
+                    No se encontraron vehículos disponibles para este servicio.
+                  </span>
+                )}
+              </label>
+
+              <label className="block text-sm font-bold text-slate-700">
+                <span className="mb-1.5 flex items-center justify-between gap-3">
+                  <span>Conductor</span>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">
+                    {assignmentResourcesLoading ? "Buscando..." : assignmentResourcesError ? "No consultado" : `${drivers.length} disponible${drivers.length === 1 ? "" : "s"}`}
+                  </span>
+                </span>
+                <select
+                  name="conductor_id"
+                  value={selectedDriverId}
+                  onChange={(event) => setSelectedDriverId(event.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white p-3.5 text-sm font-semibold text-slate-800 shadow-sm transition focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                  disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)}
+                  required
+                >
+                  <option value="">
+                    {assignmentResourcesLoading
+                      ? "Buscando conductores..."
+                      : assignmentResourcesError
+                        ? "Disponibilidad no consultada"
+                        : drivers.length ? "Selecciona un conductor" : "Sin conductores disponibles"}
+                  </option>
+                  {drivers.map((driver) => (
+                    <option key={driver.id} value={driver.id}>
+                      {driver.nombre} {driver.apellido || ""} · {driver.licencia || "sin licencia"}
+                    </option>
+                  ))}
+                </select>
+                {!assignmentResourcesLoading && !assignmentResourcesError && drivers.length === 0 && (
+                  <span className="mt-1.5 block text-xs font-medium text-slate-500">
+                    No se encontraron conductores disponibles para este servicio.
+                  </span>
+                )}
+              </label>
+            </div>
+
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs leading-relaxed text-amber-900">
+              <Info size={16} className="mt-0.5 shrink-0 text-amber-700" />
+              <p>Solo se muestran recursos disponibles para este servicio. El backend volverá a validar la disponibilidad al confirmar.</p>
+            </div>
+
+            <footer className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setAssignment(null)}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={saving || assignmentResourcesLoading || Boolean(assignmentResourcesError)}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+              >
+                {saving ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={17} />}
+                {saving ? "Validando..." : "Confirmar asignación"}
+              </button>
+            </footer>
           </form>
         </div>
       )}

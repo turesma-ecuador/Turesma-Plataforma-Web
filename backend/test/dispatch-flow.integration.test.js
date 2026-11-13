@@ -655,6 +655,22 @@ require.cache[databaseModule] = {
   paths: [],
 };
 
+const assignmentNotifications = [];
+const reservationMailerModule = require.resolve("../dist/config/reservaMailer");
+require.cache[reservationMailerModule] = {
+  id: reservationMailerModule,
+  filename: reservationMailerModule,
+  loaded: true,
+  exports: {
+    async notificarClienteReserva(...args) {
+      assignmentNotifications.push(args);
+    },
+    async notificarReprogramacion() {},
+  },
+  children: [],
+  paths: [],
+};
+
 const adminRoutes = require("../dist/routes/admin.routes");
 const app = express();
 app.use(express.json());
@@ -827,6 +843,28 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     assert.equal(assigned.body.data.vehiculo_id, suggestedVehicleId);
     assert.equal(state.reservations[0].vehiculo_id, suggestedVehicleId);
     assert.equal(state.decisions[0].resultado, "aceptada");
+    assert.deepEqual(assignmentNotifications, [[801, "conductor_asignado", 99, false]]);
+
+    const unchangedAssignment = await request(`/api/admin/operaciones/${operationId}/asignar`, {
+      method: "PATCH",
+      body: {
+        vehiculo_id: suggestedVehicleId,
+        conductor_id: recommendation.body.data.vehiculo.conductor_id,
+      },
+    });
+    assert.equal(unchangedAssignment.status, 200);
+    assert.equal(assignmentNotifications.length, 1, "No vuelve a notificar si la asignación no cambió");
+
+    reservationFor(803).estado = "cancelada";
+    const reassigned = await request(`/api/admin/operaciones/${operationId}/asignar`, {
+      method: "PATCH",
+      body: { vehiculo_id: 701, conductor_id: 301 },
+    });
+    assert.equal(reassigned.status, 200, JSON.stringify(reassigned.body));
+    assert.equal(reassigned.body.data.vehiculo_id, 701);
+    assert.equal(state.reservations[0].vehiculo_id, 701);
+    assert.equal(assignmentNotifications.length, 2);
+    assert.deepEqual(assignmentNotifications[1], [801, "conductor_asignado", 99, true]);
 
     const started = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "en_curso" } });
     assert.equal(started.status, 403);

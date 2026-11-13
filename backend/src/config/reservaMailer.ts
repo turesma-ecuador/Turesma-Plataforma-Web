@@ -3,6 +3,7 @@ export {};
 const pool = require("./db");
 const { enviarCorreo } = require("./mailer");
 const { crearNotificacion, notificarAdmins } = require("./notificaciones");
+const { escapeHtml, getWebBaseUrl } = require("./emailTemplate");
 
 type TipoEvento = "confirmada" | "conductor_asignado" | "en_curso" | "finalizada" | "cancelada";
 
@@ -15,10 +16,10 @@ const PLANTILLAS: Record<TipoEvento, { inApp: string; asunto: string; titulo: st
     cuerpo: "Tu pago fue verificado y tu reserva quedó <b>confirmada</b>. Pronto un conductor te atenderá.",
   },
   conductor_asignado: {
-    inApp: "🚗 Un conductor aceptó tu reserva #{id}. ¡Tu viaje está confirmado!",
-    asunto: "Un conductor tomó tu viaje 🚗",
-    titulo: "Conductor asignado",
-    cuerpo: "Un conductor aceptó tu reserva y está listo para tu viaje. Aquí están los datos:",
+    inApp: "Tu viaje ya tiene vehículo y conductor asignados.",
+    asunto: "Tu viaje ya tiene vehículo y conductor asignados",
+    titulo: "Tu viaje ya está preparado",
+    cuerpo: "Turesma asignó un vehículo y un conductor para tu servicio. Revisa los datos de tu unidad y del viaje.",
   },
   en_curso: {
     inApp: "🟢 ¡Tu viaje #{id} ha comenzado! Sigue la ubicación en vivo.",
@@ -46,16 +47,50 @@ const fmtFecha = (f: any) => {
   catch { return String(f); }
 };
 
+const getPublicImageUrl = (value: unknown) => {
+  if (typeof value !== "string" || !value.trim()) return "";
+  try {
+    const apiOrigin = process.env.API_PUBLIC_URL || `http://localhost:${process.env.PORT || 4000}`;
+    const imageUrl = new URL(value.trim(), `${apiOrigin.replace(/\/+$/, "")}/`);
+    if (!["http:", "https:"].includes(imageUrl.protocol) || imageUrl.username || imageUrl.password) return "";
+    return imageUrl.toString();
+  } catch {
+    return "";
+  }
+};
+
 // Correo de contacto y pie estándar (mensaje automático) para todos los correos.
 const CONTACTO_EMAIL = "turesmasa@hotmail.com";
 const PIE_HTML = `<p style="margin:22px 0 0;color:#9ca3af;font-size:11px;text-align:center;line-height:1.5;">Este mensaje se envió de forma automática. Para más información comunícate al correo <a href="mailto:${CONTACTO_EMAIL}" style="color:#9ca3af;">${CONTACTO_EMAIL}</a>.</p>`;
 const PIE_TEXTO = `\n\n— Este mensaje se envió de forma automática. Para más información comunícate al correo ${CONTACTO_EMAIL}.`;
 
 // Plantilla de correo con la identidad de Turesma (rojo + datos del viaje).
-const construirHtml = (tipo: TipoEvento, d: any) => {
+const construirHtml = (tipo: TipoEvento, d: any, isReassignment = false) => {
   const p = PLANTILLAS[tipo];
   const fila = (label: string, valor: string) =>
-    valor ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;">${label}</td><td style="padding:6px 0;color:#111827;font-size:13px;font-weight:600;text-align:right;">${valor}</td></tr>` : "";
+    valor ? `<tr><td style="padding:6px 0;color:#6b7280;font-size:13px;">${escapeHtml(label)}</td><td style="padding:6px 0;color:#111827;font-size:13px;font-weight:600;text-align:right;">${escapeHtml(String(valor))}</td></tr>` : "";
+  const isAssignment = tipo === "conductor_asignado";
+  const title = isReassignment ? "Actualizamos tu asignación" : p.titulo;
+  const body = isAssignment
+    ? isReassignment
+      ? "Actualizamos el vehículo o el conductor de tu servicio. Consulta la nueva información antes de tu viaje."
+      : p.cuerpo
+    : p.cuerpo;
+  const imageUrl = isAssignment ? getPublicImageUrl(d.vehiculo_imagen_url) : "";
+  const vehicleImage = imageUrl
+    ? `<div style="margin:18px 0;padding:12px;border:1px solid #e5e7eb;border-radius:12px;text-align:center;">
+         <img src="${escapeHtml(imageUrl)}" alt="Vehículo asignado a la reserva ${escapeHtml(String(d.id))}" style="display:block;width:100%;max-width:420px;max-height:240px;object-fit:cover;margin:0 auto;border-radius:8px;">
+         <p style="margin:8px 0 0;color:#6b7280;font-size:11px;">Foto del vehículo asignado</p>
+       </div>`
+    : isAssignment
+      ? `<p style="margin:16px 0;color:#64748b;font-size:12px;">No hay una foto disponible de la unidad. Verifica la placa y el modelo indicados.</p>`
+      : "";
+  const webUrl = getWebBaseUrl();
+  const action = isAssignment
+    ? `<p style="margin:18px 0;text-align:center;">
+         <a href="${escapeHtml(`${webUrl}/cliente/historial`)}" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#E31E24;color:#ffffff;font-size:13px;font-weight:bold;text-decoration:none;">Ver reserva y contactar al conductor</a>
+       </p>`
+    : "";
   return `
   <div style="max-width:520px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#111827;">
     <div style="background:#0b0f1a;padding:24px;border-radius:16px 16px 0 0;text-align:center;">
@@ -63,8 +98,8 @@ const construirHtml = (tipo: TipoEvento, d: any) => {
       <div style="color:#9ca3af;font-size:10px;letter-spacing:3px;margin-top:2px;">TRANSPORTE TURÍSTICO</div>
     </div>
     <div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 16px 16px;padding:28px;">
-      <h2 style="margin:0 0 8px;font-size:20px;">${p.titulo}</h2>
-      <p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.5;">Hola ${d.cliente_nombre || "cliente"}, ${p.cuerpo}</p>
+      <h2 style="margin:0 0 8px;font-size:20px;">${escapeHtml(title)}</h2>
+      <p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.5;">Hola ${escapeHtml(String(d.cliente_nombre || "cliente"))}, ${body}</p>
       <table style="width:100%;border-collapse:collapse;border-top:1px solid #f3f4f6;">
         ${fila("Reserva", "#" + d.id)}
         ${fila("Origen", d.origen)}
@@ -74,6 +109,8 @@ const construirHtml = (tipo: TipoEvento, d: any) => {
         ${fila("Conductor", d.conductor_nombre)}
         ${fila("Total", d.total != null ? "$" + Number(d.total).toFixed(2) : "")}
       </table>
+      ${vehicleImage}
+      ${action}
       ${PIE_HTML}
     </div>
   </div>`;
@@ -82,13 +119,18 @@ const construirHtml = (tipo: TipoEvento, d: any) => {
 // Notifica al CLIENTE de un cambio de estado de su reserva: crea la notificación
 // in-app (campanita) y envía el correo. Todo best-effort: si algo falla, se
 // registra pero NO se interrumpe la operación que la disparó.
-const notificarClienteReserva = async (reservaId: number, tipo: TipoEvento, senderId: number | null | undefined) => {
+const notificarClienteReserva = async (
+  reservaId: number,
+  tipo: TipoEvento,
+  senderId: number | null | undefined,
+  isReassignment = false
+) => {
   try {
     const r = await pool.query(
       `SELECT r.id, r.origen, r.destino, r.fecha_reserva, r.total, r.usuario_id,
               u.nombre AS cliente_nombre, u.email AS cliente_email,
-              v.placa AS vehiculo_placa, v.modelo AS vehiculo_modelo,
-              c.nombre AS conductor_nombre
+              v.placa AS vehiculo_placa, v.modelo AS vehiculo_modelo, v.imagen_url AS vehiculo_imagen_url,
+              concat_ws(' ', c.nombre, c.apellido) AS conductor_nombre
        FROM reservas r
        JOIN usuarios u ON u.id = r.usuario_id
        LEFT JOIN vehiculos v ON v.id = r.vehiculo_id
@@ -101,13 +143,23 @@ const notificarClienteReserva = async (reservaId: number, tipo: TipoEvento, send
     const d = r.rows[0];
     const p = PLANTILLAS[tipo];
     if (!p) return;
+    const vehicleDetails = [d.vehiculo_placa, d.vehiculo_modelo, d.conductor_nombre].filter(Boolean).join(" · ");
+    const inAppMessage = tipo === "conductor_asignado"
+      ? `${isReassignment ? "🔄 Actualizamos la asignación" : "🚐 Turesma asignó los recursos"} de tu reserva #${reservaId}${vehicleDetails ? `: ${vehicleDetails}` : ""}. Consulta los detalles y contacta al conductor desde tu portal.`
+      : p.inApp.replace("{id}", String(reservaId));
 
     // 1) Notificación in-app (campanita del cliente)
-    await crearNotificacion(senderId, d.usuario_id, p.inApp.replace("{id}", String(reservaId)), reservaId, "reserva", reservaId);
+    await crearNotificacion(senderId, d.usuario_id, inAppMessage, reservaId, "reserva", reservaId);
 
     // 2) Correo (si el cliente tiene email y el SMTP está configurado).
     //    Cuando la reserva queda CONFIRMADA, se adjunta el PDF de la proforma.
     if (d.cliente_email) {
+      const subject = tipo === "conductor_asignado" && isReassignment
+        ? "Actualizamos el vehículo y conductor de tu viaje"
+        : p.asunto;
+      const assignmentText = tipo === "conductor_asignado"
+        ? `\nVehículo: ${[d.vehiculo_placa, d.vehiculo_modelo].filter(Boolean).join(" · ") || "Por confirmar"}\nConductor: ${d.conductor_nombre || "Por confirmar"}\nConsulta tu reserva y contacta al conductor: ${getWebBaseUrl()}/cliente/historial`
+        : "";
       let attachments: any[] | undefined;
       if (tipo === "confirmada") {
         try {
@@ -126,9 +178,9 @@ const notificarClienteReserva = async (reservaId: number, tipo: TipoEvento, send
       }
       await enviarCorreo({
         to: d.cliente_email,
-        subject: p.asunto,
-        html: construirHtml(tipo, d),
-        text: p.inApp.replace("{id}", String(reservaId)) + PIE_TEXTO,
+        subject,
+        html: construirHtml(tipo, d, isReassignment),
+        text: `${inAppMessage}${assignmentText}${PIE_TEXTO}`,
         attachments,
       });
     }

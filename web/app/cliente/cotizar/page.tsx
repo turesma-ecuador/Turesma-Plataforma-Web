@@ -15,6 +15,7 @@ import { MapPicker, Punto } from "../../../components/map-picker";
 import { VehiculoCalendario } from "../../../components/vehiculo-calendario";
 import { calcularRuta, formatDuracion, reverseGeocode, RutaCalculada } from "../../../lib/leaflet";
 import { formatLocalizedDate, LocalizedContent, useLocale } from "../../../lib/i18n";
+import { ClientGuidedTour } from "../_components/client-guided-tour";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -432,6 +433,10 @@ export default function ClienteCotizarPage() {
   return (
     <LocalizedContent>
     <div className="space-y-6">
+
+      <div className="flex justify-end">
+        <ClientGuidedTour variant="booking" />
+      </div>
 
       {false && <section className="overflow-hidden rounded-3xl border border-violet-200 bg-white shadow-lg">
         <button type="button" onClick={() => { setShowCustomRequest(value => !value); setCustomRequestError(""); }}

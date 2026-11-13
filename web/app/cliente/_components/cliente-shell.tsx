@@ -19,6 +19,7 @@ import { clearStoredUser } from "../../../lib/session";
 import { NotificationBell } from "../../../components/notification-bell";
 import { ClienteChatbot } from "../../../components/cliente-chatbot";
 import { useClienteBadges } from "./use-cliente-badges";
+import { ClientGuidedTour } from "./client-guided-tour";
 import { useMobileMenuAccessibility } from "../../../lib/use-mobile-menu-accessibility";
 import { useClienteGuard } from "../../../lib/use-cliente-guard";
 import { LanguageSwitcher, LocalizedContent } from "../../../lib/i18n";
@@ -244,10 +245,14 @@ export function ClienteShell({ children }: ClienteShellProps) {
 
         <section className="min-h-0 flex-1 overflow-y-auto p-3 pb-24 sm:p-6 sm:pb-6 md:p-10">
           <div className="w-full max-w-7xl mx-auto space-y-5 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-l-4 border-[#E31E24] pl-4 sm:pl-6">
+            <div className="flex flex-col gap-3 border-l-4 border-[#E31E24] pl-4 sm:pl-6 md:flex-row md:items-end md:justify-between">
               <div>
                 <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#1a1a1a] tracking-tighter uppercase italic">{currentSection}</h1>
               </div>
+              <ClientGuidedTour
+                variant="portal"
+                autoStart={pathname === "/cliente" && !checkingSession && Boolean(user)}
+              />
             </div>
 
             <div className="bg-white rounded-2xl sm:rounded-[2.5rem] border border-gray-200 shadow-sm sm:shadow-2xl sm:shadow-gray-200/50 min-h-[420px] sm:min-h-[600px] overflow-hidden p-3 sm:p-8 border-b-4 sm:border-b-8 border-[#E31E24]">
