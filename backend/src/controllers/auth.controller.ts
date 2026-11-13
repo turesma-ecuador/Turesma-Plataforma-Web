@@ -7,6 +7,7 @@ const nodemailer = require("nodemailer");
 const { normalizeRole } = require("../config/catalogoHelpers");
 const { generateToken } = require("../middleware/auth.middleware");
 const { createEmailVerification } = require("../config/emailVerification");
+const { escapeHtml, renderBrandedEmail } = require("../config/emailTemplate");
 const { normalizeIdentification } = require("../config/identificacion");
 
 const PIN_TTL_MINUTES = Number(process.env.PASSWORD_RESET_PIN_TTL_MINUTES || 10);
@@ -78,17 +79,19 @@ const sendResetPinEmail = async ({ to, pin, nombre }) => {
   const info = await transporter.sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
     to,
-    subject: "Recuperación de contraseña - Turesma",
-    text: `Hola ${nombre || "usuario"}, tu PIN de recuperación es ${pin}. Expira en ${ttlMinutes} minutos.`,
-    html: `
-      <div style="font-family: Arial, sans-serif; line-height:1.5; color:#111827;">
-        <h2>Recuperación de contraseña</h2>
-        <p>Hola ${nombre || "usuario"},</p>
-        <p>Tu PIN de recuperación es:</p>
-        <p style="font-size:24px; font-weight:700; letter-spacing:3px;">${pin}</p>
-        <p>Este PIN expira en ${ttlMinutes} minutos.</p>
-      </div>
-    `,
+    subject: "Código para restablecer tu contraseña | Turesma",
+    text: `Hola ${nombre || "usuario"}:\n\nRecibimos una solicitud para restablecer la contraseña de tu cuenta de Turesma. Ingresa este PIN en la página de recuperación:\n\n${pin}\n\nEl PIN es válido durante ${ttlMinutes} minutos. No lo compartas con nadie. Si no solicitaste este cambio, ignora este mensaje; tu contraseña no cambiará.`,
+    html: renderBrandedEmail({
+      preheader: "Usa el código seguro para restablecer la contraseña de tu cuenta.",
+      title: "Restablece tu contraseña",
+      bodyHtml: `<p style="margin:0 0 14px">Hola <strong>${escapeHtml(nombre || "usuario")}</strong>:</p>
+        <p style="margin:0 0 20px">Recibimos una solicitud para restablecer la contraseña de tu cuenta de Turesma. Ingresa el siguiente PIN en la página de recuperación:</p>
+        <div style="margin:0 0 20px;padding:18px 12px;border:1px solid #e2e8f0;border-radius:8px;background-color:#f8fafc;text-align:center">
+          <span style="color:#111827;font-size:32px;font-weight:bold;letter-spacing:8px">${escapeHtml(String(pin))}</span>
+        </div>
+        <p style="margin:0;color:#64748b;font-size:13px">Este código es personal. No lo compartas con nadie, incluido el personal de Turesma.</p>`,
+      notice: `El PIN es válido durante ${ttlMinutes} minutos. Si no solicitaste este cambio, ignora este mensaje; tu contraseña no cambiará.`,
+    }),
   });
 
   console.log(`[RECUPERAR_CLAVE] Correo enviado a ${to}. messageId=${info.messageId || "N/A"}`);
@@ -246,11 +249,17 @@ const login = async (req, res) => {
       rol: normalizedRole,
       imagen_url: user.imagen_url || null,
     };
+    const sessionId = crypto.randomUUID();
+    await pool.query(
+      "INSERT INTO auth_sessions (id, user_id) VALUES ($1, $2)",
+      [sessionId, user.id]
+    );
     const token = generateToken({
       id: user.id,
       email: user.email,
       rol: normalizedRole,
       session_version: Number(user.session_version || 0),
+      session_id: sessionId,
     });
     const message = `Bienvenido ${normalizedRole}`;
 
@@ -468,6 +477,44 @@ const getMe = async (req: any, res: any) => {
   }
 };
 
+const recordSessionActivity = async (req: any, res: any) => {
+  try {
+    const result = await pool.query(
+      `UPDATE auth_sessions
+       SET last_activity_at = NOW()
+       WHERE id = $1::uuid
+         AND user_id = $2
+         AND revoked_at IS NULL
+       RETURNING id`,
+      [req.user?.session_id, req.user?.id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(401).json({ error: "La sesión ya no es válida." });
+    }
+    return res.status(204).end();
+  } catch (error) {
+    console.error("Error registrando actividad de sesión:", error);
+    return res.status(500).json({ error: "No se pudo mantener la sesión activa." });
+  }
+};
+
+const logout = async (req: any, res: any) => {
+  try {
+    await pool.query(
+      `UPDATE auth_sessions
+       SET revoked_at = NOW()
+       WHERE id = $1::uuid
+         AND user_id = $2
+         AND revoked_at IS NULL`,
+      [req.user?.session_id, req.user?.id]
+    );
+    return res.status(204).end();
+  } catch (error) {
+    console.error("Error cerrando sesión:", error);
+    return res.status(500).json({ error: "No se pudo cerrar la sesión en el servidor." });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -475,4 +522,6 @@ module.exports = {
   resetPassword,
   getMe,
   updateMe,
+  recordSessionActivity,
+  logout,
 };

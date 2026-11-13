@@ -8,20 +8,28 @@ export async function proxy(request: NextRequest) {
     session = token ? await getVerifiedSession(token) : null;
   } catch (error) {
     console.error("No se pudo verificar la sesión con el backend:", error);
-    return NextResponse.json(
-      { error: "El servicio de autenticación no está disponible. Inténtalo de nuevo." },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("auth_error", "unavailable");
+    return NextResponse.redirect(loginUrl);
   }
   const requestedPortal = `/${request.nextUrl.pathname.split("/")[1]}`;
 
   if (!session) {
-    const response = NextResponse.redirect(new URL("/login", request.url));
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("auth_error", "expired");
+    const response = NextResponse.redirect(loginUrl);
     response.cookies.delete(SESSION_COOKIE);
     return response;
   }
 
   const userPortal = getPortalPath(session.rol);
+  if (!userPortal) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("auth_error", "role");
+    const response = NextResponse.redirect(loginUrl);
+    response.cookies.delete(SESSION_COOKIE);
+    return response;
+  }
   const allowed = userPortal === requestedPortal;
 
   if (

@@ -1,7 +1,16 @@
 export {};
 
 const express = require("express");
-const { login, register, forgotPassword, resetPassword, getMe, updateMe } = require("../controllers/auth.controller");
+const {
+  login,
+  register,
+  forgotPassword,
+  resetPassword,
+  getMe,
+  updateMe,
+  recordSessionActivity,
+  logout,
+} = require("../controllers/auth.controller");
 const { uploadPerfilImagen } = require("../controllers/uploads.controller");
 const { verifyToken } = require("../middleware/auth.middleware");
 const { verifyEmailToken } = require("../config/emailVerification");
@@ -30,5 +39,7 @@ router.post("/reset-password", resetPassword);
 router.post("/upload-perfil", uploadPerfilImagen);
 router.get("/me", verifyToken, getMe);
 router.put("/me", verifyToken, updateMe);
+router.post("/activity", verifyToken, recordSessionActivity);
+router.post("/logout", verifyToken, logout);
 
 module.exports = router;

@@ -3,14 +3,14 @@ export {};
 const crypto = require("crypto");
 const pool = require("./db");
 const { enviarCorreo } = require("./mailer");
+const { escapeHtml, getWebBaseUrl, renderBrandedEmail } = require("./emailTemplate");
 
 const VERIFICATION_TTL_HOURS = 24;
 
 const hashToken = (token: string) => crypto.createHash("sha256").update(token).digest("hex");
 
 const getVerificationUrl = (token: string) => {
-  const webUrl = String(process.env.WEB_URL || "http://localhost:3000").replace(/\/+$/, "");
-  return `${webUrl}/verificar-correo?token=${encodeURIComponent(token)}`;
+  return `${getWebBaseUrl()}/verificar-correo?token=${encodeURIComponent(token)}`;
 };
 
 const createEmailVerificationToken = () => {
@@ -22,29 +22,22 @@ const createEmailVerificationToken = () => {
   };
 };
 
-const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-}[character] || character));
-
 const sendEmailVerification = async (email: string, nombre: string, token: string) => {
   const url = getVerificationUrl(token);
   const safeName = escapeHtml(nombre || "usuario");
   return enviarCorreo({
     to: email,
-    subject: "Verifica tu correo electrónico - Turesma",
-    text: `Hola ${nombre || "usuario"}, confirma tu correo abriendo este enlace: ${url}. El enlace expira en ${VERIFICATION_TTL_HOURS} horas.`,
-    html: `
-      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:auto">
-        <h2>Verifica tu correo electrónico</h2>
-        <p>Hola ${safeName}, confirma tu correo electrónico para activar tu cuenta de Turesma.</p>
-        <p><a href="${url}" style="display:inline-block;background:#E31E24;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Verificar mi correo</a></p>
-        <p style="font-size:12px;color:#6b7280">Este enlace expira en ${VERIFICATION_TTL_HOURS} horas.</p>
-      </div>
-    `,
+    subject: "Confirma tu correo electrónico | Turesma",
+    text: `Hola ${nombre || "usuario"}:\n\nGracias por registrarte en Turesma. Para activar tu cuenta, confirma que esta dirección de correo te pertenece:\n\n${url}\n\nPor seguridad, el enlace es válido durante ${VERIFICATION_TTL_HOURS} horas. Si no solicitaste esta cuenta, puedes ignorar este mensaje.`,
+    html: renderBrandedEmail({
+      preheader: "Confirma tu correo para activar tu cuenta de Turesma.",
+      title: "Confirma tu correo electrónico",
+      bodyHtml: `<p style="margin:0 0 14px">Hola <strong>${safeName}</strong>:</p>
+        <p style="margin:0">Gracias por registrarte en Turesma. Para activar tu cuenta y comenzar a usar nuestros servicios, confirma que esta dirección de correo te pertenece.</p>`,
+      actionLabel: "Confirmar mi correo",
+      actionUrl: url,
+      notice: `Por seguridad, este enlace es válido durante ${VERIFICATION_TTL_HOURS} horas. Si no solicitaste esta cuenta, puedes ignorar este mensaje.`,
+    }),
   });
 };
 

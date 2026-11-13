@@ -1,5 +1,6 @@
 export const SESSION_KEY = "turesma_user";
 export const TOKEN_KEY = "turesma_token";
+export const LAST_ACTIVITY_KEY = "turesma_last_activity";
 
 export type SessionUser = {
   id?: number;
@@ -128,6 +129,7 @@ export const clearStoredUser = () => {
   if (typeof window === "undefined") return;
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(LAST_ACTIVITY_KEY);
 };
 
 // Si una respuesta de la API es 401 (token ausente o expirado), cierra la sesión

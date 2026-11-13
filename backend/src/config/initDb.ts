@@ -92,6 +92,20 @@ const initDatabase = async () => {
     ADD COLUMN IF NOT EXISTS session_version INT NOT NULL DEFAULT 0;
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id UUID PRIMARY KEY,
+      user_id INT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      revoked_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS auth_sessions_user_activity_idx
+      ON auth_sessions (user_id, last_activity_at DESC);
+    DELETE FROM auth_sessions
+    WHERE last_activity_at < NOW() - INTERVAL '30 days'
+       OR revoked_at < NOW() - INTERVAL '30 days';
+  `);
+  await pool.query(`
     UPDATE usuarios
     SET tipo_identificacion = 'ruc'
     WHERE cedula ~ '^[0-9]{13}$' AND tipo_identificacion = 'cedula';

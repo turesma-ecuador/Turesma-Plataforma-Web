@@ -603,7 +603,12 @@ app.use("/api/admin", adminRoutes);
 
 let server;
 let baseUrl;
-const token = jwt.sign({ id: 99, email: "dispatch-test@example.invalid", rol: "admin" }, process.env.JWT_SECRET);
+const token = jwt.sign({
+  id: 99,
+  email: "dispatch-test@example.invalid",
+  rol: "admin",
+  session_id: "00000000-0000-4000-8000-000000000001",
+}, process.env.JWT_SECRET);
 
 test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con base aislada", async (t) => {
   await new Promise((resolve) => {

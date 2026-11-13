@@ -150,7 +150,12 @@ const adminRoutes = require("../dist/routes/admin.routes");
 const app = express();
 app.use(express.json());
 app.use("/api/admin", adminRoutes);
-const tokenForRole = (rol) => jwt.sign({ id: 99, email: `${rol}@example.invalid`, rol }, process.env.JWT_SECRET);
+const tokenForRole = (rol) => jwt.sign({
+  id: 99,
+  email: `${rol}@example.invalid`,
+  rol,
+  session_id: "00000000-0000-4000-8000-000000000001",
+}, process.env.JWT_SECRET);
 
 let server;
 let baseUrl;
