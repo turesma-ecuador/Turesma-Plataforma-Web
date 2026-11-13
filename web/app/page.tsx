@@ -671,7 +671,7 @@ export default function RootPage() {
             alt="Bus de turismo"
             fill
             sizes="100vw"
-            priority
+            loading="lazy"
             placeholder="blur"
             blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/AP/EABQQAQAAAAAAAAAAAAAAAAAAACD/2gAIAQEAAT8Af//EABQRAQAAAAAAAAAAAAAAAAAAACD/2gAIAQIBAT8Af//EABQRAQAAAAAAAAAAAAAAAAAAACD/2gAIAQMBAT8Af//Z"
             className="h-full w-full object-cover opacity-40 transition-transform duration-[10s] hover:scale-110"
@@ -710,7 +710,6 @@ export default function RootPage() {
                 fill
                 sizes="(max-width: 640px) 68vw, (max-width: 1024px) 38vw, 330px"
                 quality={75}
-                loading="eager"
                 onError={handleRemoteImageError}
                 className="object-cover"
                 style={{
@@ -824,7 +823,7 @@ export default function RootPage() {
                 alt={cityShowcase.primary_alt}
                 fill
                 sizes="(max-width: 1024px) 100vw, 55vw"
-                quality={95}
+                quality={75}
                 className="object-cover brightness-105 saturate-[1.08] transition-transform duration-700 hover:scale-105"
                 style={{
                   objectPosition: `${cityShowcase.primary_position_x}% ${cityShowcase.primary_position_y}%`,
@@ -842,7 +841,7 @@ export default function RootPage() {
                   alt={cityShowcase.secondary_alt}
                   fill
                   sizes="(max-width: 640px) 128px, 160px"
-                  quality={95}
+                  quality={75}
                   className="object-cover"
                   style={{
                     objectPosition: `${cityShowcase.secondary_position_x}% ${cityShowcase.secondary_position_y}%`,
