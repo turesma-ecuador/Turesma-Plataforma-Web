@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { getBackendApiUrl } from "../../../../lib/backend-url";
 import { getVerifiedSession, SESSION_COOKIE } from "../../../../lib/server-session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || "http://localhost:4000";
+const API_URL = getBackendApiUrl();
 const LOGIN_TIMEOUT_MS = 10_000;
 
 export async function POST(request: Request) {

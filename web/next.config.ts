@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
+import { getBackendApiUrl } from "./lib/backend-url";
 
 const apiUrl = new URL(process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000");
-const apiProxyTarget = new URL(
-  process.env.API_PROXY_TARGET || process.env.API_URL || "https://api.turesma.com",
-);
+const apiProxyTarget = new URL(getBackendApiUrl());
 
 const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,

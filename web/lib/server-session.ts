@@ -1,3 +1,5 @@
+import { getBackendApiUrl } from "./backend-url";
+
 export const SESSION_COOKIE = "turesma_session";
 
 export type SessionClaims = {
@@ -6,7 +8,7 @@ export type SessionClaims = {
   rol: string;
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || "http://localhost:4000";
+const API_URL = getBackendApiUrl();
 const SESSION_CHECK_TIMEOUT_MS = 10_000;
 
 export const getVerifiedSession = async (token: string): Promise<SessionClaims | null> => {

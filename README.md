@@ -83,8 +83,11 @@ cuenta de AtukHosting actual y Node.js 22.
    `UPLOADS_DIR`. Al iniciar con almacenamiento vacío, carga los medios desde
    la aplicación para guardarlos en el servidor.
 
-Después de configurar la API en cPanel, configura en Vercel
-`NEXT_PUBLIC_API_URL=https://api.turesma.com` y vuelve a desplegar el frontend.
+Después de configurar la API en cPanel, configura en Vercel las variables
+`NEXT_PUBLIC_API_URL=https://turesma.com/api-proxy`, `API_PROXY_TARGET=https://api.turesma.com`
+y `API_URL=https://api.turesma.com`, y vuelve a desplegar el frontend. `API_URL`
+y `API_PROXY_TARGET` deben apuntar al origen de la API, no a la ruta `/api-proxy`
+del frontend.
 
 ## Inteligencia operativa
 
