@@ -432,7 +432,8 @@ const pool = {
           }] : []);
         }
         if (query.startsWith("select o.id, o.vehiculo_id, o.conductor_id")) {
-          const [operationId, startDateValue, endDateValue, startValue, endValue, activeStates, vehicleId, driverUserId, driverId] = params;
+          assert.equal(params.length, 8, "La consulta debe enviar solo los parámetros que utiliza");
+          const [operationId, startDateValue, endDateValue, startValue, endValue, activeStates, vehicleId, driverId] = params;
           const startDate = asDate(startDateValue);
           const endDate = asDate(endDateValue);
           const start = startValue ? asTime(startValue) : null;
@@ -442,14 +443,14 @@ const pool = {
             && operation.fecha_programada <= endDate
             && asDate(operation.fecha_fin_programada || operation.fecha_programada) >= startDate
             && activeStates.includes(operation.estado)
-            && (operation.vehiculo_id === Number(vehicleId) || operation.conductor_id === driverForUser(driverUserId)?.id)
+            && (operation.vehiculo_id === Number(vehicleId) || operation.conductor_id === Number(driverId))
             && (startDate !== endDate || operation.fecha_programada !== asDate(operation.fecha_fin_programada || operation.fecha_programada)
               || intersects(start, end, operation.hora_inicio, operation.hora_fin))
           );
           return result(conflict ? [{
             ...conflict,
             placa: vehicleFor(conflict.vehiculo_id)?.placa,
-            conductor_nombre: `Conductor ${driverForUser(driverId)?.usuario_id}`,
+            conductor_nombre: `Conductor ${state.drivers.find((driver) => driver.id === Number(driverId))?.usuario_id}`,
           }] : []);
         }
         if (query.startsWith("select r.id as reserva_id, r.vehiculo_id, v.placa")) {

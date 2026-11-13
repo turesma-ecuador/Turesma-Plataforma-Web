@@ -899,7 +899,12 @@ export default function AdminReservasPage() {
                       Ruta actual: <b>{form.origen || "—"}</b> → <b>{form.destino || "—"}</b>
                     </p>
                   )}
-                  <MapPicker origin={adminOrigin} destination={adminDestination} onChange={(which, val) => which === "origin" ? setAdminOrigin(val) : setAdminDestination(val)} />
+                  <MapPicker
+                    origin={adminOrigin}
+                    destination={adminDestination}
+                    addressSearch
+                    onChange={(which, val) => which === "origin" ? setAdminOrigin(val) : setAdminDestination(val)}
+                  />
                 </section>
               </div>
 

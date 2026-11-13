@@ -54,7 +54,7 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
        AND o.fecha_programada <= $3::date
        AND COALESCE(o.fecha_fin_programada, o.fecha_programada) >= $2::date
        AND o.estado = ANY($6::text[])
-       AND (o.vehiculo_id = $7 OR o.conductor_id = $9)
+       AND (o.vehiculo_id = $7 OR o.conductor_id = $8)
        AND (
          $2::date <> $3::date
          OR COALESCE(o.fecha_fin_programada, o.fecha_programada) <> o.fecha_programada
@@ -62,7 +62,7 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
          OR (o.hora_inicio < $5::time AND $4::time < o.hora_fin)
        )
      LIMIT 1`,
-    [operationId, date, endDate, start, end, ACTIVE_STATES, vehicleId, driverUserId, driverId]
+    [operationId, date, endDate, start, end, ACTIVE_STATES, vehicleId, driverId]
   );
 
   if (result.rows[0]) return result.rows[0];
