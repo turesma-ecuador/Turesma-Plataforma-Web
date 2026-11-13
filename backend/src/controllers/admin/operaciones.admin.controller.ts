@@ -475,6 +475,7 @@ const asignarOperacion = async (req: any, res: any) => {
 
     const driver = await client.query(
       `SELECT c.id, c.usuario_id, c.estado, c.fecha_licencia_vencimiento, u.activo,
+              (c.fecha_licencia_vencimiento IS NULL) AS licencia_sin_vigencia,
               (c.fecha_licencia_vencimiento IS NOT NULL
                AND c.fecha_licencia_vencimiento < CURRENT_DATE) AS licencia_vencida
        FROM conductores c JOIN usuarios u ON u.id = c.usuario_id
@@ -486,6 +487,9 @@ const asignarOperacion = async (req: any, res: any) => {
     const driverId = Number(driverData.id);
     if (!driverData.activo || ["inactivo", "mantenimiento"].includes(driverData.estado)) {
       return reject(409, { success: false, error: "El conductor no está disponible" });
+    }
+    if (driverData.licencia_sin_vigencia) {
+      return reject(409, { success: false, error: "El conductor no tiene una vigencia de licencia registrada" });
     }
     if (driverData.licencia_vencida) {
       return reject(409, { success: false, error: "La licencia del conductor está vencida" });

@@ -563,6 +563,7 @@ const recomendarAsignacion = async (req: any, res: any) => {
   const horaInicio = typeof req.query.hora_inicio === "string" ? req.query.hora_inicio : null;
   const horaFin = typeof req.query.hora_fin === "string" ? req.query.hora_fin : null;
   const operationId = req.query.operacion_id === undefined ? null : Number(req.query.operacion_id);
+  const soloDisponibles = req.query.solo_disponibles === "true";
 
   const isValidDate = (value: string) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -572,6 +573,7 @@ const recomendarAsignacion = async (req: any, res: any) => {
   if (!isValidDate(fecha) || !isValidDate(fechaFin) || fechaFin < fecha
     || !Number.isInteger(pasajeros) || pasajeros <= 0
     || (operationId !== null && (!Number.isInteger(operationId) || operationId <= 0))
+    || (soloDisponibles && operationId === null)
     || (horaInicio !== null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(horaInicio))
     || (horaFin !== null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(horaFin))
     || (horaInicio && horaFin && horaFin <= horaInicio)) {
@@ -719,6 +721,96 @@ const recomendarAsignacion = async (req: any, res: any) => {
       SELECT * FROM vehiculos_evaluados
       ORDER BY cardinality(bloqueos), placa
     `, [fecha, fechaFin, pasajeros, operationId, horaInicio, horaFin]);
+
+    if (soloDisponibles) {
+      const availableDrivers = await pool.query(
+        `SELECT u.id, u.nombre, u.apellido, u.activo,
+                c.licencia, c.estado, c.fecha_licencia_vencimiento
+         FROM conductores c
+         INNER JOIN usuarios u ON u.id = c.usuario_id
+         WHERE u.activo = true
+           AND c.estado IS NOT NULL
+           AND c.estado NOT IN ('inactivo', 'mantenimiento')
+           AND c.fecha_licencia_vencimiento IS NOT NULL
+           AND c.fecha_licencia_vencimiento >= CURRENT_DATE
+           AND NOT EXISTS (
+             SELECT 1
+             FROM disponibilidad_externa d
+             WHERE d.conductor_usuario_id = u.id
+               AND d.estado = 'activo'
+               AND d.motivo <> 'fuera_de_servicio'
+               AND d.fecha_inicio <= $3::date
+               AND d.fecha_fin >= $2::date
+               AND (
+                 $2::date <> $3::date OR d.hora_inicio IS NULL OR $4::time IS NULL
+                 OR d.hora_fin IS NULL OR $5::time IS NULL
+                 OR (d.hora_inicio < $5::time AND $4::time < d.hora_fin)
+               )
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM operaciones o
+             WHERE o.conductor_id = c.id
+               AND o.id <> $1
+               AND o.estado IN ('programada', 'asignada', 'en_curso', 'incidencia')
+               AND o.fecha_programada <= $3::date
+               AND COALESCE(o.fecha_fin_programada, o.fecha_programada) >= $2::date
+               AND (
+                 $2::date <> $3::date
+                 OR COALESCE(o.fecha_fin_programada, o.fecha_programada) <> o.fecha_programada
+                 OR $4::time IS NULL OR o.hora_inicio IS NULL OR $5::time IS NULL OR o.hora_fin IS NULL
+                 OR (o.hora_inicio < $5::time AND $4::time < o.hora_fin)
+               )
+           )
+           AND NOT EXISTS (
+             SELECT 1
+             FROM reservas r
+             WHERE r.id <> COALESCE((SELECT reserva_id FROM operaciones WHERE id = $1), -1)
+               AND r.estado NOT IN ('cancelada', 'finalizada')
+               AND COALESCE(r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date) <= $3::date
+               AND COALESCE(r.fecha_fin, r.fecha_regreso, r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date) >= $2::date
+               AND r.conductor_id = CASE WHEN EXISTS (
+                 SELECT 1
+                 FROM information_schema.table_constraints tc
+                 INNER JOIN information_schema.key_column_usage kcu
+                   ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+                 INNER JOIN information_schema.constraint_column_usage ccu
+                   ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+                 WHERE tc.table_schema = 'public'
+                   AND tc.table_name = 'reservas'
+                   AND tc.constraint_type = 'FOREIGN KEY'
+                   AND kcu.column_name = 'conductor_id'
+                   AND ccu.table_name = 'conductores'
+               ) THEN c.id ELSE u.id END
+               AND (
+                 $2::date <> $3::date
+                 OR COALESCE(r.fecha_fin, r.fecha_regreso, r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date)
+                      <> COALESCE(r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date)
+                 OR $4::time IS NULL OR r.fecha_salida IS NULL OR $5::time IS NULL OR r.fecha_llegada IS NULL
+                 OR (r.fecha_salida::time < $5::time AND $4::time < r.fecha_llegada::time)
+               )
+           )
+         ORDER BY u.nombre, u.apellido, u.id`,
+        [operationId, fecha, fechaFin, horaInicio, horaFin]
+      );
+
+      return res.json({
+        success: true,
+        data: {
+          vehiculos: evaluatedResult.rows
+            .filter((vehicle: any) => vehicle.bloqueos.length === 0)
+            .map((vehicle: any) => ({
+              id: vehicle.vehiculo_id,
+              placa: vehicle.placa,
+              modelo: vehicle.modelo,
+              capacidad: vehicle.capacidad,
+              estado: vehicle.estado,
+              activo: vehicle.activo,
+            })),
+          conductores: availableDrivers.rows,
+        },
+      });
+    }
 
     const result = await pool.query(`
       WITH candidatos AS (

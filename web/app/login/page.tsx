@@ -50,7 +50,7 @@ function LoginPageContent() {
     ? "Cuenta creada correctamente. Revisa tu correo y verifica la cuenta antes de iniciar sesión."
     : "";
   const sessionNotice = searchParams.get("session") === "inactive"
-    ? "Tu sesión se cerró después de 5 minutos sin actividad."
+    ? "Tu sesión se cerró después de 15 minutos sin actividad."
     : searchParams.get("session") === "expired"
       ? "Tu sesión expiró. Ingresa de nuevo para continuar."
       : "";

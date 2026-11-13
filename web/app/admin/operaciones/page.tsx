@@ -1,15 +1,10 @@
 ﻿"use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, Plus, RefreshCw, Sparkles, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, Plus, RefreshCw, X } from "lucide-react";
 import { getAuthHeaders } from "../../../lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-
-type ApiList<T> = T[] | { data?: T[] };
-
-const getApiList = <T,>(payload: ApiList<T>) =>
-  Array.isArray(payload) ? payload : payload.data || [];
 
 const readApiJson = async <T,>(response: Response, path: string): Promise<T> => {
   const contentType = response.headers.get("content-type") || "";
@@ -118,31 +113,6 @@ type PartnerCompany = {
   activa: boolean;
   vehiculos: PartnerVehicle[];
 };
-type AssignmentRecommendation = {
-  decisionId: number | null;
-  fecha: string;
-  fecha_fin: string;
-  vehiculo: { vehiculo_id: number; conductor_id?: number | null; placa: string; puntaje: number; razones: string[] } | null;
-  alternativas: Array<{ vehiculo_id: number; placa: string }>;
-  evaluados: Array<{
-    vehiculo_id: number;
-    placa: string;
-    modelo: string;
-    capacidad: number;
-    bloqueos: string[];
-    advertencias: string[];
-    elegible: boolean;
-  }>;
-  excluidos: Array<{
-    vehiculo_id: number;
-    placa: string;
-    modelo: string;
-    capacidad: number;
-    bloqueos: string[];
-    advertencias: string[];
-    elegible: boolean;
-  }>;
-};
 type OperationHistoryEntry = {
   id: number;
   accion: string;
@@ -196,14 +166,6 @@ const reservationServiceTime = (reservation: ReservationReady) => {
     .find((value) => value && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value));
   return dateTime ? dateTime.slice(11, 16) : "";
 };
-const driverUnavailableReason = (driver: Driver, today: string) => {
-  if (!driver.estado) return "sin perfil de conductor";
-  if (!driver.activo) return "usuario inactivo";
-  if (["inactivo", "mantenimiento"].includes(driver.estado)) return driver.estado.replace("_", " ");
-  const licenseExpiry = dateKey(driver.fecha_licencia_vencimiento);
-  if (licenseExpiry && licenseExpiry < today) return "licencia vencida";
-  return "";
-};
 const compareSchedule = (dateA: string, timeA: string, dateB: string, timeB: string) =>
   dateA.localeCompare(dateB) || timeA.localeCompare(timeB);
 
@@ -245,9 +207,6 @@ export default function OperacionesPage() {
   });
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [selectedDriverId, setSelectedDriverId] = useState("");
-  const [assignmentRecommendation, setAssignmentRecommendation] = useState<AssignmentRecommendation | null>(null);
-  const [recommendationLoading, setRecommendationLoading] = useState(false);
-  const [decisionReason, setDecisionReason] = useState("");
   const [form, setForm] = useState({
     tipo_servicio: "viaje",
     fecha_programada: new Date().toISOString().slice(0, 10),
@@ -403,12 +362,6 @@ export default function OperacionesPage() {
     if (!assignment) return;
     const selectedVehicle = Number(selectedVehicleId);
     const selectedDriver = Number(selectedDriverId);
-    const selectingAlternative = assignmentRecommendation !== null
-      && selectedVehicle !== assignmentRecommendation.vehiculo?.vehiculo_id;
-    if (selectingAlternative && !decisionReason.trim()) {
-      setError("Indica por qué se eligió una alternativa a la recomendación.");
-      return;
-    }
     setSaving(true);
     setError("");
     try {
@@ -417,15 +370,10 @@ export default function OperacionesPage() {
         body: JSON.stringify({
           vehiculo_id: selectedVehicle,
           conductor_id: selectedDriver,
-          ...(assignmentRecommendation ? {
-            decision_id: assignmentRecommendation.decisionId,
-            decision_reason: decisionReason.trim(),
-          } : {}),
         }),
       });
       setMessage("Recursos asignados. Las validaciones operativas fueron aprobadas.");
       setAssignment(null);
-      setAssignmentRecommendation(null);
       await load();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo asignar la operación");
@@ -496,68 +444,46 @@ export default function OperacionesPage() {
     setAssignment(operation);
     setAssignmentResourcesLoading(true);
     setAssignmentResourcesError("");
-    setSelectedVehicleId(operation.vehiculo_id ? String(operation.vehiculo_id) : "");
-    setSelectedDriverId(operation.conductor_usuario_id ? String(operation.conductor_usuario_id) : "");
-    setAssignmentRecommendation(null);
-    setDecisionReason("");
+    setSelectedVehicleId("");
+    setSelectedDriverId("");
     setError("");
     try {
+      const query = new URLSearchParams({
+        fecha: operation.fecha_programada,
+        fecha_fin: operation.fecha_fin_programada || operation.fecha_programada,
+        pasajeros: String(operation.pasajeros),
+        operacion_id: String(operation.id),
+        solo_disponibles: "true",
+      });
+      if (operation.hora_inicio) query.set("hora_inicio", operation.hora_inicio.slice(0, 5));
+      if (operation.hora_fin) query.set("hora_fin", operation.hora_fin.slice(0, 5));
       const headers = getAuthHeaders();
-      const [vehiclesResponse, driversResponse] = await Promise.all([
-        fetch(`${API_URL}/api/admin/vehiculos`, { headers }),
-        fetch(`${API_URL}/api/admin/conductores`, { headers }),
-      ]);
-      const [vehiclesData, driversData] = await Promise.all([
-        readApiJson<ApiList<Vehicle>>(vehiclesResponse, "/api/admin/vehiculos"),
-        readApiJson<ApiList<Driver>>(driversResponse, "/api/admin/conductores"),
-      ]);
-      setVehicles(getApiList(vehiclesData));
-      const driverList = getApiList(driversData);
-      setDrivers(driverList);
-      const currentDriver = driverList.find((driver) => String(driver.id) === String(operation.conductor_usuario_id || ""));
-      if (operation.conductor_usuario_id && (!currentDriver || driverUnavailableReason(currentDriver, today))) {
-        setSelectedDriverId("");
+      const availabilityPath = `/api/admin/inteligencia/asignacion-recomendada?${query}`;
+      const availability = await readApiJson<{
+        data?: { vehiculos?: Vehicle[]; conductores?: Driver[] };
+      }>(await fetch(`${API_URL}${availabilityPath}`, { headers }), availabilityPath);
+      const resources = availability.data;
+      if (!resources || !Array.isArray(resources.vehiculos) || !Array.isArray(resources.conductores)) {
+        throw new Error("La API no devolvió la lista de recursos disponibles.");
       }
+      const availableVehicles = resources.vehiculos;
+      const availableDrivers = resources.conductores;
+      setVehicles(availableVehicles);
+      setDrivers(availableDrivers);
+      setSelectedVehicleId(
+        availableVehicles.some((vehicle) => vehicle.id === operation.vehiculo_id)
+          ? String(operation.vehiculo_id)
+          : "",
+      );
+      setSelectedDriverId(
+        availableDrivers.some((driver) => driver.id === operation.conductor_usuario_id)
+          ? String(operation.conductor_usuario_id)
+          : "",
+      );
     } catch (loadError) {
       setAssignmentResourcesError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los vehículos y conductores");
     } finally {
       setAssignmentResourcesLoading(false);
-    }
-  };
-
-  const recommendAssignment = async () => {
-    if (!assignment) return;
-    setRecommendationLoading(true);
-    setAssignmentRecommendation(null);
-    setError("");
-    try {
-      const query = new URLSearchParams({
-        fecha: assignment.fecha_programada,
-        fecha_fin: assignment.fecha_fin_programada || assignment.fecha_programada,
-        pasajeros: String(assignment.pasajeros),
-        operacion_id: String(assignment.id),
-      });
-      if (assignment.hora_inicio) query.set("hora_inicio", assignment.hora_inicio.slice(0, 5));
-      if (assignment.hora_fin) query.set("hora_fin", assignment.hora_fin.slice(0, 5));
-      const payload = await request(`/api/admin/inteligencia/asignacion-recomendada?${query}`, { method: "GET" });
-      const recommendation = payload.data as AssignmentRecommendation;
-      setAssignmentRecommendation(recommendation);
-      setSelectedVehicleId(recommendation.vehiculo ? String(recommendation.vehiculo.vehiculo_id) : "");
-      if (recommendation.vehiculo?.conductor_id) {
-        const recommendedDriver = drivers.find((driver) => String(driver.id) === String(recommendation.vehiculo?.conductor_id));
-        setSelectedDriverId(
-          recommendedDriver && !driverUnavailableReason(recommendedDriver, today)
-            ? String(recommendedDriver.id)
-            : "",
-        );
-      } else {
-        setSelectedDriverId("");
-      }
-      setDecisionReason("");
-    } catch (recommendationError) {
-      setError(recommendationError instanceof Error ? recommendationError.message : "No se pudo generar la recomendación");
-    } finally {
-      setRecommendationLoading(false);
     }
   };
 
@@ -745,125 +671,41 @@ export default function OperacionesPage() {
                 </p>
                 <h2 className="text-xl font-black text-slate-950">Asignar recursos</h2>
               </div>
-              <button type="button" onClick={() => { setAssignment(null); setAssignmentRecommendation(null); }} aria-label="Cerrar asignación">
+              <button type="button" onClick={() => setAssignment(null)} aria-label="Cerrar asignación">
                 <X />
               </button>
             </div>
             {assignmentResourcesLoading && <p role="status" className="rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-800">Cargando vehículos y conductores...</p>}
             {assignmentResourcesError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700">{assignmentResourcesError}</p>}
-            <button
-              type="button"
-              onClick={() => void recommendAssignment()}
-              disabled={recommendationLoading || saving || assignmentResourcesLoading || Boolean(assignmentResourcesError)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-800 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Sparkles size={16} />
-              {recommendationLoading ? "Evaluando disponibilidad..." : assignmentRecommendation ? "Actualizar recomendación" : "Sugerir vehículo"}
-            </button>
-            {assignmentRecommendation && (
-              <div className="space-y-3">
-                {assignmentRecommendation.vehiculo ? (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
-                    <p className="font-black">Sugerido: {assignmentRecommendation.vehiculo.placa} · puntaje {assignmentRecommendation.vehiculo.puntaje}/100</p>
-                    <ul className="mt-1 list-inside list-disc">
-                      {assignmentRecommendation.vehiculo.razones.map((reason) => <li key={reason}>{reason}</li>)}
-                    </ul>
-                  </div>
-                ) : (
-                  <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">
-                    No hay vehículos elegibles para todo el período. Revisa los motivos antes de continuar.
-                  </div>
-                )}
-                {assignmentRecommendation.excluidos.length > 0 && (
-                  <details open className="rounded-xl border border-slate-200 bg-white">
-                    <summary className="cursor-pointer px-3 py-2.5 text-xs font-black text-slate-700">
-                      Vehículos no elegibles ({assignmentRecommendation.excluidos.length})
-                    </summary>
-                    <ul className="max-h-52 space-y-2 overflow-y-auto border-t border-slate-100 p-3">
-                      {assignmentRecommendation.excluidos.map((vehicle) => (
-                        <li key={vehicle.vehiculo_id} className="rounded-lg border border-red-100 bg-red-50/70 p-2.5">
-                          <p className="text-xs font-black text-slate-800">{vehicle.placa} · {vehicle.modelo} · {vehicle.capacidad} plazas</p>
-                          <ul className="mt-1 list-inside list-disc space-y-0.5 text-[11px] text-red-800">
-                            {vehicle.bloqueos.map((reason) => <li key={reason}>{reason}</li>)}
-                          </ul>
-                          {vehicle.advertencias.length > 0 && (
-                            <ul className="mt-1 list-inside list-disc space-y-0.5 text-[11px] text-amber-800">
-                              {vehicle.advertencias.map((warning) => <li key={warning}>{warning}</li>)}
-                            </ul>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-                {assignmentRecommendation.vehiculo
-                  && (assignmentRecommendation.evaluados.find((vehicle) => vehicle.vehiculo_id === assignmentRecommendation.vehiculo?.vehiculo_id)?.advertencias.length || 0) > 0 && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                    <p className="font-black">Advertencias de la opción sugerida</p>
-                    <ul className="mt-1 list-inside list-disc">
-                        {assignmentRecommendation.evaluados
-                        .find((vehicle) => vehicle.vehiculo_id === assignmentRecommendation.vehiculo?.vehiculo_id)
-                        ?.advertencias.map((warning) => <li key={warning}>{warning}</li>)}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
             <label className="block text-sm font-bold text-slate-600">
               Vehículo
               <select
                 name="vehiculo_id"
                 value={selectedVehicleId}
-                onChange={(event) => {
-                  setSelectedVehicleId(event.target.value);
-                  if (event.target.value === String(assignmentRecommendation?.vehiculo?.vehiculo_id)) setDecisionReason("");
-                }}
+                onChange={(event) => setSelectedVehicleId(event.target.value)}
                 className="mt-1 w-full rounded-xl border p-3 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
                 disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)}
                 required
               >
-                <option value="">Selecciona un vehículo</option>
-                {vehicles.filter((vehicle) => vehicle.activo && vehicle.estado === "disponible" && (!assignmentRecommendation || vehicle.id === assignmentRecommendation.vehiculo?.vehiculo_id || assignmentRecommendation.alternativas.some((option) => option.vehiculo_id === vehicle.id))).map((vehicle) => (
+                <option value="">{vehicles.length ? "Selecciona un vehículo" : "No hay vehículos disponibles"}</option>
+                {vehicles.map((vehicle) => (
                   <option key={vehicle.id} value={vehicle.id}>{vehicle.placa} · {vehicle.modelo} · {vehicle.capacidad} pax</option>
                 ))}
               </select>
             </label>
-            {assignmentRecommendation && selectedVehicleId !== String(assignmentRecommendation.vehiculo?.vehiculo_id) && (
-              <label className="block text-sm font-bold text-slate-600">
-                Motivo para elegir otra opción
-                <textarea
-                  value={decisionReason}
-                  onChange={(event) => setDecisionReason(event.target.value)}
-                  maxLength={500}
-                  className="mt-1 w-full rounded-xl border p-3 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
-                  required
-                  rows={2}
-                />
-              </label>
-            )}
             <label className="block text-sm font-bold text-slate-600">
               Conductor
               <select name="conductor_id" value={selectedDriverId} onChange={(event) => setSelectedDriverId(event.target.value)} className="mt-1 w-full rounded-xl border p-3 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)} required>
-                <option value="">Selecciona un conductor</option>
-                {drivers.map((driver) => {
-                  const unavailableReason = driverUnavailableReason(driver, today);
-                  const licenseExpiry = dateKey(driver.fecha_licencia_vencimiento);
-                  const statusLabel = unavailableReason
-                    || (driver.estado === "en_servicio" ? "en servicio; se validará horario" : driver.estado?.replaceAll("_", " ") || "sin estado");
-                  return (
-                    <option key={driver.id} value={driver.id} disabled={Boolean(unavailableReason)}>
-                      {driver.nombre} {driver.apellido || ""} · {driver.licencia || "sin licencia"} · {statusLabel}
-                      {!unavailableReason && !licenseExpiry ? " · vigencia no registrada" : ""}
-                    </option>
-                  );
-                })}
+                <option value="">{drivers.length ? "Selecciona un conductor" : "No hay conductores disponibles"}</option>
+                {drivers.map((driver) => (
+                  <option key={driver.id} value={driver.id}>
+                    {driver.nombre} {driver.apellido || ""} · {driver.licencia || "sin licencia"}
+                  </option>
+                ))}
               </select>
-              <p className="mt-1 text-xs font-medium text-slate-500">
-                Conductores sin perfil, inactivos o con licencia vencida no se pueden seleccionar. El horario se confirma al guardar.
-              </p>
             </label>
             <p className="rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">
-              La sugerencia es una ayuda para decidir, no una asignación automática. El backend valida capacidad, mantenimiento, licencia y conflictos de horario antes de confirmar.
+              Solo se muestran recursos disponibles para este servicio. El backend vuelve a validar la disponibilidad al confirmar.
             </p>
             <button disabled={saving || assignmentResourcesLoading || Boolean(assignmentResourcesError)} className="w-full rounded-xl bg-red-600 py-3 font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
               {saving ? "Validando..." : "Confirmar asignación"}

@@ -21,7 +21,7 @@ const pool = {
         Number(userId) !== 12
         || !lastActivityAt
         || revokedSessions.has(requestedSessionId)
-        || now - lastActivityAt >= 5 * 60 * 1000
+        || now - lastActivityAt >= 15 * 60 * 1000
       ) {
         return { rows: [], rowCount: 0 };
       }
@@ -74,7 +74,7 @@ const tokenFor = (version, requestedSessionId = sessionId) => jwt.sign(
   process.env.JWT_SECRET
 );
 
-test("la versión y los cinco minutos de inactividad invalidan la sesión", async (t) => {
+test("la versión y los quince minutos de inactividad invalidan la sesión", async (t) => {
   await new Promise((resolve) => {
     server = app.listen(0, "127.0.0.1", resolve);
   });
@@ -92,13 +92,13 @@ test("la versión y los cinco minutos de inactividad invalidan la sesión", asyn
   const oldToken = tokenFor(0);
   assert.equal((await request(oldToken)).status, 200);
 
-  now += 4 * 60 * 1000 + 59 * 1000;
+  now += 14 * 60 * 1000 + 59 * 1000;
   assert.equal((await request(oldToken)).status, 200);
   const activityResponse = await sessionRequest("/activity", "POST", oldToken);
   assert.equal(activityResponse.status, 204);
   assert.equal(sessions.get(sessionId), now);
 
-  now += 5 * 60 * 1000;
+  now += 15 * 60 * 1000;
   assert.equal((await request(oldToken)).status, 401);
 
   sessionVersion = 1;

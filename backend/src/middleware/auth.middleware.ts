@@ -42,7 +42,7 @@ const isSessionValid = async (decoded: any) => {
          WHERE s.id = $2::uuid
            AND s.user_id = usuarios.id
            AND s.revoked_at IS NULL
-           AND s.last_activity_at > NOW() - INTERVAL '5 minutes'
+           AND s.last_activity_at > NOW() - INTERVAL '15 minutes'
        )
      LIMIT 1`,
     [decoded.id, sessionId]

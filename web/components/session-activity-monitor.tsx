@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { clearStoredUser, getStoredToken, LAST_ACTIVITY_KEY, TOKEN_KEY } from "../lib/session";
 
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const HEARTBEAT_INTERVAL_MS = 10 * 1000;
 const LOCAL_ACTIVITY_INTERVAL_MS = 1000;
 const POINTER_MOVE_INTERVAL_MS = 5000;
@@ -109,7 +109,7 @@ export function SessionActivityMonitor() {
         }
         if (!response.ok) {
           const payload = await response.json().catch(() => ({})) as { error?: string };
-          setError(payload.error || "No se pudo renovar tu sesión. Se cerrará al cumplir 5 minutos de inactividad.");
+          setError(payload.error || "No se pudo renovar tu sesión. Se cerrará al cumplir 15 minutos de inactividad.");
           return;
         }
         setError(storageErrorMessage);

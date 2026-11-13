@@ -193,6 +193,63 @@ const pool = {
       });
       return result(rows);
     }
+    if (query.startsWith("select u.id, u.nombre, u.apellido, u.activo, c.licencia, c.estado")) {
+      const [operationId, startValue, endValue, startTimeValue, endTimeValue] = params;
+      const operation = operationFor(operationId);
+      const startDate = asDate(startValue);
+      const endDate = asDate(endValue);
+      const startTime = startTimeValue ? asTime(startTimeValue) : null;
+      const endTime = endTimeValue ? asTime(endTimeValue) : null;
+      const currentDate = new Date().toISOString().slice(0, 10);
+      const available = state.drivers.filter((driver) => {
+        if (!driver.activo || !driver.estado || ["inactivo", "mantenimiento"].includes(driver.estado)
+          || !driver.fecha_licencia_vencimiento || driver.fecha_licencia_vencimiento < currentDate) return false;
+
+        const externalBlock = state.externalBlocks.some((block) =>
+          block.conductor_usuario_id === driver.usuario_id
+          && block.motivo !== "fuera_de_servicio"
+          && block.estado === "activo"
+          && block.fecha_inicio <= endDate
+          && block.fecha_fin >= startDate
+          && (startDate !== endDate || !block.hora_inicio || !startTime || !block.hora_fin || !endTime
+            || intersects(startTime, endTime, block.hora_inicio, block.hora_fin))
+        );
+        if (externalBlock) return false;
+
+        const operationConflict = state.operations.some((other) =>
+          other.id !== Number(operationId)
+          && other.conductor_id === driver.id
+          && ["programada", "asignada", "en_curso", "incidencia"].includes(other.estado)
+          && other.fecha_programada <= endDate
+          && asDate(other.fecha_fin_programada || other.fecha_programada) >= startDate
+          && (startDate !== endDate || other.fecha_programada !== asDate(other.fecha_fin_programada || other.fecha_programada)
+            || !startTime || !endTime || !other.hora_inicio || !other.hora_fin
+            || intersects(startTime, endTime, other.hora_inicio, other.hora_fin))
+        );
+        if (operationConflict) return false;
+
+        return !state.reservations.some((reservation) => {
+          const reservationStart = asDate(reservation.fecha_salida || reservation.fecha_servicio || reservation.fecha_reserva);
+          const reservationEnd = asDate(reservation.fecha_fin || reservation.fecha_regreso || reservation.fecha_llegada || reservationStart);
+          if (reservation.id === operation?.reserva_id
+            || ![driver.id, driver.usuario_id].includes(Number(reservation.conductor_id))
+            || ["cancelada", "finalizada"].includes(reservation.estado)
+            || reservationStart > endDate || reservationEnd < startDate) return false;
+          if (startDate !== endDate || reservationStart !== reservationEnd || !startTime || !endTime
+            || !reservation.fecha_salida || !reservation.fecha_llegada) return true;
+          return intersects(startTime, endTime, asTime(reservation.fecha_salida), asTime(reservation.fecha_llegada));
+        });
+      });
+      return result(available.map((driver) => ({
+        id: driver.usuario_id,
+        nombre: driver.nombre || `Conductor ${driver.usuario_id}`,
+        apellido: driver.apellido || "",
+        activo: driver.activo,
+        licencia: driver.licencia || null,
+        estado: driver.estado,
+        fecha_licencia_vencimiento: driver.fecha_licencia_vencimiento,
+      })));
+    }
     if (query.startsWith("with candidatos as")) {
       const [dateValue, passengers, startValue, endValue, operationId, requestedEndDate, eligibleVehicleIds] = params;
       const date = asDate(dateValue);
@@ -421,6 +478,7 @@ const pool = {
           const today = new Date().toISOString().slice(0, 10);
           return result(driver ? [{
             ...driver,
+            licencia_sin_vigencia: !driver.fecha_licencia_vencimiento,
             licencia_vencida: Boolean(driver.fecha_licencia_vencimiento && driver.fecha_licencia_vencimiento < today),
           }] : []);
         }
@@ -649,6 +707,23 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     const duplicate = await request("/api/admin/operaciones/reservas/801/despachar", { method: "POST", body: {} });
     assert.equal(duplicate.status, 409);
 
+    const availableResources = await request(`/api/admin/inteligencia/asignacion-recomendada?solo_disponibles=true&fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);
+    assert.equal(availableResources.status, 200);
+    assert.deepEqual(availableResources.body.data.vehiculos.map((vehicle) => vehicle.id), [702]);
+    assert.deepEqual(availableResources.body.data.conductores.map((driver) => driver.id), [302]);
+    assert.equal(state.decisions.length, 0, "Cargar los recursos no debe registrar una recomendación");
+
+    state.drivers.find((driver) => driver.usuario_id === 302).fecha_licencia_vencimiento = null;
+    const missingLicenseResources = await request(`/api/admin/inteligencia/asignacion-recomendada?solo_disponibles=true&fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);
+    assert.deepEqual(missingLicenseResources.body.data.conductores, []);
+    const missingLicenseAssignment = await request(`/api/admin/operaciones/${operationId}/asignar`, {
+      method: "PATCH",
+      body: { vehiculo_id: 702, conductor_id: 302 },
+    });
+    assert.equal(missingLicenseAssignment.status, 409);
+    assert.match(missingLicenseAssignment.body.error, /vigencia de licencia registrada/i);
+    state.drivers.find((driver) => driver.usuario_id === 302).fecha_licencia_vencimiento = "2027-12-31";
+
     state.maintenance.push({ id: 1, vehiculo_id: 702, tipo: "Preventivo", fecha_programada: "2026-10-23", estado: "programado" });
     const maintenanceRecommendation = await request(`/api/admin/inteligencia/asignacion-recomendada?fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);
     assert.equal(maintenanceRecommendation.status, 200);
@@ -713,6 +788,8 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     });
     assert.equal(externalDriverAssignment.status, 409);
     assert.match(externalDriverAssignment.body.error, /conductor está ocupado externamente/i);
+    const externalDriverResources = await request(`/api/admin/inteligencia/asignacion-recomendada?solo_disponibles=true&fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);
+    assert.deepEqual(externalDriverResources.body.data.conductores, []);
     state.externalBlocks.length = 0;
 
     const unavailableVehicle = await request(`/api/admin/operaciones/${operationId}/asignar`, {
