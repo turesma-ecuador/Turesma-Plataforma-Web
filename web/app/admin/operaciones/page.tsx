@@ -91,7 +91,15 @@ type ReservationReady = {
 };
 
 type Vehicle = { id: number; placa: string; modelo: string; capacidad: number; estado: string; activo: boolean };
-type Driver = { id: number; nombre: string; apellido?: string; estado: string; activo: boolean };
+type Driver = {
+  id: number;
+  nombre: string;
+  apellido?: string;
+  estado: string | null;
+  activo: boolean;
+  licencia?: string | null;
+  fecha_licencia_vencimiento?: string | null;
+};
 type PartnerVehicle = {
   id: number;
   empresa_id: number;
@@ -155,6 +163,15 @@ const stateLabels: Record<string, string> = {
   incidencia: "Incidencia",
 };
 
+const stateBadgeStyles: Record<string, string> = {
+  programada: "border-sky-200 bg-sky-50 text-sky-800",
+  asignada: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  en_curso: "border-amber-200 bg-amber-50 text-amber-800",
+  completada: "border-slate-200 bg-slate-100 text-slate-700",
+  cancelada: "border-slate-200 bg-slate-50 text-slate-500",
+  incidencia: "border-red-200 bg-red-50 text-red-700",
+};
+
 const subcontractingLabels: Record<string, string> = {
   no_requerida: "No subcontratada",
   pendiente: "Pendiente de proveedor",
@@ -178,6 +195,14 @@ const reservationServiceTime = (reservation: ReservationReady) => {
   const dateTime = [reservation.fecha_salida, reservation.fecha_servicio, reservation.fecha_llegada]
     .find((value) => value && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value));
   return dateTime ? dateTime.slice(11, 16) : "";
+};
+const driverUnavailableReason = (driver: Driver, today: string) => {
+  if (!driver.estado) return "sin perfil de conductor";
+  if (!driver.activo) return "usuario inactivo";
+  if (["inactivo", "mantenimiento"].includes(driver.estado)) return driver.estado.replace("_", " ");
+  const licenseExpiry = dateKey(driver.fecha_licencia_vencimiento);
+  if (licenseExpiry && licenseExpiry < today) return "licencia vencida";
+  return "";
 };
 const compareSchedule = (dateA: string, timeA: string, dateB: string, timeB: string) =>
   dateA.localeCompare(dateB) || timeA.localeCompare(timeB);
@@ -487,7 +512,12 @@ export default function OperacionesPage() {
         readApiJson<ApiList<Driver>>(driversResponse, "/api/admin/conductores"),
       ]);
       setVehicles(getApiList(vehiclesData));
-      setDrivers(getApiList(driversData));
+      const driverList = getApiList(driversData);
+      setDrivers(driverList);
+      const currentDriver = driverList.find((driver) => String(driver.id) === String(operation.conductor_usuario_id || ""));
+      if (operation.conductor_usuario_id && (!currentDriver || driverUnavailableReason(currentDriver, today))) {
+        setSelectedDriverId("");
+      }
     } catch (loadError) {
       setAssignmentResourcesError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los vehículos y conductores");
     } finally {
@@ -514,7 +544,14 @@ export default function OperacionesPage() {
       setAssignmentRecommendation(recommendation);
       setSelectedVehicleId(recommendation.vehiculo ? String(recommendation.vehiculo.vehiculo_id) : "");
       if (recommendation.vehiculo?.conductor_id) {
-        setSelectedDriverId(String(recommendation.vehiculo.conductor_id));
+        const recommendedDriver = drivers.find((driver) => String(driver.id) === String(recommendation.vehiculo?.conductor_id));
+        setSelectedDriverId(
+          recommendedDriver && !driverUnavailableReason(recommendedDriver, today)
+            ? String(recommendedDriver.id)
+            : "",
+        );
+      } else {
+        setSelectedDriverId("");
       }
       setDecisionReason("");
     } catch (recommendationError) {
@@ -528,12 +565,12 @@ export default function OperacionesPage() {
     <main className="space-y-6 p-4 sm:p-6">
       <header className="flex flex-col gap-4 rounded-3xl bg-slate-950 p-6 text-white shadow-xl sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.25em] text-cyan-300">Gestión operativa</p>
+          <p className="text-xs font-bold uppercase tracking-[0.25em] text-red-300">Gestión operativa</p>
           <h1 className="mt-2 text-3xl font-black tracking-tight">Despacho de servicios</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-300">Prepara reservas confirmadas, asigna recursos y supervisa cada servicio. El conductor registra el inicio y la finalización desde su portal.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => setShowCreate(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 py-3 text-sm font-black text-slate-950 transition hover:bg-cyan-300">
+          <button onClick={() => setShowCreate(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950">
             <Plus size={17} /> Crear servicio manual
           </button>
         </div>
@@ -607,7 +644,7 @@ export default function OperacionesPage() {
 
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <div className="flex items-center gap-3"><ClipboardList className="text-cyan-600" size={20} /><h2 className="font-black text-slate-900">Servicios programados</h2></div>
+          <div className="flex items-center gap-3"><ClipboardList className="text-red-600" size={20} /><h2 className="font-black text-slate-900">Servicios programados</h2></div>
           <button onClick={() => void load()} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Actualizar operaciones"><RefreshCw size={17} /></button>
         </div>
         {loading ? <p className="p-8 text-center text-sm font-semibold text-slate-400">Cargando servicios...</p> : operations.length === 0 ? <div className="p-10 text-center"><p className="text-sm font-black text-slate-500">No hay servicios programados</p><p className="mt-1 text-xs text-slate-400">Las reservas confirmadas aparecerán aquí para asignar conductor y vehículo.</p></div> : (
@@ -629,11 +666,11 @@ export default function OperacionesPage() {
                 ? `Requerimiento #${operation.requerimiento_id} · Grupo ${operation.grupo_numero} · Unidad ${operation.unidad_numero}`
                 : operation.reserva_id ? `Reserva #${operation.reserva_id}` : operation.tipo_servicio;
               return (
-                <article key={operation.id} data-reservation-id={operation.reserva_id || undefined} className={`rounded-2xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm ${focusedReservationId === operation.reserva_id ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100" : overdue ? "border-l-red-400 bg-red-50/30" : "border-l-cyan-400"}`}>
+                <article key={operation.id} data-reservation-id={operation.reserva_id || undefined} className={`rounded-2xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm ${focusedReservationId === operation.reserva_id ? "border-red-500 bg-red-50/40 ring-2 ring-red-100" : overdue ? "border-l-red-400 bg-red-50/30" : "border-l-red-500"}`}>
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-black leading-snug text-slate-900">{serviceTitle}</h3>
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Operación #{operation.id}</span>
-                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${overdue ? "bg-red-100 text-red-700" : "bg-cyan-50 text-cyan-800"}`}>
+                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${overdue ? "border-red-200 bg-red-100 text-red-700" : stateBadgeStyles[operation.estado] || "border-slate-200 bg-slate-50 text-slate-700"}`}>
                       {overdue ? "Fecha vencida" : stateLabels[operation.estado] || operation.estado}
                     </span>
                     {startPending && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-800">Inicio pendiente del conductor</span>}
@@ -682,7 +719,7 @@ export default function OperacionesPage() {
 
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                     <button onClick={() => void openOperationHistory(operation)} className="rounded-lg bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700">Historial</button>
-                    {["programada", "asignada"].includes(operation.estado) && subcontractState === "no_requerida" && <button onClick={() => openAssignment(operation)} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">{operation.vehiculo_id ? "Reasignar" : "Asignar"}</button>}
+                    {["programada", "asignada"].includes(operation.estado) && subcontractState === "no_requerida" && <button onClick={() => openAssignment(operation)} className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-700">{operation.vehiculo_id ? "Reasignar" : "Asignar"}</button>}
                     {canEditSubcontracting && <button onClick={() => openSubcontracting(operation)} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-800">{subcontractState === "no_requerida" ? "Subcontratar" : "Editar proveedor"}</button>}
                     {operation.estado === "cancelada" && <button onClick={() => void reopenOperation(operation)} disabled={saving} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">Reabrir unidad</button>}
                   </div>
@@ -693,7 +730,7 @@ export default function OperacionesPage() {
         )}
       </section>
 
-      {showCreate && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><form onSubmit={createOperation} className="w-full max-w-2xl space-y-4 rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-xl font-black text-slate-950">Nueva operación</h2><button type="button" onClick={() => setShowCreate(false)} aria-label="Cerrar formulario"><X /></button></div><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold text-slate-600">Tipo de servicio<input value={form.tipo_servicio} onChange={(e) => setForm({ ...form, tipo_servicio: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><label className="text-sm font-bold text-slate-600">Pasajeros<input type="number" min="1" value={form.pasajeros} onChange={(e) => setForm({ ...form, pasajeros: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><label className="text-sm font-bold text-slate-600">Fecha<input type="date" value={form.fecha_programada} onChange={(e) => setForm({ ...form, fecha_programada: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><div className="grid grid-cols-2 gap-2"><label className="text-sm font-bold text-slate-600">Inicio<input type="time" value={form.hora_inicio} onChange={(e) => setForm({ ...form, hora_inicio: e.target.value })} className="mt-1 w-full rounded-xl border p-3" /></label><label className="text-sm font-bold text-slate-600">Fin<input type="time" value={form.hora_fin} onChange={(e) => setForm({ ...form, hora_fin: e.target.value })} className="mt-1 w-full rounded-xl border p-3" /></label></div><label className="text-sm font-bold text-slate-600">Origen<input value={form.origen} onChange={(e) => setForm({ ...form, origen: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><label className="text-sm font-bold text-slate-600">Destino<input value={form.destino} onChange={(e) => setForm({ ...form, destino: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label></div><button disabled={saving} className="w-full rounded-xl bg-slate-950 py-3 font-black text-white disabled:opacity-50">{saving ? "Guardando..." : "Crear operación"}</button></form></div>}
+      {showCreate && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><form onSubmit={createOperation} className="w-full max-w-2xl space-y-4 rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-xl font-black text-slate-950">Nueva operación</h2><button type="button" onClick={() => setShowCreate(false)} aria-label="Cerrar formulario"><X /></button></div><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold text-slate-600">Tipo de servicio<input value={form.tipo_servicio} onChange={(e) => setForm({ ...form, tipo_servicio: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><label className="text-sm font-bold text-slate-600">Pasajeros<input type="number" min="1" value={form.pasajeros} onChange={(e) => setForm({ ...form, pasajeros: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><label className="text-sm font-bold text-slate-600">Fecha<input type="date" value={form.fecha_programada} onChange={(e) => setForm({ ...form, fecha_programada: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><div className="grid grid-cols-2 gap-2"><label className="text-sm font-bold text-slate-600">Inicio<input type="time" value={form.hora_inicio} onChange={(e) => setForm({ ...form, hora_inicio: e.target.value })} className="mt-1 w-full rounded-xl border p-3" /></label><label className="text-sm font-bold text-slate-600">Fin<input type="time" value={form.hora_fin} onChange={(e) => setForm({ ...form, hora_fin: e.target.value })} className="mt-1 w-full rounded-xl border p-3" /></label></div><label className="text-sm font-bold text-slate-600">Origen<input value={form.origen} onChange={(e) => setForm({ ...form, origen: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label><label className="text-sm font-bold text-slate-600">Destino<input value={form.destino} onChange={(e) => setForm({ ...form, destino: e.target.value })} className="mt-1 w-full rounded-xl border p-3" required /></label></div><button disabled={saving} className="w-full rounded-xl bg-red-600 py-3 font-black text-white transition hover:bg-red-700 disabled:opacity-50">{saving ? "Guardando..." : "Crear operación"}</button></form></div>}
 
       {assignment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4">
@@ -703,7 +740,7 @@ export default function OperacionesPage() {
           >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-cyan-600">
+                <p className="text-xs font-bold uppercase tracking-widest text-red-600">
                   Operación #{assignment.id}{assignment.reserva_id ? ` · Reserva #${assignment.reserva_id}` : ""}
                 </p>
                 <h2 className="text-xl font-black text-slate-950">Asignar recursos</h2>
@@ -712,13 +749,13 @@ export default function OperacionesPage() {
                 <X />
               </button>
             </div>
-            {assignmentResourcesLoading && <p role="status" className="rounded-xl bg-cyan-50 p-3 text-xs font-semibold text-cyan-800">Cargando vehículos y conductores...</p>}
+            {assignmentResourcesLoading && <p role="status" className="rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-800">Cargando vehículos y conductores...</p>}
             {assignmentResourcesError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-700">{assignmentResourcesError}</p>}
             <button
               type="button"
               onClick={() => void recommendAssignment()}
-              disabled={recommendationLoading || saving}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-bold text-cyan-800 disabled:opacity-50"
+              disabled={recommendationLoading || saving || assignmentResourcesLoading || Boolean(assignmentResourcesError)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-800 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Sparkles size={16} />
               {recommendationLoading ? "Evaluando disponibilidad..." : assignmentRecommendation ? "Actualizar recomendación" : "Sugerir vehículo"}
@@ -781,7 +818,7 @@ export default function OperacionesPage() {
                   setSelectedVehicleId(event.target.value);
                   if (event.target.value === String(assignmentRecommendation?.vehiculo?.vehiculo_id)) setDecisionReason("");
                 }}
-                className="mt-1 w-full rounded-xl border p-3"
+                className="mt-1 w-full rounded-xl border p-3 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
                 disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)}
                 required
               >
@@ -798,7 +835,7 @@ export default function OperacionesPage() {
                   value={decisionReason}
                   onChange={(event) => setDecisionReason(event.target.value)}
                   maxLength={500}
-                  className="mt-1 w-full rounded-xl border p-3"
+                  className="mt-1 w-full rounded-xl border p-3 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
                   required
                   rows={2}
                 />
@@ -806,17 +843,29 @@ export default function OperacionesPage() {
             )}
             <label className="block text-sm font-bold text-slate-600">
               Conductor
-              <select name="conductor_id" value={selectedDriverId} onChange={(event) => setSelectedDriverId(event.target.value)} className="mt-1 w-full rounded-xl border p-3" disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)} required>
+              <select name="conductor_id" value={selectedDriverId} onChange={(event) => setSelectedDriverId(event.target.value)} className="mt-1 w-full rounded-xl border p-3 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100" disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)} required>
                 <option value="">Selecciona un conductor</option>
-                {drivers.filter((driver) => driver.activo && !["inactivo", "mantenimiento"].includes(driver.estado)).map((driver) => (
-                  <option key={driver.id} value={driver.id}>{driver.nombre} {driver.apellido || ""}</option>
-                ))}
+                {drivers.map((driver) => {
+                  const unavailableReason = driverUnavailableReason(driver, today);
+                  const licenseExpiry = dateKey(driver.fecha_licencia_vencimiento);
+                  const statusLabel = unavailableReason
+                    || (driver.estado === "en_servicio" ? "en servicio; se validará horario" : driver.estado?.replaceAll("_", " ") || "sin estado");
+                  return (
+                    <option key={driver.id} value={driver.id} disabled={Boolean(unavailableReason)}>
+                      {driver.nombre} {driver.apellido || ""} · {driver.licencia || "sin licencia"} · {statusLabel}
+                      {!unavailableReason && !licenseExpiry ? " · vigencia no registrada" : ""}
+                    </option>
+                  );
+                })}
               </select>
+              <p className="mt-1 text-xs font-medium text-slate-500">
+                Conductores sin perfil, inactivos o con licencia vencida no se pueden seleccionar. El horario se confirma al guardar.
+              </p>
             </label>
             <p className="rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">
               La sugerencia es una ayuda para decidir, no una asignación automática. El backend valida capacidad, mantenimiento, licencia y conflictos de horario antes de confirmar.
             </p>
-            <button disabled={saving || assignmentResourcesLoading || Boolean(assignmentResourcesError)} className="w-full rounded-xl bg-cyan-500 py-3 font-black text-slate-950 disabled:opacity-50">
+            <button disabled={saving || assignmentResourcesLoading || Boolean(assignmentResourcesError)} className="w-full rounded-xl bg-red-600 py-3 font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
               {saving ? "Validando..." : "Confirmar asignación"}
             </button>
           </form>

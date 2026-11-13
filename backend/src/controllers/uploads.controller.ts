@@ -6,7 +6,7 @@ const multer = require("multer");
 const pool = require("../config/db");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../middleware/auth.middleware");
-const { getUploadsRoot, uploadImage } = require("../config/storage");
+const { getApiPublicUrl, getUploadsRoot, uploadImage } = require("../config/storage");
 
 const fileFilter = (_req, file, cb) => {
   const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"];
@@ -91,7 +91,7 @@ const uploadComprobantePago = (req, res) => {
       JWT_SECRET,
       { expiresIn: "15m" }
     );
-    const imageUrl = `${req.protocol}://${req.get("host")}/api/usuarios/comprobantes/${encodeURIComponent(req.file.filename)}?token=${encodeURIComponent(accessToken)}`;
+    const imageUrl = `${getApiPublicUrl()}/api/usuarios/comprobantes/${encodeURIComponent(req.file.filename)}?token=${encodeURIComponent(accessToken)}`;
 
     return res.status(201).json({
       message: "Comprobante subido correctamente",
@@ -103,7 +103,7 @@ const uploadComprobantePago = (req, res) => {
 
 const serveComprobante = async (req, res) => {
   const filename = path.basename(String(req.params.filename || ""));
-  if (!filename || filename !== req.params.filename) {
+  if (!filename || filename !== req.params.filename || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:jpe?g|png|webp)$/i.test(filename)) {
     return res.status(400).json({ error: "Archivo inválido" });
   }
 
@@ -125,7 +125,7 @@ const serveComprobante = async (req, res) => {
     const access = await pool.query(
       `SELECT 1
        FROM pagos_reserva p
-       WHERE p.comprobante_url LIKE $1
+       WHERE regexp_replace(p.comprobante_url, '[?#].*$', '') LIKE $1
          AND ($2 = 'admin' OR $2 = 'operativo' OR p.usuario_id = $3)
        LIMIT 1`,
       [`%/${filename}`, role, userId]

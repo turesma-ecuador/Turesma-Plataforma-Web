@@ -5,7 +5,8 @@ const { notificarAdmins } = require("../config/notificaciones");
 const { createPayphonePayment, confirmPayphonePayment } = require("../config/payphone");
 const { obtenerPagoAprobado, enviarReciboPago } = require("../config/reciboPago");
 const { obtenerFactura } = require("../config/sriFacturacion");
-const { emitirFacturaPorReserva } = require("../config/sriFacturacion");
+const { buildOrdenCompraDataDeReserva, generarOrdenCompraPDF } = require("../config/ordenCompra");
+const { crearUrlAccesoComprobante } = require("../config/comprobanteAcceso");
 const { buildProformaDataDeReserva, generarProformaPDF } = require("../config/proforma");
 const { prepararDespachoRequerimiento } = require("../config/requerimientosDespacho");
 const { resolveStoredUploadPath } = require("../config/storage");
@@ -134,11 +135,6 @@ const confirmarPagoPayphone = async (req: any, res: any) => {
         [reservaId]
       );
       await aplicarCambioDestinoTrasPago(reservaId, userId);
-      try {
-        await emitirFacturaPorReserva(reservaId);
-      } catch (error: any) {
-        console.error(`Error emitiendo factura SRI para reserva #${reservaId}:`, error?.message || error);
-      }
     }
     let despacho = null;
     if (estadoPago === "pagado") {
@@ -217,7 +213,13 @@ const listarPagosDeReserva = async (req: any, res: any) => {
        ORDER BY creado_en DESC`,
       [reservaId]
     );
-    return res.status(200).json(result.rows);
+    const pagos = result.rows.map((pago: any) => ({
+      ...pago,
+      comprobante_url: pago.comprobante_url
+        ? crearUrlAccesoComprobante(pago.comprobante_url, Number(userId))
+        : null,
+    }));
+    return res.status(200).json(pagos);
   } catch (error) {
     console.error("Error listando pagos de la reserva:", error);
     return res.status(500).json({ error: "Error interno del servidor" });
@@ -290,14 +292,9 @@ const descargarFactura = async (req: any, res: any) => {
       return res.status(400).json({ error: "La factura estará disponible cuando la reserva esté completamente pagada" });
     }
 
-    let factura = await obtenerFactura(reservaId);
-    if (!factura || factura.estado !== "autorizada") {
-      try {
-        factura = await emitirFacturaPorReserva(reservaId);
-      } catch (error: any) {
-        console.error(`Error reintentando factura SRI para reserva #${reservaId}:`, error?.message || error);
-        return res.status(502).json({ error: error?.message || "El SRI todavía no ha autorizado esta factura" });
-      }
+    const factura = await obtenerFactura(reservaId);
+    if (!factura || factura.estado !== "autorizada" || !factura.pdf_url) {
+      return res.status(404).json({ error: "Todavía no se ha emitido una factura para esta reserva" });
     }
     const filePath = resolveStoredUploadPath(factura.pdf_url);
     if (!require("fs").existsSync(filePath)) return res.status(404).json({ error: "Archivo de factura no encontrado" });
@@ -308,12 +305,41 @@ const descargarFactura = async (req: any, res: any) => {
   }
 };
 
+const descargarOrdenCompra = async (req: any, res: any) => {
+  const userId = Number(req.user?.id);
+  const reservaId = Number(req.params.id);
+  if (!Number.isInteger(userId) || userId <= 0 || !Number.isInteger(reservaId) || reservaId <= 0) {
+    return res.status(400).json({ error: "Datos de orden de compra inválidos" });
+  }
+
+  try {
+    const data = await buildOrdenCompraDataDeReserva(reservaId, userId);
+    if (!data) return res.status(404).json({ error: "Reserva no encontrada" });
+    if (!["pagado", "confirmado"].includes(String(data.estado_pago).toLowerCase())
+      || data.total <= 0 || data.monto_pagado < data.total - 0.01) {
+      return res.status(400).json({ error: "La orden estará disponible cuando el pago total haya sido validado" });
+    }
+
+    const pdf = await generarOrdenCompraPDF(data);
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="orden_compra_${data.numero}.pdf"`,
+      "Cache-Control": "private, no-store",
+    });
+    return res.status(200).send(pdf);
+  } catch (error) {
+    console.error("Error generando orden de compra para cliente:", error);
+    return res.status(500).json({ error: "No se pudo generar la orden de compra" });
+  }
+};
+
 module.exports = {
   crearPagoReserva,
   listarPagosDeReserva,
   descargarReciboPago,
   descargarProformaReserva,
   descargarFactura,
+  descargarOrdenCompra,
   crearPagoPayphone,
   confirmarPagoPayphone,
 };

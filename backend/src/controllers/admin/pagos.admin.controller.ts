@@ -6,6 +6,7 @@ const { notificarClienteReserva } = require("../../config/reservaMailer");
 const { emitirFacturaPorReserva, obtenerFactura, reenviarFacturaPorReserva } = require("../../config/sriFacturacion");
 const { prepararDespachoRequerimiento } = require("../../config/requerimientosDespacho");
 const { resolveStoredUploadPath } = require("../../config/storage");
+const { crearUrlAccesoComprobante } = require("../../config/comprobanteAcceso");
 const { aplicarCambioDestinoTrasPago } = require("../cambios-destino.controller");
 
 // Recalcula monto_pagado y estado_pago de una reserva a partir de sus pagos
@@ -52,14 +53,6 @@ const recalcularEstadoPago = async (reservaId: number, adminId: number | null | 
     await aplicarCambioDestinoTrasPago(reservaId, adminId);
   }
 
-  if (estadoPago === "pagado") {
-    try {
-      await emitirFacturaPorReserva(reservaId);
-    } catch (error: any) {
-      console.error(`Error emitiendo factura SRI para reserva #${reservaId}:`, error?.message || error);
-    }
-  }
-
   let despacho = null;
   if (estadoPago === "pagado") {
     try {
@@ -103,7 +96,13 @@ const listarPagosAdmin = async (req: any, res: any) => {
        ORDER BY p.creado_en DESC`,
       params
     );
-    return res.status(200).json(result.rows);
+    const pagos = result.rows.map((pago: any) => ({
+      ...pago,
+      comprobante_url: pago.comprobante_url
+        ? crearUrlAccesoComprobante(pago.comprobante_url, Number(req.user?.id))
+        : null,
+    }));
+    return res.status(200).json(pagos);
   } catch (error) {
     console.error("Error listando pagos (admin):", error);
     return res.status(500).json({ error: "Error interno del servidor" });

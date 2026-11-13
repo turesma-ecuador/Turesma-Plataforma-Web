@@ -326,7 +326,7 @@ export default function ClienteHistorialPage() {
   const [msg, setMsg] = useState("");
   const [trackId, setTrackId] = useState<number | null>(null);
   const [pagoReserva, setPagoReserva] = useState<Reserva | null>(null);
-  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<number | null>(null);
+  const [downloadingOrderId, setDownloadingOrderId] = useState<number | null>(null);
   const [downloadingProformaId, setDownloadingProformaId] = useState<number | null>(null);
   const [fileError, setFileError] = useState("");
   const [cambioDestinoReserva, setCambioDestinoReserva] = useState<Reserva | null>(null);
@@ -349,15 +349,15 @@ export default function ClienteHistorialPage() {
     setReprogMsg("");
   };
 
-  const descargarFactura = async (reservaId: number) => {
-    setDownloadingInvoiceId(reservaId);
+  const descargarOrdenCompra = async (reservaId: number) => {
+    setDownloadingOrderId(reservaId);
     setFileError("");
     const result = await descargarArchivo(
-      `/api/usuarios/mis-reservas/${reservaId}/factura`,
-      `factura_reserva_${reservaId}.pdf`
+      `/api/usuarios/mis-reservas/${reservaId}/orden-compra`,
+      `orden_compra_reserva_${reservaId}.pdf`
     );
-    if (!result.ok) setFileError(result.error || "La factura todavía no está disponible");
-    setDownloadingInvoiceId(null);
+    if (!result.ok) setFileError(result.error || "La orden de compra todavía no está disponible");
+    setDownloadingOrderId(null);
   };
 
   const descargarProforma = async (reservaId: number) => {
@@ -646,12 +646,12 @@ export default function ClienteHistorialPage() {
                     )}
                     {pagoCompleto && (
                       <button
-                        onClick={() => descargarFactura(r.id)}
-                        disabled={downloadingInvoiceId === r.id}
+                        onClick={() => descargarOrdenCompra(r.id)}
+                        disabled={downloadingOrderId === r.id}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-60"
                       >
-                        {downloadingInvoiceId === r.id ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
-                        Descargar factura
+                        {downloadingOrderId === r.id ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
+                        Descargar orden de compra
                       </button>
                     )}
                   </div>

@@ -68,6 +68,7 @@ const state = {
   operations: [],
   maintenance: [],
   availability: [],
+  externalBlocks: [],
   decisions: [],
   history: [],
   nextOperationId: 1001,
@@ -143,6 +144,17 @@ const pool = {
         if (maintenance) blockers.push(maintenance.estado === "en_progreso"
           ? "Mantenimiento en curso"
           : `Mantenimiento programado el ${maintenance.fecha_programada}`);
+        const externalBlock = state.externalBlocks.find((block) =>
+          block.vehiculo_id === vehicle.id
+          && block.estado === "activo"
+          && block.fecha_inicio <= endDate
+          && block.fecha_fin >= startDate
+          && (startDate !== endDate || !block.hora_inicio || !startTime || !block.hora_fin || !endTime
+            || intersects(startTime ? asTime(startTime) : null, endTime ? asTime(endTime) : null, block.hora_inicio, block.hora_fin))
+        );
+        if (externalBlock) blockers.push(externalBlock.motivo === "fuera_de_servicio"
+          ? "Vehículo fuera de servicio por bloqueo externo"
+          : "Vehículo ocupado externamente");
         const reservationConflict = state.reservations.find((reservation) => {
           const reservationStart = asDate(reservation.fecha_salida || reservation.fecha_servicio || reservation.fecha_reserva);
           const reservationEnd = asDate(reservation.fecha_fin || reservation.fecha_regreso || reservation.fecha_llegada || reservationStart);
@@ -375,12 +387,42 @@ const pool = {
           );
           return result(maintenance ? [{ ...maintenance }] : []);
         }
+        if (query.startsWith("select id, fecha_inicio::text, fecha_fin::text, hora_inicio::text, hora_fin::text, motivo, cliente_empresa")) {
+          const [vehicleId, startValue, endValue, startTime, endTime] = params;
+          const startDate = asDate(startValue);
+          const endDate = asDate(endValue);
+          const block = state.externalBlocks.find((entry) =>
+            entry.vehiculo_id === Number(vehicleId)
+            && entry.estado === "activo"
+            && entry.fecha_inicio <= endDate
+            && entry.fecha_fin >= startDate
+            && (startDate !== endDate || !entry.hora_inicio || !startTime || !entry.hora_fin || !endTime
+              || intersects(asTime(startTime), asTime(endTime), entry.hora_inicio, entry.hora_fin))
+          );
+          return result(block ? [{ ...block }] : []);
+        }
         if (query.startsWith("select id, fecha_inicio::text, fecha_fin::text, hora_inicio::text, hora_fin::text, motivo")) {
-          return result([]);
+          const [driverUserId, startValue, endValue, startTime, endTime] = params;
+          const startDate = asDate(startValue);
+          const endDate = asDate(endValue);
+          const block = state.externalBlocks.find((entry) =>
+            entry.conductor_usuario_id === Number(driverUserId)
+            && entry.motivo !== "fuera_de_servicio"
+            && entry.estado === "activo"
+            && entry.fecha_inicio <= endDate
+            && entry.fecha_fin >= startDate
+            && (startDate !== endDate || !entry.hora_inicio || !startTime || !entry.hora_fin || !endTime
+              || intersects(asTime(startTime), asTime(endTime), entry.hora_inicio, entry.hora_fin))
+          );
+          return result(block ? [{ ...block }] : []);
         }
         if (query.startsWith("select c.id, c.usuario_id, c.estado")) {
           const driver = driverForUser(params[0]);
-          return result(driver ? [{ ...driver }] : []);
+          const today = new Date().toISOString().slice(0, 10);
+          return result(driver ? [{
+            ...driver,
+            licencia_vencida: Boolean(driver.fecha_licencia_vencimiento && driver.fecha_licencia_vencimiento < today),
+          }] : []);
         }
         if (query.startsWith("select fecha_fin::text as fecha_fin, fecha_regreso::text as fecha_regreso from reservas")) {
           const reservation = reservationFor(params[0]);
@@ -626,6 +668,47 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     assert.match(manualBlockAssignment.body.error, /bloqueado manualmente/i);
     state.availability.length = 0;
 
+    state.externalBlocks.push({
+      id: 1,
+      vehiculo_id: 702,
+      conductor_usuario_id: 302,
+      fecha_inicio: "2026-10-22",
+      fecha_fin: "2026-10-22",
+      hora_inicio: "09:00",
+      hora_fin: "11:00",
+      motivo: "ocupado",
+      estado: "activo",
+    });
+    const externalBlockRecommendation = await request(`/api/admin/inteligencia/asignacion-recomendada?fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);
+    assert.equal(externalBlockRecommendation.body.data.vehiculo, null);
+    assert.match(externalBlockRecommendation.body.data.excluidos.find((vehicle) => vehicle.vehiculo_id === 702).bloqueos[0], /ocupado externamente/i);
+    const externalBlockAssignment = await request(`/api/admin/operaciones/${operationId}/asignar`, {
+      method: "PATCH",
+      body: { vehiculo_id: 702, conductor_id: 302 },
+    });
+    assert.equal(externalBlockAssignment.status, 409);
+    assert.match(externalBlockAssignment.body.error, /ocupado externamente/i);
+    state.externalBlocks.length = 0;
+
+    state.externalBlocks.push({
+      id: 2,
+      vehiculo_id: 701,
+      conductor_usuario_id: 302,
+      fecha_inicio: "2026-10-22",
+      fecha_fin: "2026-10-22",
+      hora_inicio: "09:00",
+      hora_fin: "11:00",
+      motivo: "viaje_externo",
+      estado: "activo",
+    });
+    const externalDriverAssignment = await request(`/api/admin/operaciones/${operationId}/asignar`, {
+      method: "PATCH",
+      body: { vehiculo_id: 702, conductor_id: 302 },
+    });
+    assert.equal(externalDriverAssignment.status, 409);
+    assert.match(externalDriverAssignment.body.error, /conductor está ocupado externamente/i);
+    state.externalBlocks.length = 0;
+
     const unavailableVehicle = await request(`/api/admin/operaciones/${operationId}/asignar`, {
       method: "PATCH",
       body: { vehiculo_id: 701, conductor_id: 302 },
@@ -645,6 +728,7 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     assert.equal(recommendation.status, 200);
     const suggestedVehicleId = recommendation.body.data.vehiculo.vehiculo_id;
     assert.ok(recommendation.body.data.decisionId);
+    state.drivers.find((driver) => driver.usuario_id === 302).fecha_licencia_vencimiento = new Date().toISOString().slice(0, 10);
 
     const assigned = await request(`/api/admin/operaciones/${operationId}/asignar`, {
       method: "PATCH",

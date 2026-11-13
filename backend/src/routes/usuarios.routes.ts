@@ -16,7 +16,7 @@ const {
   seguimientoMiReserva,
   eliminarMiCuenta,
 } = require("../controllers/usuarios.controller");
-const { crearPagoReserva, listarPagosDeReserva, descargarReciboPago, descargarProformaReserva, descargarFactura, crearPagoPayphone, confirmarPagoPayphone } = require("../controllers/pagos.controller");
+const { crearPagoReserva, listarPagosDeReserva, descargarReciboPago, descargarProformaReserva, descargarFactura, descargarOrdenCompra, crearPagoPayphone, confirmarPagoPayphone } = require("../controllers/pagos.controller");
 const { uploadComprobantePago, serveComprobante } = require("../controllers/uploads.controller");
 const { enviarVerificacion, miVerificacion, subirDocumentoVerificacion } = require("../controllers/verificacion.controller");
 const { listarGaleriaPublica } = require("../controllers/galeria.controller");
@@ -58,6 +58,7 @@ router.get("/mis-reservas/:id/pagos", verifyToken, listarPagosDeReserva);
 router.get("/mis-reservas/:id/pagos/:pagoId/recibo", verifyToken, descargarReciboPago);
 router.get("/mis-reservas/:id/proforma", verifyToken, descargarProformaReserva);
 router.get("/mis-reservas/:id/factura", verifyToken, descargarFactura);
+router.get("/mis-reservas/:id/orden-compra", verifyToken, descargarOrdenCompra);
 router.post("/mis-reservas/:id/pagos/payphone", verifyToken, crearPagoPayphone);
 router.post("/mis-reservas/:id/pagos/payphone/confirmar", verifyToken, confirmarPagoPayphone);
 router.post("/uploads/comprobante-pago", verifyToken, uploadComprobantePago);

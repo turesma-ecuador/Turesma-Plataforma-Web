@@ -109,9 +109,9 @@ export default function AdminPagosPage() {
     setErr("");
     const result = await descargarArchivo(
       `/api/admin/pagos/${pagoId}/recibo`,
-      `factura_pago_${pagoId}.pdf`
+      `recibo_pago_${pagoId}.pdf`
     );
-    if (!result.ok) setErr(result.error || "No se pudo descargar la factura");
+    if (!result.ok) setErr(result.error || "No se pudo descargar el recibo");
     setDownloadingReceiptId(null);
   };
 
@@ -292,7 +292,7 @@ export default function AdminPagosPage() {
                   {downloadingReceiptId === p.id
                     ? <Loader2 size={14} className="animate-spin" />
                     : <FileDown size={14} />}
-                  Descargar factura
+                  Descargar recibo de pago
                 </button>
                 {isAdmin && Number(p.monto) - Number(p.monto_reembolsado || 0) > 0.01 && (
                   <button type="button" onClick={() => abrirReembolso(p)} className="w-full rounded-xl bg-amber-50 py-2.5 text-[10px] font-black uppercase tracking-widest text-amber-800 hover:bg-amber-100">

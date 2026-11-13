@@ -474,7 +474,9 @@ const asignarOperacion = async (req: any, res: any) => {
     }
 
     const driver = await client.query(
-      `SELECT c.id, c.usuario_id, c.estado, c.fecha_licencia_vencimiento, u.activo
+      `SELECT c.id, c.usuario_id, c.estado, c.fecha_licencia_vencimiento, u.activo,
+              (c.fecha_licencia_vencimiento IS NOT NULL
+               AND c.fecha_licencia_vencimiento < CURRENT_DATE) AS licencia_vencida
        FROM conductores c JOIN usuarios u ON u.id = c.usuario_id
        WHERE c.usuario_id = $1 FOR UPDATE`,
       [driverUserId]
@@ -485,8 +487,32 @@ const asignarOperacion = async (req: any, res: any) => {
     if (!driverData.activo || ["inactivo", "mantenimiento"].includes(driverData.estado)) {
       return reject(409, { success: false, error: "El conductor no está disponible" });
     }
-    if (driverData.fecha_licencia_vencimiento && new Date(driverData.fecha_licencia_vencimiento) < new Date()) {
+    if (driverData.licencia_vencida) {
       return reject(409, { success: false, error: "La licencia del conductor está vencida" });
+    }
+
+    const externalDriverBlock = await client.query(
+      `SELECT id, fecha_inicio::text, fecha_fin::text, hora_inicio::text, hora_fin::text, motivo
+       FROM disponibilidad_externa
+       WHERE conductor_usuario_id = $1
+         AND estado = 'activo'
+         AND motivo <> 'fuera_de_servicio'
+         AND fecha_inicio <= $3::date AND fecha_fin >= $2::date
+         AND (
+           $2::date <> $3::date OR hora_inicio IS NULL OR $4::time IS NULL
+           OR hora_fin IS NULL OR $5::time IS NULL
+           OR (hora_inicio < $5::time AND $4::time < hora_fin)
+         )
+       ORDER BY fecha_inicio, hora_inicio NULLS LAST, id
+       LIMIT 1`,
+      [driverUserId, current.fecha_programada, endDate, current.hora_inicio, current.hora_fin]
+    );
+    if (externalDriverBlock.rowCount) {
+      return reject(409, {
+        success: false,
+        error: "El conductor está ocupado externamente en el horario solicitado",
+        conflicto: externalDriverBlock.rows[0],
+      });
     }
 
     const conflict = await findScheduleConflict(

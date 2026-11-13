@@ -680,6 +680,25 @@ const recomendarAsignacion = async (req: any, res: any) => {
                      )
                    ORDER BY o.id
                    LIMIT 1
+                 ),
+                 (
+                   SELECT CASE WHEN d.motivo = 'fuera_de_servicio'
+                     THEN 'Vehículo fuera de servicio por bloqueo externo'
+                     ELSE 'Vehículo ocupado externamente'
+                   END || ' (' || to_char(d.fecha_inicio, 'DD/MM/YYYY') || ')'
+                   FROM disponibilidad_externa d
+                   WHERE d.vehiculo_id = v.id
+                     AND d.estado = 'activo'
+                     AND d.fecha_inicio <= $2::date
+                     AND d.fecha_fin >= $1::date
+                     AND (
+                       $1::date <> $2::date
+                       OR d.hora_inicio IS NULL OR $5::time IS NULL
+                       OR d.hora_fin IS NULL OR $6::time IS NULL
+                       OR (d.hora_inicio < $6::time AND $5::time < d.hora_fin)
+                     )
+                   ORDER BY d.fecha_inicio, d.hora_inicio NULLS LAST, d.id
+                   LIMIT 1
                  )
                ], NULL) AS bloqueos,
                ARRAY_REMOVE(ARRAY[

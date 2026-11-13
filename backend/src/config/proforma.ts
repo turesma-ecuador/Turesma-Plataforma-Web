@@ -561,6 +561,7 @@ const generarProformaPDF = (d: any): Promise<Buffer> => new Promise((resolve, re
 
 module.exports = {
   EMPRESA,
+  LOGO_PATH,
   buildProformaData,
   buildProformaDataDeReserva,
   buildProformaDataRequerimiento,
