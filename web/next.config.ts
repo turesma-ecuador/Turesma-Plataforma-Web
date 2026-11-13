@@ -9,14 +9,6 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
-  async rewrites() {
-    return [
-      {
-        source: "/api-proxy/:path*",
-        destination: `${apiProxyTarget.origin}/:path*`,
-      },
-    ];
-  },
   images: {
     qualities: [75, 100],
     remotePatterns: [

@@ -89,6 +89,13 @@ y `API_URL=https://api.turesma.com`, y vuelve a desplegar el frontend. `API_URL`
 y `API_PROXY_TARGET` deben apuntar al origen de la API, no a la ruta `/api-proxy`
 del frontend.
 
+El frontend envía las llamadas de API mediante `/api-proxy`. El proxy acepta
+respuestas JSON y conserva las descargas de archivos; si el hosting responde
+con una página HTML o contenido inválido para una ruta de API, devuelve un
+error JSON explícito (`502`). Esto evita que el navegador intente interpretar
+una página de bloqueo como datos. No elimina el bloqueo del hosting: el
+proveedor debe permitir las solicitudes legítimas a la API.
+
 ## Inteligencia operativa
 
 El panel administrativo incluye analítica descriptiva y recomendaciones basadas en
