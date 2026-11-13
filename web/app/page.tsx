@@ -150,6 +150,7 @@ type HomeShowcaseImages = {
 function VideoPlayer({ src, posterUrl, title, offsetX, offsetY, zoom, videoFormat, aspectRatio, className }: { src: string; posterUrl?: string | null; title: string | null; offsetX?: number | null; offsetY?: number | null; zoom?: number | null; videoFormat?: "original" | "horizontal" | "vertical"; aspectRatio?: number | null; className?: string }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [loadPreview, setLoadPreview] = useState(false);
   const [useNativeControls, setUseNativeControls] = useState(false);
@@ -176,7 +177,7 @@ function VideoPlayer({ src, posterUrl, title, offsetX, offsetY, zoom, videoForma
           observer.disconnect();
         }
       },
-      { rootMargin: "400px 0px" }
+      { rootMargin: "800px 0px" }
     );
     observer.observe(video);
     return () => observer.disconnect();
@@ -219,16 +220,16 @@ function VideoPlayer({ src, posterUrl, title, offsetX, offsetY, zoom, videoForma
           alt="Fondo difuminado de la vista previa del video"
           aria-hidden="true"
           fill
-          sizes="(max-width: 768px) 100vw, 50vw"
-          unoptimized
+          sizes="(max-width: 640px) 90vw, (max-width: 1024px) 50vw, 768px"
+          quality={75}
+          loading={loadPreview ? "eager" : "lazy"}
           className="pointer-events-none scale-110 object-cover opacity-60 blur-2xl"
         />
       )}
       <video
         ref={videoRef}
         src={src}
-        poster={posterUrl || undefined}
-        preload={loadPreview ? (posterUrl ? "metadata" : "auto") : "none"}
+        preload={loadPreview ? "metadata" : "none"}
         controls={useNativeControls}
         playsInline
         disablePictureInPicture
@@ -248,6 +249,7 @@ function VideoPlayer({ src, posterUrl, title, offsetX, offsetY, zoom, videoForma
           if (videoWidth > 0 && videoHeight > 0) setDetectedAspectRatio(videoWidth / videoHeight);
         }}
         onPlay={() => {
+          setHasStarted(true);
           setIsPlaying(true);
           setPlaybackError("");
         }}
@@ -263,6 +265,18 @@ function VideoPlayer({ src, posterUrl, title, offsetX, offsetY, zoom, videoForma
         onContextMenu={(event) => event.preventDefault()}
         className="relative z-10 bg-transparent"
       />
+      {posterUrl && (
+        <Image
+          src={getSafeImageSource(posterUrl)}
+          alt=""
+          aria-hidden="true"
+          fill
+          sizes="(max-width: 640px) 90vw, (max-width: 1024px) 50vw, 768px"
+          quality={75}
+          loading={loadPreview ? "eager" : "lazy"}
+          className={`pointer-events-none z-10 object-contain transition-opacity duration-200 ${hasStarted || useNativeControls ? "opacity-0" : "opacity-100"}`}
+        />
+      )}
       {!useNativeControls && (
       <div className="video-player-controls absolute inset-x-0 bottom-0 z-20 flex items-center gap-3 bg-gradient-to-t from-black/80 to-transparent px-4 pb-4 pt-10">
         <button
@@ -512,7 +526,7 @@ export default function RootPage() {
           observer.disconnect();
         }
       },
-      { rootMargin: "700px 0px" }
+      { rootMargin: "1200px 0px" }
     );
     observer.observe(trigger);
     return () => observer.disconnect();
