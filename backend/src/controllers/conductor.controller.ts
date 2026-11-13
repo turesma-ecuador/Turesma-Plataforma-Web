@@ -745,6 +745,62 @@ const listarReservasConductor = async (req, res) => {
       ),
     ]);
 
+    const perfilConductor = await pool.query(
+      "SELECT id FROM conductores WHERE usuario_id = $1 LIMIT 1",
+      [conductorId]
+    );
+    const operacionesPersonalizadas = perfilConductor.rowCount
+      ? await pool.query(
+        `SELECT o.id AS operation_id, o.reserva_id, o.requerimiento_id,
+                o.grupo_numero, o.unidad_numero, o.fecha_programada,
+                o.fecha_fin_programada AS fecha_fin, o.hora_inicio AS hora_salida,
+                o.origen, o.destino, o.pasajeros AS num_personas, o.estado AS estado_operacion,
+                r.total, u.nombre AS usuario_nombre, u.email AS usuario_email,
+                u.telefono AS usuario_telefono, v.placa AS vehiculo_placa
+         FROM operaciones o
+         INNER JOIN reservas r ON r.id = o.reserva_id
+         INNER JOIN usuarios u ON u.id = r.usuario_id
+         LEFT JOIN vehiculos v ON v.id = o.vehiculo_id
+         WHERE o.requerimiento_id IS NOT NULL
+           AND o.conductor_id = $1
+           AND r.estado IN ('confirmada', 'finalizada', 'cancelada')
+           AND (COALESCE(r.total, 0) <= 0 OR r.estado_pago = 'pagado')
+           AND o.estado IN ('asignada', 'en_curso', 'completada', 'cancelada', 'incidencia')
+         ORDER BY o.fecha_programada ASC, o.grupo_numero ASC, o.unidad_numero ASC`,
+        [perfilConductor.rows[0].id]
+      )
+      : { rows: [] };
+    const mapOperacionPersonalizada = (operation) => ({
+      id: Number(operation.reserva_id),
+      operation_id: Number(operation.operation_id),
+      requerimiento_id: Number(operation.requerimiento_id),
+      grupo_numero: operation.grupo_numero,
+      unidad_numero: operation.unidad_numero,
+      fecha_reserva: operation.fecha_programada,
+      fecha_fin: operation.fecha_fin,
+      hora_salida: operation.hora_salida,
+      origen: operation.origen,
+      destino: operation.destino,
+      estado: operation.estado_operacion === "asignada"
+        ? "confirmada"
+        : operation.estado_operacion === "completada"
+          ? "finalizada"
+          : operation.estado_operacion,
+      num_personas: operation.num_personas,
+      total: operation.total,
+      usuario_nombre: operation.usuario_nombre,
+      usuario_email: operation.usuario_email,
+      usuario_telefono: operation.usuario_telefono,
+      vehiculo_placa: operation.vehiculo_placa,
+      recogido: true,
+    });
+    const operacionesActivas = operacionesPersonalizadas.rows
+      .filter((operation) => ["asignada", "en_curso", "incidencia"].includes(operation.estado_operacion))
+      .map(mapOperacionPersonalizada);
+    const operacionesHistorial = operacionesPersonalizadas.rows
+      .filter((operation) => ["completada", "cancelada"].includes(operation.estado_operacion))
+      .map(mapOperacionPersonalizada);
+
     // Si no hay vehículo asignado, obtener el estado real del conductor desde la tabla conductores
     let vehiculoRespuesta = vehiculoAsignado;
     if (!vehiculoRespuesta) {
@@ -758,8 +814,8 @@ const listarReservasConductor = async (req, res) => {
 
     return res.status(200).json({
       pendientes: pendientes.rows,
-      activas: activas.rows,
-      historial: historial.rows,
+      activas: [...activas.rows, ...operacionesActivas],
+      historial: [...historial.rows, ...operacionesHistorial],
       vehiculo: vehiculoRespuesta,
     });
   } catch (error) {
@@ -1111,6 +1167,146 @@ const actualizarEstadoReservaConductor = async (req, res) => {
 
 // El conductor marca que ya recogió al cliente: el viaje pasa a su segunda fase
 // (ir al destino). Requiere que la reserva sea suya y esté en curso.
+const actualizarEstadoOperacionConductor = async (req, res) => {
+  const conductorId = parsePositiveInt(req.params.id);
+  const operationId = parsePositiveInt(req.params.operationId);
+  const estado = String(req.body?.estado || "").trim().toLowerCase();
+  if (!conductorId || !operationId || !["en_curso", "completada"].includes(estado)) {
+    return res.status(400).json({ error: "IDs o estado de operación inválidos" });
+  }
+
+  const client = await pool.connect();
+  let reservaId;
+  let clienteId;
+  let allOperationsCompleted = false;
+  let operationDetails;
+  try {
+    const conductor = await getConductorActivo(conductorId);
+    if (!conductor) return res.status(404).json({ error: "Conductor no encontrado" });
+
+    const profile = await client.query(
+      "SELECT id FROM conductores WHERE usuario_id = $1 LIMIT 1",
+      [conductorId]
+    );
+    if (!profile.rowCount) return res.status(404).json({ error: "Perfil de conductor no encontrado" });
+
+    await client.query("BEGIN");
+    const result = await client.query(
+      `SELECT o.id, o.reserva_id, o.requerimiento_id, o.grupo_numero, o.unidad_numero,
+              o.conductor_id, o.estado, o.origen, o.destino,
+              r.estado AS reserva_estado, r.estado_pago, r.total, r.usuario_id
+       FROM operaciones o
+       INNER JOIN reservas r ON r.id = o.reserva_id
+       WHERE o.id = $1
+       FOR UPDATE OF o, r`,
+      [operationId]
+    );
+    if (!result.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Operación personalizada no encontrada" });
+    }
+
+    const operation = result.rows[0];
+    if (!operation.requerimiento_id) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Esta operación no pertenece a un requerimiento personalizado" });
+    }
+    if (Number(operation.conductor_id) !== Number(profile.rows[0].id)) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "Esta operación no está asignada a tu perfil" });
+    }
+    if (operation.reserva_estado !== "confirmada"
+      || (Number(operation.total) > 0 && operation.estado_pago !== "pagado")) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "La reserva debe estar confirmada y pagada para actualizar la operación" });
+    }
+    if (estado === "en_curso" && operation.estado !== "asignada") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Solo puedes iniciar una operación asignada" });
+    }
+    if (estado === "completada" && operation.estado !== "en_curso") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Solo puedes completar una operación que ya está en curso" });
+    }
+
+    await client.query(
+      `UPDATE operaciones
+       SET estado = $1,
+           hora_inicio_real = CASE WHEN $1 = 'en_curso' THEN CURRENT_TIMESTAMP ELSE hora_inicio_real END,
+           hora_fin_real = CASE WHEN $1 = 'completada' THEN CURRENT_TIMESTAMP ELSE hora_fin_real END,
+           actualizado_en = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [estado, operationId]
+    );
+    await client.query(
+      `INSERT INTO operacion_historial (operacion_id, usuario_id, accion, estado_anterior, estado_nuevo, detalle)
+       VALUES ($1, $2, 'actualizacion_conductor', $3, $4, $5::jsonb)`,
+      [operationId, conductorId, operation.estado, estado, JSON.stringify({ origen: "portal_conductor" })]
+    );
+
+    reservaId = Number(operation.reserva_id);
+    clienteId = Number(operation.usuario_id);
+    operationDetails = operation;
+
+    if (estado === "en_curso") {
+      await client.query(
+        "UPDATE reservas SET estado_operativo = 'en_curso' WHERE id = $1 AND estado = 'confirmada'",
+        [reservaId]
+      );
+    } else {
+      const progress = await client.query(
+        `SELECT COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE estado = 'completada')::int AS completadas
+         FROM operaciones WHERE requerimiento_id = $1`,
+        [operation.requerimiento_id]
+      );
+      allOperationsCompleted = Number(progress.rows[0].total) > 0
+        && Number(progress.rows[0].total) === Number(progress.rows[0].completadas);
+      if (allOperationsCompleted) {
+        await client.query(
+          "UPDATE reservas SET estado = 'finalizada', estado_operativo = 'finalizada' WHERE id = $1 AND estado = 'confirmada'",
+          [reservaId]
+        );
+        await client.query(
+          "UPDATE requerimientos_personalizados SET estado = 'cerrado', actualizado_en = CURRENT_TIMESTAMP WHERE id = $1",
+          [operation.requerimiento_id]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Error actualizando operación personalizada del conductor:", error);
+    return res.status(500).json({ error: "No se pudo actualizar la operación" });
+  } finally {
+    client.release();
+  }
+
+  if (estado === "en_curso") {
+    await crearNotificacion(
+      conductorId,
+      clienteId,
+      `El conductor inició la unidad ${operationDetails.grupo_numero}/${operationDetails.unidad_numero} de tu reserva #${reservaId} (${operationDetails.origen} → ${operationDetails.destino}).`,
+      reservaId,
+      "reserva",
+      reservaId
+    );
+  } else if (allOperationsCompleted) {
+    await notificarClienteReserva(reservaId, "finalizada", conductorId);
+  }
+
+  return res.status(200).json({
+    message: estado === "en_curso"
+      ? "Operación iniciada correctamente"
+      : allOperationsCompleted
+        ? "Operación completada y servicio finalizado"
+        : "Operación completada correctamente",
+    estado,
+    servicio_finalizado: allOperationsCompleted,
+  });
+};
+
 const marcarRecogidoConductor = async (req, res) => {
   const conductorId = parsePositiveInt(req.params.id);
   const reservaId = parsePositiveInt(req.params.reservaId);
@@ -1619,6 +1815,7 @@ module.exports = {
   aceptarReservaConductor,
   rechazarReservaConductor,
   actualizarEstadoReservaConductor,
+  actualizarEstadoOperacionConductor,
   marcarRecogidoConductor,
   obtenerDisponibilidadConductor,
   actualizarDisponibilidadConductor,

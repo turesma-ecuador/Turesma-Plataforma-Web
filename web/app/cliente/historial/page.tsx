@@ -31,6 +31,16 @@ const CUENTA_EMPRESA = {
   ruc: "1391763581001",
 };
 
+type Reembolso = {
+  id: number;
+  monto: number;
+  motivo: string;
+  estado: "pendiente" | "completado";
+  referencia_externa?: string | null;
+  creado_en: string;
+  completado_en?: string | null;
+};
+
 type Reserva = {
   id: number; estado: string; fecha_reserva: string; fecha_fin?: string | null;
   fecha_regreso?: string | null; hora_regreso?: string | null;
@@ -38,6 +48,22 @@ type Reserva = {
   vehiculo_placa?: string | null; vehiculo_modelo?: string | null;
   vehiculo_imagen_url?: string | null;
   conductor_nombre?: string | null; conductor_telefono?: string | null;
+  operaciones?: {
+    id: number;
+    grupo_numero?: number | null;
+    unidad_numero?: number | null;
+    fecha_programada: string;
+    fecha_fin_programada?: string | null;
+    origen: string;
+    destino: string;
+    estado: string;
+    vehiculo_placa?: string | null;
+    vehiculo_modelo?: string | null;
+    vehiculo_imagen_url?: string | null;
+    conductor_nombre?: string | null;
+    conductor_telefono?: string | null;
+  }[];
+  reembolsos?: Reembolso[];
   calificacion?: number | null; comentario_calificacion?: string | null;
   monto_pagado?: number | null; estado_pago?: string | null;
   hora_salida?: string | null;
@@ -602,6 +628,52 @@ export default function ClienteHistorialPage() {
                   <div className="bg-slate-50 rounded-xl p-2.5"><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Conductor</p><p className="font-bold text-slate-700 truncate">{r.conductor_nombre ? <span data-no-translate>{r.conductor_nombre}</span> : "Por asignar"}</p></div>
                 </div>
 
+                {(r.operaciones || []).length > 0 && (
+                  <div className="mt-3 space-y-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-900">Seguimiento de unidades</p>
+                    {r.operaciones?.map((operation) => (
+                      <div key={operation.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/80 p-3">
+                        <div className="flex min-w-0 items-center gap-2">
+                          {operation.vehiculo_imagen_url ? (
+                            <Image
+                              src={operation.vehiculo_imagen_url}
+                              alt={`Vehículo asignado ${operation.vehiculo_placa || ""}`}
+                              width={52}
+                              height={42}
+                              sizes="52px"
+                              className="h-10 w-12 shrink-0 rounded-lg border border-slate-200 object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-10 w-12 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-300">
+                              <Bus size={20} aria-hidden="true" />
+                            </span>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-blue-950">
+                              Grupo {operation.grupo_numero} · Unidad {operation.unidad_numero} · {operation.estado.replaceAll("_", " ")}
+                            </p>
+                            <p data-no-translate className="truncate text-[10px] font-semibold text-slate-700">
+                              {operation.origen} → {operation.destino}
+                            </p>
+                            <p className="text-[10px] text-slate-600">
+                              {operation.vehiculo_placa || "Vehículo por asignar"}
+                              {operation.vehiculo_modelo ? ` · ${operation.vehiculo_modelo}` : ""}
+                              {operation.conductor_nombre ? ` · ${operation.conductor_nombre}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        {operation.conductor_telefono && (
+                          <WhatsAppButton
+                            telefono={operation.conductor_telefono}
+                            title={`WhatsApp de ${operation.conductor_nombre || "conductor"}`}
+                            mensaje={`Hola, soy el cliente de la reserva #${r.id}, grupo ${operation.grupo_numero} unidad ${operation.unidad_numero}.`}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {r.cambio_destino && (
                   <div className="mt-3 space-y-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
                     <p className="text-[10px] font-black uppercase tracking-widest text-blue-800">
@@ -628,6 +700,26 @@ export default function ClienteHistorialPage() {
                     {r.cambio_destino.estado === "aplicada" && <p className="text-xs text-emerald-800">La nueva ruta ya está aplicada.</p>}
                     {r.cambio_destino.estado === "rechazada_admin" && <p className="text-xs text-slate-700">La solicitud fue rechazada. La reserva mantiene la ruta original. {r.cambio_destino.nota_admin}</p>}
                     {r.cambio_destino.estado === "rechazada_cliente" && <p className="text-xs text-slate-700">Rechazaste la propuesta. La reserva mantiene la ruta original.</p>}
+                  </div>
+                )}
+
+                {(r.reembolsos || []).length > 0 && (
+                  <div className="mt-3 space-y-2 rounded-xl border border-violet-200 bg-violet-50 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-violet-900">Seguimiento de devoluciones</p>
+                    {r.reembolsos?.map((refund) => (
+                      <div key={refund.id} className="flex flex-wrap items-start justify-between gap-2 rounded-lg bg-white/80 p-2.5">
+                        <div>
+                          <p className="text-xs font-black text-violet-900">${Number(refund.monto).toFixed(2)} · {refund.estado === "pendiente" ? "Pendiente de procesar" : "Completada"}</p>
+                          <p className="mt-0.5 text-[10px] text-violet-800">{refund.motivo}</p>
+                        </div>
+                        {refund.estado === "pendiente" && (
+                          <p className="text-[10px] font-semibold text-violet-800">El dinero aún no se ha transferido; te avisaremos cuando se procese.</p>
+                        )}
+                        {refund.estado === "completado" && refund.referencia_externa && (
+                          <p className="text-[10px] text-violet-700">Referencia: {refund.referencia_externa}</p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
 

@@ -86,7 +86,7 @@ export default function ConductorActivasPage() {
   const enCursoTrip = panel.activas.find(r => r.estado === "en_curso") || null;
   const mapTarget = (() => {
     const t = enCursoTrip;
-    if (!t) return null;
+    if (!t || t.requerimiento_id) return null;
     if (!t.recogido && t.origen_lat != null && t.origen_lng != null) {
       return { lat: Number(t.origen_lat), lng: Number(t.origen_lng), texto: `Recoger a ${t.usuario_nombre || "cliente"}` };
     }
@@ -131,6 +131,8 @@ export default function ConductorActivasPage() {
       ) : (
         <div className="grid gap-5">
           {panel.activas.map((r) => {
+            const isCustomOperation = Boolean(r.requerimiento_id);
+            const actionId = r.operation_id || r.id;
             const badgeCls = ESTADO_BADGE[r.estado] || ESTADO_BADGE.pendiente;
             const badgeIcon = ESTADO_ICON[r.estado] || null;
             const regresoEnCurso = Boolean(r.ida_finalizada && r.fecha_regreso);
@@ -139,7 +141,7 @@ export default function ConductorActivasPage() {
 
             return (
               <article
-                key={r.id}
+                key={r.operation_id || r.id}
                 className="bg-white rounded-2xl md:rounded-[2rem] border-2 border-red-200 shadow-sm overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
               >
                 {/* Card Header */}
@@ -150,8 +152,15 @@ export default function ConductorActivasPage() {
                     </div>
                     <div>
                       <h3 className="font-black text-slate-900 text-base uppercase italic tracking-tighter">
-                        Reserva #{r.id}
+                        {isCustomOperation
+                          ? `Requerimiento #${r.requerimiento_id} · Reserva #${r.id}`
+                          : `Reserva #${r.id}`}
                       </h3>
+                      {isCustomOperation && (
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          Grupo {r.grupo_numero} · Unidad {r.unidad_numero}
+                        </p>
+                      )}
                       {r.tour_titulo && (
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{r.tour_titulo}</p>
                       )}
@@ -228,7 +237,7 @@ export default function ConductorActivasPage() {
                   )}
 
                   {/* FASE DEL VIAJE EN CURSO: recoger primero, luego llevar */}
-                  {r.estado === "en_curso" && (
+                  {r.estado === "en_curso" && !isCustomOperation && (
                     r.recogido ? (
                       <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3">
                         <Flag size={18} className="text-emerald-600 mt-0.5 shrink-0" />
@@ -271,7 +280,7 @@ export default function ConductorActivasPage() {
                   )}
 
                   {/* CÓMO LLEGAR EN GOOGLE MAPS (según la fase: recoger o destino) */}
-                  {(r.estado === "confirmada" || r.estado === "en_curso")
+                  {!isCustomOperation && (r.estado === "confirmada" || r.estado === "en_curso")
                     && (!regresoEnCurso || regresoHabilitado)
                     && tieneDestino(navTarget(r)) && (
                     <a
@@ -290,37 +299,48 @@ export default function ConductorActivasPage() {
                   <div className="flex flex-col sm:flex-row gap-2">
                     {r.estado === "confirmada" && (
                       <button
-                        onClick={() => callAction(r.id, "estado", { estado: "en_curso" })}
-                        disabled={actionLoadingId === r.id || (regresoEnCurso && !regresoHabilitado)}
+                        onClick={() => callAction(actionId, "estado", { estado: "en_curso" }, isCustomOperation ? "operaciones" : "reservas")}
+                        disabled={actionLoadingId === actionId || (!isCustomOperation && regresoEnCurso && !regresoHabilitado)}
                         className="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {actionLoadingId === r.id ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                        {regresoEnCurso && !regresoHabilitado ? "Regreso programado" : regresoEnCurso ? "Iniciar regreso" : "Iniciar viaje"}
+                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                        {isCustomOperation ? "Iniciar servicio" : regresoEnCurso && !regresoHabilitado ? "Regreso programado" : regresoEnCurso ? "Iniciar regreso" : "Iniciar viaje"}
                       </button>
                     )}
-                    {r.estado === "en_curso" && !r.recogido && (
+                    {r.estado === "en_curso" && isCustomOperation && (
                       <button
-                        onClick={() => callAction(r.id, "recoger")}
-                        disabled={actionLoadingId === r.id}
-                        className="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
-                      >
-                        {actionLoadingId === r.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Ya recogí al cliente
-                      </button>
-                    )}
-                    {r.estado === "en_curso" && r.recogido && (
-                      <button
-                        onClick={() => callAction(r.id, "estado", { estado: "finalizada" })}
-                        disabled={actionLoadingId === r.id}
+                        onClick={() => callAction(actionId, "estado", { estado: "completada" }, "operaciones")}
+                        disabled={actionLoadingId === actionId}
                         className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
                       >
-                        {actionLoadingId === r.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Finalizar viaje
+                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Completar unidad
+                      </button>
+                    )}
+                    {r.estado === "en_curso" && !isCustomOperation && !r.recogido && (
+                      <button
+                        onClick={() => callAction(r.id, "recoger")}
+                        disabled={actionLoadingId === actionId}
+                        className="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+                      >
+                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Ya recogí al cliente
+                      </button>
+                    )}
+                    {r.estado === "en_curso" && !isCustomOperation && r.recogido && (
+                      <button
+                        onClick={() => callAction(r.id, "estado", { estado: "finalizada" })}
+                        disabled={actionLoadingId === actionId}
+                        className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+                      >
+                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Finalizar viaje
                       </button>
                     )}
                   </div>
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex items-center gap-2">
                     <CheckCircle size={14} className="text-[#E31E24] flex-shrink-0" />
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                      {r.fecha_regreso && !regresoEnCurso
+                      {isCustomOperation
+                        ? "El cliente recibirá una actualización al iniciar y cuando todas las unidades del servicio estén completas."
+                        : r.fecha_regreso && !regresoEnCurso
                         ? "Al finalizar la ida, el regreso seguirá programado en esta reserva."
                         : "Al finalizar, el cliente podrá calificar su viaje"}
                     </p>

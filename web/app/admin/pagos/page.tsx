@@ -23,7 +23,8 @@ type Pago = {
   reserva_monto_pagado: number; reserva_estado_pago: string;
   cliente_nombre: string; cliente_email: string;
   monto_reembolsado?: number;
-  reembolsos?: Array<{ id: number; monto: number; motivo: string; referencia_externa: string; creado_en: string; procesado_por: string }>;
+  monto_reembolso_pendiente?: number;
+  reembolsos?: Array<{ id: number; monto: number; motivo: string; referencia_externa: string | null; estado: string; creado_en: string; completado_en?: string | null; procesado_por: string }>;
 };
 
 const ESTADO_BADGE: Record<string, string> = {
@@ -54,7 +55,9 @@ export default function AdminPagosPage() {
   const [downloadingReceiptId, setDownloadingReceiptId] = useState<number | null>(null);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [refundPayment, setRefundPayment] = useState<Pago | null>(null);
-  const [refundForm, setRefundForm] = useState({ monto: "", motivo: "", referencia_externa: "" });
+  const [refundForm, setRefundForm] = useState({ monto: "", motivo: "" });
+  const [refundToComplete, setRefundToComplete] = useState<{ id: number; monto: number; reserva_id: number } | null>(null);
+  const [completionReference, setCompletionReference] = useState("");
   const [focusedPaymentId, setFocusedPaymentId] = useState<number | null>(null);
   const [nextReservationId, setNextReservationId] = useState<number | null>(null);
   const [scrolledPaymentId, setScrolledPaymentId] = useState<number | null>(null);
@@ -154,9 +157,8 @@ export default function AdminPagosPage() {
   const abrirReembolso = (pago: Pago) => {
     setRefundPayment(pago);
     setRefundForm({
-      monto: Math.max(0, Number(pago.monto) - Number(pago.monto_reembolsado || 0)).toFixed(2),
+      monto: Math.max(0, Number(pago.monto) - Number(pago.monto_reembolsado || 0) - Number(pago.monto_reembolso_pendiente || 0)).toFixed(2),
       motivo: "",
-      referencia_externa: "",
     });
     setErr("");
   };
@@ -176,10 +178,34 @@ export default function AdminPagosPage() {
       if (!response.ok) throw new Error(data.error || "No se pudo registrar la devolución");
       setMsg(data.message || "Devolución registrada.");
       setRefundPayment(null);
-      setRefundForm({ monto: "", motivo: "", referencia_externa: "" });
+      setRefundForm({ monto: "", motivo: "" });
       await load();
     } catch (refundError) {
       setErr(refundError instanceof Error ? refundError.message : "No se pudo registrar la devolución");
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  const completarReembolso = async () => {
+    if (!refundToComplete) return;
+    setActingId(refundToComplete.id);
+    setErr("");
+    setMsg("");
+    try {
+      const response = await fetch(`${API}/api/admin/reembolsos/${refundToComplete.id}/completar`, {
+        method: "PATCH",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ referencia_externa: completionReference.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo completar la devolución");
+      setMsg(data.message || "Devolución completada.");
+      setRefundToComplete(null);
+      setCompletionReference("");
+      await load();
+    } catch (refundError) {
+      setErr(refundError instanceof Error ? refundError.message : "No se pudo completar la devolución");
     } finally {
       setActingId(null);
     }
@@ -294,18 +320,31 @@ export default function AdminPagosPage() {
                     : <FileDown size={14} />}
                   Descargar recibo de pago
                 </button>
-                {isAdmin && Number(p.monto) - Number(p.monto_reembolsado || 0) > 0.01 && (
+                {isAdmin && Number(p.monto) - Number(p.monto_reembolsado || 0) - Number(p.monto_reembolso_pendiente || 0) > 0.01 && (
                   <button type="button" onClick={() => abrirReembolso(p)} className="w-full rounded-xl bg-amber-50 py-2.5 text-[10px] font-black uppercase tracking-widest text-amber-800 hover:bg-amber-100">
-                    Registrar devolución excepcional
+                    Solicitar devolución manual
                   </button>
                 )}
                 {(p.reembolsos || []).length > 0 && (
                   <div className="space-y-1 rounded-xl border border-amber-100 bg-amber-50/60 p-3">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-900">Devoluciones registradas</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-900">Seguimiento de devoluciones</p>
                     {p.reembolsos?.map((refund) => (
-                      <p key={refund.id} className="text-[10px] leading-relaxed text-amber-900">
-                        ${Number(refund.monto).toFixed(2)} · {refund.motivo} · Ref. {refund.referencia_externa} · {refund.procesado_por}
-                      </p>
+                      <div key={refund.id} className="rounded-lg bg-white/80 p-2 text-[10px] leading-relaxed text-amber-950">
+                        <p>
+                          ${Number(refund.monto).toFixed(2)} · {refund.estado === "pendiente" ? "Pendiente de procesar" : "Completada"}
+                          {refund.referencia_externa ? ` · Ref. ${refund.referencia_externa}` : ""}
+                        </p>
+                        <p>{refund.motivo}{refund.procesado_por ? ` · ${refund.procesado_por}` : ""}</p>
+                        {refund.estado === "pendiente" && isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => { setRefundToComplete({ id: refund.id, monto: Number(refund.monto), reserva_id: p.reserva_id }); setCompletionReference(""); }}
+                            className="mt-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 font-black uppercase tracking-wide text-white"
+                          >
+                            Confirmar transferencia externa
+                          </button>
+                        )}
+                      </div>
                     ))}
                   </div>
                 )}
@@ -357,15 +396,15 @@ export default function AdminPagosPage() {
         <div className="fixed inset-0 z-[105] flex items-center justify-center bg-[#0b0f1a]/80 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg space-y-4 rounded-3xl bg-white p-6 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
-              <div><p className="text-xs font-black uppercase tracking-widest text-amber-700">Solo administración</p><h2 className="mt-1 text-xl font-black text-slate-950">Registrar devolución</h2></div>
+              <div><p className="text-xs font-black uppercase tracking-widest text-amber-700">Solo administración</p><h2 className="mt-1 text-xl font-black text-slate-950">Solicitar devolución</h2></div>
               <button type="button" onClick={() => setRefundPayment(null)} aria-label="Cerrar formulario de devolución" className="rounded-lg p-2 hover:bg-slate-100"><X size={20} /></button>
             </div>
             <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
-              Primero realiza la devolución en PayPhone, banco u otro canal y luego registra su referencia aquí. Este sistema solo deja constancia; no transfiere dinero.
+              Esta acción solo registra la devolución como pendiente; no transfiere dinero. Después de realizarla por el banco o procesador, confirma la transferencia y agrega su referencia.
             </p>
-            <p className="text-sm font-bold text-slate-700">Pago #{refundPayment.id} · Reserva #{refundPayment.reserva_id} · Disponible: ${Math.max(0, Number(refundPayment.monto) - Number(refundPayment.monto_reembolsado || 0)).toFixed(2)}</p>
+            <p className="text-sm font-bold text-slate-700">Pago #{refundPayment.id} · Reserva #{refundPayment.reserva_id} · Disponible: ${Math.max(0, Number(refundPayment.monto) - Number(refundPayment.monto_reembolsado || 0) - Number(refundPayment.monto_reembolso_pendiente || 0)).toFixed(2)}</p>
             <label className="block text-xs font-black uppercase tracking-wider text-slate-500">Monto a devolver
-              <input type="number" min="0.01" max={Math.max(0, Number(refundPayment.monto) - Number(refundPayment.monto_reembolsado || 0)).toFixed(2)} step="0.01" value={refundForm.monto} onChange={(event) => setRefundForm({ ...refundForm, monto: event.target.value })} className={`${INPUT} mt-1`} />
+              <input type="number" min="0.01" max={Math.max(0, Number(refundPayment.monto) - Number(refundPayment.monto_reembolsado || 0) - Number(refundPayment.monto_reembolso_pendiente || 0)).toFixed(2)} step="0.01" value={refundForm.monto} onChange={(event) => setRefundForm({ ...refundForm, monto: event.target.value })} className={`${INPUT} mt-1`} />
             </label>
             {Number(refundForm.monto) >= Number(refundPayment.reserva_monto_pagado || 0) - 0.01 && (
               <p className="rounded-lg bg-red-50 p-3 text-xs font-semibold text-red-700">Si esta devolución deja en cero el saldo pagado de la reserva, primero debe estar cancelada.</p>
@@ -373,12 +412,31 @@ export default function AdminPagosPage() {
             <label className="block text-xs font-black uppercase tracking-wider text-slate-500">Motivo excepcional
               <textarea required minLength={5} maxLength={500} rows={3} value={refundForm.motivo} onChange={(event) => setRefundForm({ ...refundForm, motivo: event.target.value })} className={`${INPUT} mt-1 resize-none`} placeholder="Explica el motivo de la devolución" />
             </label>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-500">Referencia del reembolso externo
-              <input required minLength={3} maxLength={120} value={refundForm.referencia_externa} onChange={(event) => setRefundForm({ ...refundForm, referencia_externa: event.target.value })} className={`${INPUT} mt-1`} placeholder="Número de transacción o comprobante" />
-            </label>
             <div className="flex gap-3">
               <button type="button" onClick={() => setRefundPayment(null)} className="flex-1 rounded-xl border-2 border-slate-100 py-3 text-xs font-black uppercase tracking-widest text-slate-500">Cancelar</button>
-              <button type="button" onClick={() => void registrarReembolso()} disabled={actingId === refundPayment.id || !refundForm.motivo.trim() || !refundForm.referencia_externa.trim() || Number(refundForm.monto) <= 0} className="flex-1 rounded-xl bg-amber-600 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">{actingId === refundPayment.id ? "Guardando..." : "Registrar devolución"}</button>
+              <button type="button" onClick={() => void registrarReembolso()} disabled={actingId === refundPayment.id || refundForm.motivo.trim().length < 5 || Number(refundForm.monto) <= 0} className="flex-1 rounded-xl bg-amber-600 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">{actingId === refundPayment.id ? "Guardando..." : "Registrar como pendiente"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {refundToComplete && isAdmin && (
+        <div className="fixed inset-0 z-[106] flex items-center justify-center bg-[#0b0f1a]/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg space-y-4 rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div><p className="text-xs font-black uppercase tracking-widest text-emerald-700">Confirmación administrativa</p><h2 className="mt-1 text-xl font-black text-slate-950">Marcar devolución como completada</h2></div>
+              <button type="button" onClick={() => setRefundToComplete(null)} aria-label="Cerrar confirmación de devolución" className="rounded-lg p-2 hover:bg-slate-100"><X size={20} /></button>
+            </div>
+            <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900">
+              Confirma solo después de haber transferido ${Number(refundToComplete.monto).toFixed(2)} fuera de Turesma. Se notificará al cliente.
+            </p>
+            <p className="text-sm font-bold text-slate-700">Reserva #{refundToComplete.reserva_id}</p>
+            <label className="block text-xs font-black uppercase tracking-wider text-slate-500">Referencia externa
+              <input minLength={3} maxLength={120} value={completionReference} onChange={(event) => setCompletionReference(event.target.value)} className={`${INPUT} mt-1`} placeholder="Número de transacción o comprobante" />
+            </label>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setRefundToComplete(null)} className="flex-1 rounded-xl border-2 border-slate-100 py-3 text-xs font-black uppercase tracking-widest text-slate-500">Cancelar</button>
+              <button type="button" onClick={() => void completarReembolso()} disabled={actingId === refundToComplete.id || completionReference.trim().length < 3} className="flex-1 rounded-xl bg-emerald-600 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50">{actingId === refundToComplete.id ? "Confirmando..." : "Confirmar transferencia"}</button>
             </div>
           </div>
         </div>

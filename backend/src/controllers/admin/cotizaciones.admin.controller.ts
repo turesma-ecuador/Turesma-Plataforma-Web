@@ -158,7 +158,7 @@ const aprobarCotizacion = async (req: any, res: any) => {
   try {
     await client.query("BEGIN");
 
-    const cot = await client.query("SELECT * FROM cotizaciones WHERE id = $1", [id]);
+    const cot = await client.query("SELECT * FROM cotizaciones WHERE id = $1 FOR UPDATE", [id]);
     if (cot.rowCount === 0) {
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Cotización no encontrada" });
@@ -166,6 +166,10 @@ const aprobarCotizacion = async (req: any, res: any) => {
     if (!["pendiente", "negociacion"].includes(cot.rows[0].estado)) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "La cotización ya fue procesada" });
+    }
+    if (cot.rows[0].estado === "negociacion" && cot.rows[0].turno === "cliente") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Espera la respuesta del cliente antes de aprobar la cotización" });
     }
 
     const c = cot.rows[0];
@@ -212,11 +216,15 @@ const contraofertarCotizacion = async (req: any, res: any) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const cot = await client.query("SELECT estado, usuario_id FROM cotizaciones WHERE id = $1", [id]);
+    const cot = await client.query("SELECT estado, usuario_id, turno FROM cotizaciones WHERE id = $1 FOR UPDATE", [id]);
     if (cot.rowCount === 0) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Cotización no encontrada" }); }
     if (!["pendiente", "negociacion"].includes(cot.rows[0].estado)) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "La cotización ya fue procesada" });
+    }
+    if (cot.rows[0].estado === "negociacion" && cot.rows[0].turno === "cliente") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "El cliente debe responder la propuesta vigente antes de recibir otra" });
     }
     await client.query(
       `UPDATE cotizaciones
@@ -250,11 +258,14 @@ const responderCotizacion = async (req: any, res: any) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const cot = await client.query("SELECT * FROM cotizaciones WHERE id = $1", [id]);
+    const cot = await client.query("SELECT * FROM cotizaciones WHERE id = $1 FOR UPDATE", [id]);
     if (cot.rowCount === 0) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Cotización no encontrada" }); }
     const c = cot.rows[0];
     if (Number(c.usuario_id) !== Number(userId)) { await client.query("ROLLBACK"); return res.status(403).json({ error: "No autorizado" }); }
-    if (c.estado !== "negociacion") { await client.query("ROLLBACK"); return res.status(400).json({ error: "No hay una propuesta pendiente por responder" }); }
+    if (c.estado !== "negociacion" || c.turno !== "cliente") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "No hay una propuesta pendiente por responder" });
+    }
 
     if (accion === "aceptar") {
       const precioFinal = Number(c.precio_propuesto);
@@ -274,7 +285,10 @@ const responderCotizacion = async (req: any, res: any) => {
 
     if (accion === "contraoferta") {
       const nuevoValor = Number(req.body.valor);
-      if (!nuevoValor) { await client.query("ROLLBACK"); return res.status(400).json({ error: "Debes enviar un valor" }); }
+      if (!Number.isFinite(nuevoValor) || nuevoValor <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "La contrapropuesta debe ser un valor mayor que cero" });
+      }
       await client.query(
         `UPDATE cotizaciones SET estado = 'pendiente', valor_ofrecido = $1, turno = 'admin', actualizado_en = NOW() WHERE id = $2`,
         [nuevoValor, id]

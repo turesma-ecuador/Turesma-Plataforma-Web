@@ -72,7 +72,7 @@ const {
 } = require("../controllers/admin/rutas-reportadas.admin.controller");
 const { uploadVehiculoImagen, uploadViajeImagenes } = require("../controllers/admin/uploads.admin.controller");
 const { serveComprobante } = require("../controllers/uploads.controller");
-const { listarPagosAdmin, descargarReciboPagoAdmin, descargarFacturaAdmin, emitirFacturaAdmin, reenviarFacturaAdmin, aprobarPago, rechazarPago, actualizarLinkPago, registrarPagoManual, registrarReembolso } = require("../controllers/admin/pagos.admin.controller");
+const { listarPagosAdmin, descargarReciboPagoAdmin, descargarFacturaAdmin, emitirFacturaAdmin, reenviarFacturaAdmin, aprobarPago, rechazarPago, actualizarLinkPago, registrarPagoManual, registrarReembolso, completarReembolso } = require("../controllers/admin/pagos.admin.controller");
 const {
   listarSolicitudesCambioDestinoAdmin,
   proponerCambioDestino,
@@ -96,6 +96,7 @@ const {
   listarCotizaciones,
   aprobarCotizacion,
   obtenerNegociacion,
+  contraofertarCotizacion,
   rechazarCotizacion,
   crearCotizacion,
   listarMisCotizaciones,
@@ -276,6 +277,7 @@ router.post("/uploads/vehiculo-imagen", uploadVehiculoImagen);
 router.post("/uploads/viaje-imagenes", uploadViajeImagenes);
 router.get("/pagos", listarPagosAdmin);
 router.post("/pagos/:id/reembolso", requireRole("admin"), registrarReembolso);
+router.patch("/reembolsos/:id/completar", requireRole("admin"), completarReembolso);
 router.get("/pagos/:id/recibo", descargarReciboPagoAdmin);
 router.get("/reservas/:id/factura", descargarFacturaAdmin);
 router.post("/reservas/:id/factura/emitir", emitirFacturaAdmin);
@@ -313,6 +315,7 @@ router.get("/cotizaciones", listarCotizaciones);
 router.get("/cotizaciones/resumen", resumenCotizaciones);
 router.post("/cotizaciones", crearCotizacion);
 router.patch("/cotizaciones/:id/aprobar", aprobarCotizacion);
+router.patch("/cotizaciones/:id/contraofertar", contraofertarCotizacion);
 router.patch("/cotizaciones/:id/rechazar", rechazarCotizacion);
 router.get("/cotizaciones/:id/negociacion", obtenerNegociacion);
 router.get("/cotizaciones/:id/proforma", getProformaCotizacion);

@@ -25,6 +25,10 @@ export default function ClienteInicioPage() {
   const [viajeActivo, setViajeActivo] = useState<{ id: number; estado: string; origen?: string | null; destino?: string | null } | null>(null);
   const [catalogoViajes, setCatalogoViajes] = useState<any[]>([]);
   const [viajesMessage, setViajesMessage] = useState("");
+  const [viajesError, setViajesError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [loadingDashboard, setLoadingDashboard] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
   const [viajeCompra, setViajeCompra] = useState<any | null>(null);
   const [compraForm, setCompraForm] = useState({ pasajeros: "1", fecha: "", hora: "", ubicacion: "", referencia: "" });
   const [pickupPoint, setPickupPoint] = useState<Punto | null>(null);
@@ -32,6 +36,9 @@ export default function ClienteInicioPage() {
 
   useEffect(() => {
     if (checkingSession || !user?.id) return;
+    let cancelled = false;
+    setLoadingDashboard(true);
+    setLoadError("");
     (async () => {
       try {
         const [cRes, rRes] = await Promise.all([
@@ -39,59 +46,62 @@ export default function ClienteInicioPage() {
           fetch(`${API}/api/usuarios/mis-reservas`, { headers: getAuthHeaders() }),
         ]);
         if (handleUnauthorized(cRes.status) || handleUnauthorized(rRes.status)) return;
-        if (cRes.ok) {
-          const cots = await cRes.json();
-          setCotPendientes(cots.filter((c: any) => c.estado === "pendiente").length);
-          setCotAprobadas(cots.filter((c: any) => c.estado === "aprobada").length);
-        }
-        if (rRes.ok) {
-          const rs = await rRes.json();
-          const arr = Array.isArray(rs) ? rs : [];
-          setViajes(arr.length);
-          // Prioriza el viaje en curso; si no hay, muestra el próximo confirmado sin cargar seguimiento.
-          const activo = arr.find((r: any) => r.estado === "en_curso") || arr.find((r: any) => r.estado === "confirmada");
-          setViajeActivo(activo ? { id: activo.id, estado: activo.estado, origen: activo.origen, destino: activo.destino } : null);
-        }
+        const [cotizacionesData, reservasData] = await Promise.all([cRes.json(), rRes.json()]);
+        if (!cRes.ok || !rRes.ok) throw new Error(cotizacionesData.error || reservasData.error || "No se pudo cargar el portal");
         const catalogoRes = await fetch(`${API}/api/usuarios/viajes`, { headers: getAuthHeaders() });
-        if (catalogoRes.ok) {
-          const catalogo = await catalogoRes.json();
-          setCatalogoViajes(catalogo.data || []);
-        }
-      } catch { /* silencio */ }
+        const catalogoData = await catalogoRes.json();
+        if (!catalogoRes.ok) throw new Error(catalogoData.error || "No se pudo cargar el catálogo de viajes");
+        if (cancelled) return;
+        const cots = Array.isArray(cotizacionesData) ? cotizacionesData : [];
+        setCotPendientes(cots.filter((c: any) => c.estado === "pendiente" || c.estado === "negociacion").length);
+        setCotAprobadas(cots.filter((c: any) => c.estado === "aprobada").length);
+        const arr = Array.isArray(reservasData) ? reservasData : [];
+        setViajes(arr.length);
+        const activo = arr.find((r: any) => r.estado === "en_curso") || arr.find((r: any) => r.estado === "confirmada");
+        setViajeActivo(activo ? { id: activo.id, estado: activo.estado, origen: activo.origen, destino: activo.destino } : null);
+        setCatalogoViajes(Array.isArray(catalogoData.data) ? catalogoData.data : []);
+      } catch (error) {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : "No se pudo cargar el portal");
+      } finally {
+        if (!cancelled) setLoadingDashboard(false);
+      }
     })();
-  }, [checkingSession, user?.id]);
+    return () => { cancelled = true; };
+  }, [checkingSession, user?.id, reloadKey]);
 
   const reservarViaje = async () => {
     if (!viajeCompra) return;
     const cantidad = Number(compraForm.pasajeros);
     if (!Number.isInteger(cantidad) || cantidad <= 0 || !compraForm.fecha || !compraForm.hora || !compraForm.ubicacion.trim()) return;
     setComprando(true);
-    const response = await fetch(`${API}/api/usuarios/viajes/${viajeCompra.id}/reservar`, {
-      method: "POST",
-      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({
-        num_personas: cantidad,
-        fecha_viaje: compraForm.fecha,
-        hora_viaje: compraForm.hora,
-        ubicacion_recogida: compraForm.ubicacion,
-        referencia_recogida: compraForm.referencia || null,
-        recogida_lat: pickupPoint?.lat ?? null,
-        recogida_lng: pickupPoint?.lng ?? null,
-      }),
-    });
-    const contentType = response.headers.get("content-type") || "";
-    const data = contentType.includes("application/json") ? await response.json() : { error: (await response.text()).slice(0, 240) };
-    setViajesMessage(response.ok ? `${data.message} Total: $${Number(data.data?.total || 0).toFixed(2)}.` : (data.error || "No se pudo reservar el viaje"));
-    setComprando(false);
-    if (response.ok) {
+    setViajesError("");
+    setViajesMessage("");
+    try {
+      const response = await fetch(`${API}/api/usuarios/viajes/${viajeCompra.id}/reservar`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          num_personas: cantidad,
+          fecha_viaje: compraForm.fecha,
+          hora_viaje: compraForm.hora,
+          ubicacion_recogida: compraForm.ubicacion,
+          referencia_recogida: compraForm.referencia || null,
+          recogida_lat: pickupPoint?.lat ?? null,
+          recogida_lng: pickupPoint?.lng ?? null,
+        }),
+      });
+      const contentType = response.headers.get("content-type") || "";
+      const data = contentType.includes("application/json") ? await response.json() : { error: (await response.text()).slice(0, 240) };
+      if (!response.ok) throw new Error(data.error || "No se pudo reservar el viaje");
+      setViajesMessage(`${data.message} Total: $${Number(data.data?.total || 0).toFixed(2)}.`);
       setViajeCompra(null);
       setPickupPoint(null);
       const reservaId = Number(data.data?.id);
-      if (reservaId > 0) {
-        window.location.assign(`/cliente/historial?abrir_pago=${reservaId}`);
-      } else {
-        window.location.assign("/cliente/historial");
-      }
+      window.location.assign(reservaId > 0 ? `/cliente/historial?abrir_pago=${reservaId}` : "/cliente/historial");
+    } catch (error) {
+      setViajesError(error instanceof Error ? error.message : "No se pudo reservar el viaje. Revisa tu conexión e inténtalo otra vez.");
+    } finally {
+      setComprando(false);
     }
   };
 
@@ -123,7 +133,10 @@ export default function ClienteInicioPage() {
           </div>
           <Link href="/cliente/historial" className="shrink-0 whitespace-nowrap pt-1 text-xs font-black text-slate-400 hover:text-[#E31E24]">Mis pagos</Link>
         </div>
-        {viajesMessage && <p className="rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-700">{viajesMessage}</p>}
+        {loadError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700"><span>{loadError}</span><button type="button" onClick={() => setReloadKey((key) => key + 1)} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-red-700 shadow-sm">Reintentar</button></div>}
+        {viajesMessage && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-700">{viajesMessage}</p>}
+        {viajesError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{viajesError}</p>}
+        {loadingDashboard && <p className="rounded-xl bg-slate-50 p-3 text-xs font-bold text-slate-500">Cargando tus viajes y cotizaciones…</p>}
         <div className="grid gap-4 md:grid-cols-2">
           {catalogoViajes.map((viaje) => {
             const images = [
@@ -189,7 +202,7 @@ export default function ClienteInicioPage() {
             );
           })}
         </div>
-        {!catalogoViajes.length && <p className="rounded-2xl bg-slate-50 px-3 py-4 text-center text-sm font-bold text-slate-400 sm:p-6">No hay viajes publicados en este momento.</p>}
+        {!loadingDashboard && !loadError && !catalogoViajes.length && <p className="rounded-2xl bg-slate-50 px-3 py-4 text-center text-sm font-bold text-slate-400 sm:p-6">No hay viajes publicados en este momento.</p>}
       </section>
 
       {viajeCompra && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4"><form onSubmit={(event) => { event.preventDefault(); void reservarViaje(); }} className="my-4 w-full max-w-md space-y-4 rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="text-xs font-black uppercase tracking-widest text-[#E31E24]">Confirmar compra</p><h2 className="mt-1 text-xl font-black text-slate-900">{viajeCompra.titulo}</h2></div><button type="button" onClick={() => setViajeCompra(null)} className="text-2xl text-slate-400">×</button></div>      <p className="text-sm font-semibold text-slate-600">{viajeCompra.origen} → {viajeCompra.destino} · ${Number(viajeCompra.precio).toFixed(2)} por persona</p><p className="rounded-xl bg-slate-50 p-3 text-xs font-bold text-slate-600">Capacidad del vehículo: {viajeCompra.capacidad_personas} personas</p><label className="block text-xs font-black uppercase tracking-wider text-slate-500">Personas que van<input type="number" min="1" max={viajeCompra.cupos_disponibles} value={compraForm.pasajeros} onChange={(e) => setCompraForm({ ...compraForm, pasajeros: e.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" required /></label><label className="block text-xs font-black uppercase tracking-wider text-slate-500">Fecha del viaje<input type="date" value={compraForm.fecha} onChange={(e) => setCompraForm({ ...compraForm, fecha: e.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" required /></label><label className="block text-xs font-black uppercase tracking-wider text-slate-500">Hora de salida<input type="time" value={compraForm.hora} onChange={(e) => setCompraForm({ ...compraForm, hora: e.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" required /></label><div className="space-y-2"><p className="text-xs font-black uppercase tracking-wider text-slate-500">Ubicación de recogida</p>      <MapPicker localized pickupOnly origin={pickupPoint} destination={null} onChange={(which, point) => { if (which === "origin") { setPickupPoint(point); setCompraForm((current) => ({ ...current, ubicacion: point.label })); } }} /><input value={compraForm.ubicacion} onChange={(e) => setCompraForm({ ...compraForm, ubicacion: e.target.value })} className="w-full rounded-xl border p-3 text-sm normal-case" placeholder="Dirección o punto de encuentro" required /><label className="block text-xs font-black uppercase tracking-wider text-slate-500">Referencia (opcional)<textarea value={compraForm.referencia} onChange={(e) => setCompraForm({ ...compraForm, referencia: e.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm normal-case" rows={2} placeholder="Ej.: junto a la farmacia, puerta azul..." /></label></div><button disabled={comprando} className="w-full rounded-xl bg-[#E31E24] py-3 font-black text-white disabled:opacity-50">{comprando ? "Registrando..." : "Confirmar reserva"}</button></form></div>}

@@ -930,20 +930,32 @@ const initDatabase = async () => {
       reserva_id INT NOT NULL REFERENCES reservas(id) ON DELETE RESTRICT,
       monto NUMERIC(10, 2) NOT NULL CHECK (monto > 0),
       motivo TEXT NOT NULL,
-      referencia_externa VARCHAR(120) NOT NULL,
+      referencia_externa VARCHAR(120),
+      estado VARCHAR(20) NOT NULL DEFAULT 'completado' CHECK (estado IN ('pendiente', 'completado', 'rechazado')),
       procesado_por INT REFERENCES usuarios(id) ON DELETE SET NULL,
-      creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      completado_en TIMESTAMP
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS reembolsos_reserva_referencia_unique
-      ON reembolsos_reserva (LOWER(referencia_externa));
     CREATE INDEX IF NOT EXISTS reembolsos_reserva_reserva_idx
       ON reembolsos_reserva (reserva_id, creado_en DESC);
   `);
 
   await pool.query(`
     ALTER TABLE reembolsos_reserva
+    ALTER COLUMN referencia_externa DROP NOT NULL,
+    ADD COLUMN IF NOT EXISTS estado VARCHAR(20) NOT NULL DEFAULT 'completado',
+    ADD COLUMN IF NOT EXISTS completado_en TIMESTAMP,
     ADD COLUMN IF NOT EXISTS solicitud_cambio_destino_id INT
       REFERENCES solicitudes_cambio_destino(id) ON DELETE SET NULL;
+    ALTER TABLE reembolsos_reserva
+      DROP CONSTRAINT IF EXISTS reembolsos_reserva_estado_check;
+    ALTER TABLE reembolsos_reserva
+      ADD CONSTRAINT reembolsos_reserva_estado_check
+      CHECK (estado IN ('pendiente', 'completado', 'rechazado'));
+    DROP INDEX IF EXISTS reembolsos_reserva_referencia_unique;
+    CREATE UNIQUE INDEX reembolsos_reserva_referencia_unique
+      ON reembolsos_reserva (LOWER(referencia_externa))
+      WHERE referencia_externa IS NOT NULL AND estado = 'completado';
   `);
 
   await pool.query(`

@@ -458,7 +458,7 @@ const registrarDevolucionCambioDestino = async (req: any, res: any) => {
     const amountToRefund = Math.round((Number(request.total_anterior) - Number(request.total_propuesto)) * 100) / 100;
     const payments = await client.query(
       `SELECT p.id, p.monto,
-              COALESCE((SELECT SUM(rr.monto) FROM reembolsos_reserva rr WHERE rr.pago_id = p.id), 0) AS reembolsado
+              COALESCE((SELECT SUM(rr.monto) FROM reembolsos_reserva rr WHERE rr.pago_id = p.id AND rr.estado = 'completado'), 0) AS reembolsado
        FROM pagos_reserva p
        WHERE p.reserva_id = $1 AND p.estado = 'aprobado'
        ORDER BY p.creado_en DESC, p.id DESC

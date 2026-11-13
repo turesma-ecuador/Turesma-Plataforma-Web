@@ -405,6 +405,31 @@ const listarMisReservas = async (req: any, res: any) => {
            ORDER BY s.creado_en DESC, s.id DESC
            LIMIT 1
          ) AS cambio_destino,
+         COALESCE((
+           SELECT json_agg(json_build_object(
+             'id', rr.id, 'monto', rr.monto, 'motivo', rr.motivo,
+             'estado', rr.estado, 'referencia_externa', rr.referencia_externa,
+             'creado_en', rr.creado_en, 'completado_en', rr.completado_en
+           ) ORDER BY rr.creado_en DESC)
+           FROM reembolsos_reserva rr
+           WHERE rr.reserva_id = r.id AND rr.estado IN ('pendiente', 'completado')
+         ), '[]'::json) AS reembolsos,
+         COALESCE((
+           SELECT json_agg(json_build_object(
+             'id', o.id, 'grupo_numero', o.grupo_numero, 'unidad_numero', o.unidad_numero,
+             'fecha_programada', o.fecha_programada, 'fecha_fin_programada', o.fecha_fin_programada,
+             'origen', o.origen, 'destino', o.destino, 'estado', o.estado,
+             'vehiculo_placa', vop.placa, 'vehiculo_modelo', vop.modelo,
+             'vehiculo_imagen_url', vop.imagen_url,
+             'conductor_nombre', concat_ws(' ', uop.nombre, uop.apellido),
+             'conductor_telefono', uop.telefono
+           ) ORDER BY o.grupo_numero, o.unidad_numero)
+           FROM operaciones o
+           LEFT JOIN vehiculos vop ON vop.id = o.vehiculo_id
+           LEFT JOIN conductores cop ON cop.id = o.conductor_id
+           LEFT JOIN usuarios uop ON uop.id = cop.usuario_id
+           WHERE o.reserva_id = r.id AND o.requerimiento_id IS NOT NULL
+         ), '[]'::json) AS operaciones,
          t.titulo AS tour_titulo,
          v.placa AS vehiculo_placa,
          v.modelo AS vehiculo_modelo,
@@ -448,7 +473,7 @@ const cancelarMiReserva = async (req: any, res: any) => {
   try {
     await client.query("BEGIN");
     const check = await client.query(
-      "SELECT id, estado FROM reservas WHERE id = $1 AND usuario_id = $2 FOR UPDATE",
+      "SELECT id, estado, estado_operativo FROM reservas WHERE id = $1 AND usuario_id = $2 FOR UPDATE",
       [reservaId, userId]
     );
     if (!check.rowCount) {
@@ -457,7 +482,12 @@ const cancelarMiReserva = async (req: any, res: any) => {
     }
 
     const reserva = check.rows[0];
-    if (["finalizada", "cancelada", "en_curso"].includes(reserva.estado)) {
+    if (reserva.estado_operativo === "en_curso" || reserva.estado === "en_curso") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "El viaje ya está en curso y no se puede cancelar desde el portal. Contacta a soporte para reportar una incidencia." });
+    }
+
+    if (["finalizada", "cancelada"].includes(reserva.estado)) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: `No se puede cancelar una reserva en estado '${reserva.estado}'` });
     }

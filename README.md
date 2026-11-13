@@ -9,7 +9,7 @@ Aplicacion de turismo con backend en Node.js/Express y frontend en Next.js.
 
 ## Desarrollo local
 
-Requisitos: Node.js 20 o superior y PostgreSQL si se ejecuta la API localmente.
+Requisitos: Node.js 22 o superior y PostgreSQL si se ejecuta la API localmente.
 
 ```powershell
 cd backend
@@ -182,15 +182,60 @@ La descarga verifica que la reserva pertenezca al usuario autenticado:
 
 - `GET /api/usuarios/mis-reservas/:id/proforma`
 
+## Negociación, despacho y devoluciones
+
+Las cotizaciones en negociación alternan el turno entre Administración y el
+cliente. El cliente responde desde **Cotizar**: acepta, rechaza o envía una
+contrapropuesta. La API valida el turno dentro de una transacción para evitar
+respuestas duplicadas o fuera de orden.
+
+Los servicios personalizados con varias unidades se siguen por operación. Al
+asignar cada unidad, el cliente y el conductor reciben una notificación; el
+conductor puede iniciar y completar su unidad desde **Viajes activos**. El
+cliente ve el estado, vehículo y conductor de cada unidad en **Historial**. La
+reserva se finaliza cuando todas sus operaciones están completadas.
+El portal del conductor registra esos cambios en
+`PATCH /api/conductor/:id/operaciones/:operationId/estado`; la API verifica que
+la unidad esté asignada a ese conductor y aplica las transiciones en una
+transacción.
+
+El cliente no puede cancelar una reserva cuando el viaje ya está en curso. Las
+devoluciones monetarias no se ejecutan automáticamente: Administración registra
+la solicitud como pendiente y, después de transferir el dinero por el canal
+externo, la marca completada con su referencia. Solo las devoluciones
+completadas se descuentan de los importes netos y el cliente puede consultar el
+estado desde su historial.
+
+## Operación de producción
+
+La configuración real de copias de seguridad, pruebas de restauración,
+monitoreo y alertas depende del proveedor de hosting y no queda demostrada por
+el código de la aplicación. Antes de operar en producción, el responsable de
+infraestructura debe verificar y registrar:
+
+- Copias de la base de datos y de `UPLOADS_DIR`, con retención y acceso
+  restringido.
+- Una restauración de prueba periódica y el procedimiento para recuperar
+  archivos y base de datos juntos.
+- Alertas de disponibilidad, errores HTTP/5xx, espacio de disco, uso de base
+  de datos y fallos de envío de correo.
+- Responsable, canal de escalamiento y fecha de la última prueba de recuperación.
+
 ## Comprobaciones
 
 ```powershell
 cd backend
+npm ci
 npm run build
+npm test
 
 cd ..\web
+npm ci
 npm run lint
 npm run build
 ```
+
+GitHub Actions ejecuta estas comprobaciones en cada push a `main` y en cada
+pull request. Los entornos de prueba no requieren credenciales de producción.
 
 No subas `.env`, `.env.local`, contraseñas, tokens ni contenido de los directorios de archivos. Configura las variables de producción en el panel del proveedor correspondiente (cPanel para la API y Vercel para el frontend).

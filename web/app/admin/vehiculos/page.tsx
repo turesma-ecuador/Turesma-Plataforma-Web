@@ -87,6 +87,7 @@ export default function AdminVehiculosPage() {
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [conductores, setConductores] = useState<ConductorOpt[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [exportandoExcel, setExportandoExcel] = useState(false);
   const [search, setSearch] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
@@ -129,9 +130,14 @@ export default function AdminVehiculosPage() {
         fetch(`${API_URL}/api/admin/vehiculos`, { headers }),
         fetch(`${API_URL}/api/admin/conductores`, { headers }),
       ]);
-      if (vRes.ok) setVehiculos(await vRes.json());
-      if (cRes.ok) setConductores(await cRes.json());
-    } catch { /* silencio */ }
+      const [vehiclesData, driversData] = await Promise.all([vRes.json(), cRes.json()]);
+      if (!vRes.ok || !cRes.ok) throw new Error(vehiclesData.error || driversData.error || "No se pudieron cargar los vehículos y conductores");
+      setVehiculos(Array.isArray(vehiclesData) ? vehiclesData : []);
+      setConductores(Array.isArray(driversData) ? driversData : []);
+      setLoadError("");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "No se pudieron cargar los vehículos. Revisa tu conexión e inténtalo otra vez.");
+    }
     finally { setLoading(false); }
   };
 
@@ -401,6 +407,7 @@ export default function AdminVehiculosPage() {
       {/* MENSAJES */}
       {msg && <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700 text-sm font-bold rounded-r-xl">{msg}</div>}
       {err && <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm font-bold rounded-r-xl">{err}</div>}
+      {loadError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700"><span>{loadError}</span><button type="button" onClick={() => void load()} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-red-700 shadow-sm">Reintentar</button></div>}
 
       {/* FILTROS */}
       <div className="flex flex-col xl:flex-row xl:items-center gap-3 bg-white p-3 sm:p-4 rounded-2xl border border-gray-100 shadow-sm">
@@ -423,6 +430,8 @@ export default function AdminVehiculosPage() {
           <div className="flex items-center justify-center h-64">
             <Loader2 className="animate-spin text-[#E31E24]" size={36} />
           </div>
+        ) : filtered.length === 0 && loadError ? (
+          <div className="flex h-64 items-center justify-center p-6 text-center text-sm font-bold text-red-700">No se pudo determinar si hay vehículos registrados.</div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <Bus size={48} className="text-slate-200" />

@@ -31,7 +31,7 @@ export default function HistorialPage() {
   const historial = panel.historial;
 
   const totalIngresos = historial
-    .filter((r) => r.estado === "finalizada")
+    .filter((r) => r.estado === "finalizada" && !r.requerimiento_id)
     .reduce((s, r) => s + Number(r.total ?? 0), 0);
 
   const totalViajes = historial.filter((r) => r.estado === "finalizada").length;
@@ -73,10 +73,13 @@ export default function HistorialPage() {
             const estilo = ESTADO_STYLE[r.estado] ?? ESTADO_STYLE.finalizada;
             const IconEstado = estilo.icon;
             return (
-              <div key={r.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+              <div key={r.operation_id || r.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
                 <div className="flex items-start justify-between gap-4 mb-3">
                   <div>
-                    <p className="font-black text-slate-800">{r.usuario_nombre ?? "Cliente"}</p>
+                    <p className="font-black text-slate-800">
+                      {r.usuario_nombre ?? "Cliente"}
+                      {r.requerimiento_id ? ` · Requerimiento #${r.requerimiento_id} · Grupo ${r.grupo_numero}, unidad ${r.unidad_numero}` : ""}
+                    </p>
                     <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
                       <CalendarDays size={11} />
                       {formatFecha(r.fecha_reserva)}
@@ -101,7 +104,7 @@ export default function HistorialPage() {
 
                 <div className="flex items-center gap-4 text-xs text-slate-500">
                   <span className="flex items-center gap-1"><Users size={11} /> {r.num_personas} pers.</span>
-                  <span className="flex items-center gap-1"><DollarSign size={11} /> ${Number(r.total).toFixed(2)}</span>
+                  {!r.requerimiento_id && <span className="flex items-center gap-1"><DollarSign size={11} /> ${Number(r.total).toFixed(2)}</span>}
                   {r.vehiculo_placa && (
                     <span className="text-[10px] font-black bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
                       {r.vehiculo_placa}

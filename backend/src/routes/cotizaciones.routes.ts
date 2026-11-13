@@ -6,6 +6,7 @@ const {
   crearCotizacion,
   listarMisCotizaciones,
   obtenerNegociacion,
+  responderCotizacion,
   crearReservaDirecta,
 } = require("../controllers/admin/cotizaciones.admin.controller");
 
@@ -19,5 +20,6 @@ router.post("/", crearCotizacion);
 router.post("/reserva-directa", crearReservaDirecta);
 router.get("/mias", listarMisCotizaciones);
 router.get("/:id/negociacion", obtenerNegociacion);
+router.post("/:id/responder", responderCotizacion);
 
 module.exports = router;

@@ -1,7 +1,7 @@
 export {};
 
 const pool = require("../../config/db");
-const { notificarClienteReserva } = require("../../config/reservaMailer");
+const { notificarClienteReserva, notificarClienteOperacion } = require("../../config/reservaMailer");
 
 const ACTIVE_STATES = ["programada", "asignada", "en_curso", "incidencia"];
 const VALID_STATES = ["programada", "asignada", "en_curso", "completada", "cancelada", "incidencia"];
@@ -557,7 +557,7 @@ const asignarOperacion = async (req: any, res: any) => {
       if (!reservation.rowCount || ["cancelada", "finalizada"].includes(String(reservation.rows[0]?.estado))) {
         return reject(409, { success: false, error: "La reserva vinculada ya no permite asignar recursos" });
       }
-      if (reservation.rows[0].estado_operativo === "en_curso") {
+      if (reservation.rows[0].estado_operativo === "en_curso" && !current.requerimiento_id) {
         return reject(409, { success: false, error: "El viaje ya comenzó; no se pueden cambiar los recursos desde Despacho" });
       }
 
@@ -652,6 +652,9 @@ const asignarOperacion = async (req: any, res: any) => {
         req.user?.id || null,
         hasPreviousAssignment
       );
+    }
+    if (current.reserva_id && current.requerimiento_id && assignmentChanged) {
+      await notificarClienteOperacion(operationId, req.user?.id || null, "asignada");
     }
     return res.json({ success: true, data: updated });
   } catch (error) {

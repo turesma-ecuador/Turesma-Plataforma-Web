@@ -25,6 +25,7 @@ type Cotizacion = {
   fecha_regreso?: string | null; hora_regreso?: string | null;
   num_personas: number; tipo_vehiculo?: string | null; notas?: string | null;
   estado: string; precio_final?: number | null; valor_ofrecido?: number | null;
+  precio_propuesto?: number | null;
   turno?: string | null;
   duracion_valor?: number | null; duracion_unidad?: string | null; hora_salida?: string | null;
   respuesta_admin?: string | null; reserva_id?: number | null; creado_en: string;
@@ -125,7 +126,13 @@ export default function ClienteCotizarPage() {
   const userId = user?.id;
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
+  const [cotizacionesError, setCotizacionesError] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [respondingQuoteId, setRespondingQuoteId] = useState<number | null>(null);
+  const [quoteReplyValue, setQuoteReplyValue] = useState("");
+  const [quoteReplyMessage, setQuoteReplyMessage] = useState("");
+  const [quoteReplyError, setQuoteReplyError] = useState("");
+  const [quoteReplyMessageResult, setQuoteReplyMessageResult] = useState("");
   const [showForm, setShowForm] = useState(true);
   const [sending, setSending] = useState(false);
   const [formMsg, setFormMsg] = useState("");
@@ -224,8 +231,47 @@ export default function ClienteCotizarPage() {
     try {
       const res = await fetch(`${API}/api/cotizaciones/mias`, { headers: getAuthHeaders() });
       if (handleUnauthorized(res.status)) return;
-      if (res.ok) setCotizaciones(await res.json());
-    } catch { /* silencio */ }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudieron cargar tus cotizaciones");
+      setCotizaciones(Array.isArray(data) ? data : []);
+      setCotizacionesError("");
+    } catch (error) {
+      if (!silencioso) setCotizacionesError(error instanceof Error ? error.message : "No se pudieron cargar tus cotizaciones");
+    }
+  };
+
+  const responderCotizacionCliente = async (cotizacionId: number, accion: "aceptar" | "contraoferta" | "rechazar") => {
+    const valor = Number(quoteReplyValue);
+    if (accion === "contraoferta" && (!Number.isFinite(valor) || valor <= 0)) {
+      setQuoteReplyError("Indica una contrapropuesta mayor que cero.");
+      return;
+    }
+    if (accion === "rechazar" && !window.confirm("¿Deseas rechazar esta propuesta? Esta acción cerrará la negociación.")) return;
+
+    setRespondingQuoteId(cotizacionId);
+    setQuoteReplyError("");
+    setQuoteReplyMessageResult("");
+    try {
+      const response = await fetch(`${API}/api/cotizaciones/${cotizacionId}/responder`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          accion,
+          ...(accion === "contraoferta" ? { valor, mensaje: quoteReplyMessage.trim() || undefined } : {}),
+        }),
+      });
+      if (handleUnauthorized(response.status)) return;
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo responder a la propuesta");
+      setQuoteReplyMessageResult(data.message || "Respuesta enviada.");
+      setQuoteReplyValue("");
+      setQuoteReplyMessage("");
+      await loadCotizaciones();
+    } catch (error) {
+      setQuoteReplyError(error instanceof Error ? error.message : "No se pudo responder a la propuesta");
+    } finally {
+      setRespondingQuoteId(null);
+    }
   };
 
   const loadCustomRequests = async () => {
@@ -1045,19 +1091,34 @@ export default function ClienteCotizarPage() {
           <h2 className="text-lg font-black italic tracking-tighter uppercase text-slate-900">Mis Cotizaciones</h2>
         </div>
 
-        {cotizaciones.length === 0 ? (
+        {quoteReplyMessageResult && <p role="status" className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-700">{quoteReplyMessageResult}</p>}
+        {(quoteReplyError || cotizacionesError) && (
+          <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
+          <span>{quoteReplyError || cotizacionesError}</span>
+          {cotizacionesError && <button type="button" onClick={() => void loadCotizaciones()} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-red-700 shadow-sm">Reintentar</button>}
+          </div>
+        )}
+
+        {cotizaciones.length === 0 && !cotizacionesError ? (
           <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center shadow-sm">
             <FileText size={32} className="text-slate-200 mx-auto mb-3" />
             <p className="font-black text-slate-300 uppercase italic text-sm">Aún no has cotizado</p>
           </div>
-        ) : (
+        ) : cotizaciones.length > 0 ? (
           <div className="space-y-3">
             {cotizaciones.map(cot => {
               const info = ESTADO_INFO[cot.estado] || ESTADO_INFO.pendiente;
               const isOpen = expandedId === cot.id;
+            const esperaRespuestaCliente = cot.estado === "negociacion" && cot.turno === "cliente";
               return (
                 <div key={cot.id} className={`bg-white rounded-2xl border-2 shadow-sm overflow-hidden ${cot.estado === "aprobada" ? "border-emerald-200" : cot.estado === "rechazada" ? "border-red-100" : "border-slate-200"}`}>
-                  <button onClick={() => setExpandedId(isOpen ? null : cot.id)} className="w-full text-left p-4 sm:p-5 flex items-start justify-between gap-3">
+                <button onClick={() => {
+                  setExpandedId(isOpen ? null : cot.id);
+                  setQuoteReplyValue(cot.precio_propuesto != null ? String(cot.precio_propuesto) : "");
+                  setQuoteReplyMessage("");
+                  setQuoteReplyError("");
+                  setQuoteReplyMessageResult("");
+                }} className="w-full text-left p-4 sm:p-5 flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-2">
                         <span className={`inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border ${info.bg} ${info.color}`}>{info.icon}{info.label}</span>
@@ -1096,6 +1157,62 @@ export default function ClienteCotizarPage() {
                           <div><p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Precio acordado</p><p className="text-xl font-black text-emerald-700">${Number(cot.precio_final).toFixed(2)}</p></div></div>
                       )}
                       {cot.respuesta_admin && <div className={`rounded-xl p-4 border ${info.bg}`}><p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${info.color}`}>Respuesta de Turesma</p><p data-no-translate className="text-sm text-slate-700">{cot.respuesta_admin}</p></div>}
+                      {esperaRespuestaCliente && (
+                        <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-800">Propuesta pendiente de tu respuesta</p>
+                            <p className="mt-1 text-xl font-black text-blue-900">${Number(cot.precio_propuesto || 0).toFixed(2)}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void responderCotizacionCliente(cot.id, "aceptar")}
+                            disabled={respondingQuoteId === cot.id}
+                            className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-60"
+                          >
+                            {respondingQuoteId === cot.id ? "Enviando..." : "Aceptar propuesta"}
+                          </button>
+                          <label className="block text-[10px] font-black uppercase tracking-wider text-slate-600">
+                            Tu contrapropuesta
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={quoteReplyValue}
+                              onChange={(event) => setQuoteReplyValue(event.target.value)}
+                              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800"
+                              placeholder="Monto en dólares"
+                            />
+                          </label>
+                          <label className="block text-[10px] font-black uppercase tracking-wider text-slate-600">
+                            Mensaje (opcional)
+                            <textarea
+                              value={quoteReplyMessage}
+                              onChange={(event) => setQuoteReplyMessage(event.target.value)}
+                              maxLength={500}
+                              rows={2}
+                              className="mt-1 w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium normal-case text-slate-700"
+                            />
+                          </label>
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <button
+                              type="button"
+                              onClick={() => void responderCotizacionCliente(cot.id, "contraoferta")}
+                              disabled={respondingQuoteId === cot.id}
+                              className="flex-1 rounded-xl bg-blue-700 px-4 py-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-60"
+                            >
+                              Enviar contrapropuesta
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void responderCotizacionCliente(cot.id, "rechazar")}
+                              disabled={respondingQuoteId === cot.id}
+                              className="rounded-xl border border-red-200 bg-white px-4 py-3 text-xs font-black uppercase tracking-widest text-red-700 disabled:opacity-60"
+                            >
+                              Rechazar
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       {cot.reserva_id && (
                         <div className="bg-orange-50 border border-orange-300 rounded-xl p-4 flex items-center gap-3"><Zap size={18} className="text-orange-600" />
                           <div><p className="text-xs font-black text-orange-700">Reserva #{cot.reserva_id} creada — pendiente de pago</p><p className="text-[10px] text-orange-600">Paga el total en tu Historial. Tras confirmar el pago, asignaremos el vehículo desde Despacho.</p></div></div>
@@ -1106,7 +1223,7 @@ export default function ClienteCotizarPage() {
               );
             })}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
     </LocalizedContent>

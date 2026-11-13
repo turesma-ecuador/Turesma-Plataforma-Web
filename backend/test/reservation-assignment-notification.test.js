@@ -17,8 +17,31 @@ let reservation = {
 };
 const sentEmails = [];
 const inAppNotifications = [];
+const operation = {
+  id: 70,
+  reserva_id: 42,
+  requerimiento_id: 901,
+  grupo_numero: 2,
+  unidad_numero: 1,
+  fecha_programada: "2026-12-10",
+  origen: "Quito",
+  destino: "Otavalo",
+  estado: "asignada",
+  usuario_id: 502,
+  cliente_nombre: "Ana",
+  cliente_email: "ana@example.invalid",
+  vehiculo_placa: "XYZ-9876",
+  vehiculo_modelo: "Van",
+  vehiculo_imagen_url: "https://api.turesma.example/uploads/vehiculos/custom.webp",
+  conductor_nombre: "Luis Pérez",
+  conductor_usuario_id: 603,
+};
 const fakePool = {
-  async query(_sql, params) {
+  async query(sql, params) {
+    if (sql.toLowerCase().includes("from operaciones o")) {
+      assert.equal(params[0], operation.id);
+      return { rows: [operation], rowCount: 1 };
+    }
     assert.equal(params[0], reservation.id);
     return { rows: [reservation], rowCount: 1 };
   },
@@ -50,7 +73,7 @@ installMock("../dist/config/notificaciones", {
   async notificarAdmins() {},
 });
 
-const { notificarClienteReserva } = require("../dist/config/reservaMailer");
+const { notificarClienteReserva, notificarClienteOperacion } = require("../dist/config/reservaMailer");
 
 test("notifica la asignación y sus cambios con los datos del vehículo", async (t) => {
   const previousWebUrl = process.env.WEB_URL;
@@ -87,4 +110,19 @@ test("notifica la asignación y sus cambios con los datos del vehículo", async 
   assert.match(sentEmails[1].html, /XYZ-9876 · Bus ejecutivo/);
   assert.match(sentEmails[1].html, /replacement\.webp/);
   assert.match(inAppNotifications[1][2], /Actualizamos la asignación/);
+});
+
+test("notifica al cliente y al conductor al asignar una unidad personalizada", async () => {
+  sentEmails.length = 0;
+  inAppNotifications.length = 0;
+  await notificarClienteOperacion(operation.id, 99, "asignada");
+
+  assert.equal(sentEmails.length, 1);
+  assert.equal(sentEmails[0].to, operation.cliente_email);
+  assert.match(sentEmails[0].subject, /servicio personalizado asignada/i);
+  assert.match(sentEmails[0].html, /XYZ-9876 · Van/);
+  assert.match(sentEmails[0].html, /custom\.webp/);
+  assert.equal(inAppNotifications.length, 2);
+  assert.equal(inAppNotifications[0][1], operation.usuario_id);
+  assert.equal(inAppNotifications[1][1], operation.conductor_usuario_id);
 });

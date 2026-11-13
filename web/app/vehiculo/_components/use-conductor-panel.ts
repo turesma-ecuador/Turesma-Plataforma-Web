@@ -22,6 +22,10 @@ const POLLING_INTERVAL = 8000;
 
 export type ReservaConductor = {
   id: number;
+  operation_id?: number;
+  requerimiento_id?: number;
+  grupo_numero?: number | null;
+  unidad_numero?: number | null;
   fecha_reserva: string;
   fecha_fin?: string | null;
   fecha_regreso?: string | null;
@@ -183,14 +187,19 @@ const useConductorPanelState = () => {
     intervalMs: POLLING_INTERVAL,
   });
 
-  const callAction = async (reservaId: number, endpoint: string, body?: Record<string, unknown>) => {
+  const callAction = async (
+    reservaId: number,
+    endpoint: string,
+    body?: Record<string, unknown>,
+    resource: "reservas" | "operaciones" = "reservas"
+  ) => {
     if (!user?.id) return;
     setActionLoadingId(reservaId);
     setErr("");
     setMsg("");
 
     try {
-      const res = await fetch(`${API_URL}/api/conductor/${user.id}/reservas/${reservaId}/${endpoint}`, {
+      const res = await fetch(`${API_URL}/api/conductor/${user.id}/${resource}/${reservaId}/${endpoint}`, {
         method: "PATCH",
         headers: getAuthHeaders(),
         body: body ? JSON.stringify(body) : undefined,

@@ -272,7 +272,7 @@ const verReportes = async (_req, res) => {
            COUNT(*) AS total_reservas,
           COALESCE(SUM(total), 0) AS total_facturado,
           COALESCE(SUM(monto_pagado), 0) AS ingresos_totales,
-          (SELECT COALESCE(SUM(monto), 0) FROM reembolsos_reserva) AS total_devuelto,
+          (SELECT COALESCE(SUM(monto), 0) FROM reembolsos_reserva WHERE estado = 'completado') AS total_devuelto,
            COUNT(*) FILTER (WHERE estado = 'pendiente') AS pendientes,
            COUNT(*) FILTER (WHERE estado = 'confirmada') AS confirmadas,
            COUNT(*) FILTER (WHERE estado = 'cancelada') AS canceladas

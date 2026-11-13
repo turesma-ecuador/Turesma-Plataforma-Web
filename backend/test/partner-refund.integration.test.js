@@ -10,7 +10,7 @@ const state = {
   vehicles: [],
   refunds: [],
   reservation: { id: 501, total: 80, estado: "confirmada", monto_pagado: 80, estado_pago: "pagado" },
-  payment: { id: 601, reserva_id: 501, monto: 80, estado: "aprobado" },
+  payment: { id: 601, reserva_id: 501, usuario_id: 77, monto: 80, estado: "aprobado" },
   nextCompanyId: 1,
   nextVehicleId: 1,
   nextRefundId: 1,
@@ -23,6 +23,7 @@ const pool = {
   async query(sql, params = []) {
     const query = sql.replace(/\s+/g, " ").trim().toLowerCase();
     if (query.startsWith("select session_version from usuarios")) return result([{ session_version: 0 }]);
+    if (query.startsWith("insert into mensajes_comunicacion")) return result();
     if (query.startsWith("select * from empresas_asociadas")) return result(state.companies);
     if (query.startsWith("select * from vehiculos_asociados")) return result(state.vehicles);
     if (query.startsWith("insert into empresas_asociadas")) {
@@ -96,7 +97,7 @@ const pool = {
           Object.assign(vehicle, { activo: false });
           return result([vehicle]);
         }
-        if (query.startsWith("select p.id, p.reserva_id, p.monto, p.estado, r.total")) {
+        if (query.startsWith("select p.id, p.reserva_id, p.usuario_id, p.monto, p.estado, r.total")) {
           return result([{
             ...state.payment,
             total: state.reservation.total,
@@ -104,13 +105,14 @@ const pool = {
           }]);
         }
         if (query.startsWith("select coalesce(sum(monto), 0) as total from reembolsos_reserva where pago_id")) {
-          const total = state.refunds.filter((refund) => refund.pago_id === Number(params[0])).reduce((sum, refund) => sum + refund.monto, 0);
+          const total = state.refunds.filter((refund) => refund.pago_id === Number(params[0]) && ["pendiente", "completado"].includes(refund.estado)).reduce((sum, refund) => sum + refund.monto, 0);
           return result([{ total }]);
         }
         if (query.startsWith("select coalesce((select sum(monto) from pagos_reserva")) {
-          const totalRefunded = state.refunds.filter((refund) => refund.reserva_id === Number(params[0])).reduce((sum, refund) => sum + refund.monto, 0);
+          const totalRefunded = state.refunds.filter((refund) => refund.reserva_id === Number(params[0]) && refund.estado === "completado").reduce((sum, refund) => sum + refund.monto, 0);
+          const pending = state.refunds.filter((refund) => refund.reserva_id === Number(params[0]) && refund.estado === "pendiente").reduce((sum, refund) => sum + refund.monto, 0);
           const gross = state.payment.reserva_id === Number(params[0]) ? state.payment.monto : 0;
-          return result([{ neto: gross - totalRefunded, devuelto: totalRefunded }]);
+          return result([{ neto: gross - totalRefunded, pendiente: pending, devuelto: totalRefunded }]);
         }
         if (query.startsWith("insert into reembolsos_reserva")) {
           const refund = {
@@ -119,9 +121,26 @@ const pool = {
             reserva_id: Number(params[1]),
             monto: Number(params[2]),
             motivo: params[3],
-            referencia_externa: params[4],
+            referencia_externa: null,
+            estado: "pendiente",
           };
           state.refunds.push(refund);
+          return result([refund]);
+        }
+        if (query.startsWith("select rr.id, rr.pago_id, rr.reserva_id, rr.monto, rr.estado")) {
+          const refund = state.refunds.find((row) => row.id === Number(params[0]));
+          return result(refund ? [{
+            ...refund,
+            usuario_id: state.payment.usuario_id,
+            pago_estado: state.payment.estado,
+            reserva_estado: state.reservation.estado,
+            total: state.reservation.total,
+          }] : []);
+        }
+        if (query.startsWith("update reembolsos_reserva set estado = 'completado'")) {
+          const refund = state.refunds.find((row) => row.id === Number(params[2]));
+          if (!refund) return result();
+          Object.assign(refund, { estado: "completado", referencia_externa: params[0] });
           return result([refund]);
         }
         if (query.startsWith("update reservas set monto_pagado = $1")) {
@@ -160,7 +179,7 @@ const tokenForRole = (rol) => jwt.sign({
 let server;
 let baseUrl;
 
-test("administra empresas asociadas y registra devoluciones con permisos y controles", async (t) => {
+test("administra empresas asociadas y gestiona devoluciones manuales con permisos y controles", async (t) => {
   await new Promise((resolve) => {
     server = app.listen(0, "127.0.0.1", resolve);
   });
@@ -245,22 +264,21 @@ test("administra empresas asociadas y registra devoluciones con permisos y contr
     assert.equal(state.vehicles[0].activo, false);
   });
 
-  await t.test("solo admin puede registrar una devolución y una devolución total exige reserva cancelada", async () => {
+  await t.test("solicita y completa devoluciones manuales; una devolución total exige reserva cancelada", async () => {
     const payload = {
       monto: 20,
       motivo: "Servicio cancelado por emergencia",
-      referencia_externa: "DEV-TEST-PARTIAL",
     };
     assert.equal((await request("/pagos/601/reembolso", "operativo", { method: "POST", body: payload })).status, 403);
 
     const partial = await request("/pagos/601/reembolso", "admin", { method: "POST", body: payload });
     assert.equal(partial.status, 201, JSON.stringify(partial.body));
-    assert.equal(partial.body.monto_pagado_neto, 60);
-    assert.equal(partial.body.estado_pago, "parcial");
+    assert.equal(partial.body.reembolso.estado, "pendiente");
+    assert.equal(state.reservation.monto_pagado, 80);
     assert.equal(state.reservation.estado, "confirmada");
     assert.equal(state.refunds.length, 1);
 
-    const totalPayload = { ...payload, monto: 60, referencia_externa: "DEV-TEST-TOTAL" };
+    const totalPayload = { ...payload, monto: 60 };
     const notCancelled = await request("/pagos/601/reembolso", "admin", { method: "POST", body: totalPayload });
     assert.equal(notCancelled.status, 409);
     assert.match(notCancelled.body.error, /primero debe cancelarse/i);
@@ -269,14 +287,34 @@ test("administra empresas asociadas y registra devoluciones con permisos y contr
     state.reservation.estado = "cancelada";
     const registered = await request("/pagos/601/reembolso", "admin", { method: "POST", body: totalPayload });
     assert.equal(registered.status, 201, JSON.stringify(registered.body));
-    assert.match(registered.body.message, /no se transfirió dinero/i);
-    assert.equal(registered.body.monto_pagado_neto, 0);
-    assert.equal(registered.body.estado_pago, "reembolsado");
+    assert.equal(registered.body.reembolso.estado, "pendiente");
     assert.equal(state.refunds.length, 2);
+
+    const completedPartial = await request(`/reembolsos/${state.refunds[0].id}/completar`, "admin", {
+      method: "PATCH",
+      body: { referencia_externa: "DEV-TEST-PARTIAL" },
+    });
+    assert.equal(completedPartial.status, 200);
+    assert.equal(state.reservation.monto_pagado, 60);
+    assert.equal(state.reservation.estado_pago, "parcial");
+
+    const completedTotal = await request(`/reembolsos/${state.refunds[1].id}/completar`, "admin", {
+      method: "PATCH",
+      body: { referencia_externa: "DEV-TEST-TOTAL" },
+    });
+    assert.equal(completedTotal.status, 200);
+    assert.equal(state.reservation.monto_pagado, 0);
+    assert.equal(state.reservation.estado_pago, "reembolsado");
+
+    const alreadyCompleted = await request(`/reembolsos/${state.refunds[1].id}/completar`, "admin", {
+      method: "PATCH",
+      body: { referencia_externa: "DEV-TEST-SECOND" },
+    });
+    assert.equal(alreadyCompleted.status, 409);
 
     const overRefund = await request("/pagos/601/reembolso", "admin", {
       method: "POST",
-      body: { ...payload, monto: 0.01, referencia_externa: "DEV-TEST-EXCESS" },
+      body: { ...payload, monto: 0.01 },
     });
     assert.equal(overRefund.status, 409);
     assert.equal(state.refunds.length, 2);

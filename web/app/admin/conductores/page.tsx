@@ -55,6 +55,7 @@ export default function AdminConductoresPage() {
   const confirmar = useConfirm();
   const [conductores, setConductores] = useState<Conductor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [exportandoExcel, setExportandoExcel] = useState(false);
   const [search, setSearch] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
@@ -79,11 +80,13 @@ export default function AdminConductoresPage() {
     try {
       // Intentar endpoint de desempeño que trae datos más ricos, sino el básico
       const res = await fetch(`${API_URL}/api/admin/conductores`, { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setConductores(Array.isArray(data) ? data : []);
-      }
-    } catch { /* silencio */ }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudieron cargar los conductores");
+      setConductores(Array.isArray(data) ? data : []);
+      setLoadError("");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "No se pudieron cargar los conductores. Revisa tu conexión e inténtalo otra vez.");
+    }
     finally { setLoading(false); }
   };
 
@@ -280,6 +283,7 @@ export default function AdminConductoresPage() {
       {/* MENSAJES */}
       {msg && <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700 text-sm font-bold rounded-r-xl">{msg}</div>}
       {err && <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm font-bold rounded-r-xl">{err}</div>}
+      {loadError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700"><span>{loadError}</span><button type="button" onClick={() => void load()} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-red-700 shadow-sm">Reintentar</button></div>}
 
       {/* FILTROS */}
       <div className="flex flex-wrap gap-3 items-center bg-white p-3 sm:p-4 rounded-2xl border border-gray-100 shadow-sm">
@@ -302,6 +306,8 @@ export default function AdminConductoresPage() {
           <div className="flex items-center justify-center h-64">
             <Loader2 className="animate-spin text-[#E31E24]" size={36} />
           </div>
+        ) : filtered.length === 0 && loadError ? (
+          <div className="flex h-64 items-center justify-center p-6 text-center text-sm font-bold text-red-700">No se pudo determinar si hay conductores registrados.</div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <UserCircle size={48} className="text-slate-200" />

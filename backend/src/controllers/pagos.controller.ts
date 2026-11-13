@@ -2,6 +2,8 @@ export {};
 
 const pool = require("../config/db");
 const { notificarAdmins } = require("../config/notificaciones");
+const { crearNotificacion } = require("../config/notificaciones");
+const { notificarClienteReserva } = require("../config/reservaMailer");
 const { createPayphonePayment, confirmPayphonePayment } = require("../config/payphone");
 const { obtenerPagoAprobado, enviarReciboPago } = require("../config/reciboPago");
 const { obtenerFactura } = require("../config/sriFacturacion");
@@ -109,7 +111,7 @@ const confirmarPagoPayphone = async (req: any, res: any) => {
       const suma = await client.query(
         `SELECT
            COALESCE((SELECT SUM(monto) FROM pagos_reserva WHERE reserva_id = $1 AND estado = 'aprobado'), 0)
-           - COALESCE((SELECT SUM(monto) FROM reembolsos_reserva WHERE reserva_id = $1), 0) AS total`,
+           - COALESCE((SELECT SUM(monto) FROM reembolsos_reserva WHERE reserva_id = $1 AND estado = 'completado'), 0) AS total`,
         [reservaId]
       );
       totalPagado = Number(suma.rows[0].total);
@@ -129,12 +131,28 @@ const confirmarPagoPayphone = async (req: any, res: any) => {
       client.release();
     }
 
+    let notificationAdminId: number | null = null;
+    const adminSender = await pool.query(
+      "SELECT id FROM usuarios WHERE rol = 'admin' AND activo = true ORDER BY id ASC LIMIT 1"
+    );
+    if (adminSender.rowCount) notificationAdminId = Number(adminSender.rows[0].id);
+
     if (estadoPago === "pagado") {
       await pool.query(
         "UPDATE reservas SET estado = 'confirmada' WHERE id = $1 AND estado = 'pendiente_pago'",
         [reservaId]
       );
       await aplicarCambioDestinoTrasPago(reservaId, userId);
+      await notificarClienteReserva(reservaId, "confirmada", notificationAdminId);
+    } else {
+      await crearNotificacion(
+        notificationAdminId,
+        userId,
+        `Recibimos tu pago PayPhone de $${monto.toFixed(2)} para la reserva #${reservaId}. Estado de pago: ${estadoPago}.`,
+        reservaId,
+        "reserva",
+        reservaId
+      );
     }
     let despacho = null;
     if (estadoPago === "pagado") {

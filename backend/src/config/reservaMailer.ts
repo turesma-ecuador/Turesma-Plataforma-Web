@@ -189,6 +189,69 @@ const notificarClienteReserva = async (
   }
 };
 
+const notificarClienteOperacion = async (
+  operationId: number,
+  senderId: number | null | undefined,
+  event: "asignada" | "en_curso" | "completada"
+) => {
+  try {
+    const result = await pool.query(
+      `SELECT o.id, o.reserva_id, o.requerimiento_id, o.grupo_numero, o.unidad_numero,
+              o.fecha_programada, o.origen, o.destino, o.estado,
+              r.usuario_id, r.fecha_reserva, r.total,
+              u.nombre AS cliente_nombre, u.email AS cliente_email,
+              v.placa AS vehiculo_placa, v.modelo AS vehiculo_modelo, v.imagen_url AS vehiculo_imagen_url,
+              concat_ws(' ', c.nombre, c.apellido) AS conductor_nombre,
+              c.id AS conductor_usuario_id
+       FROM operaciones o
+       JOIN reservas r ON r.id = o.reserva_id
+       JOIN usuarios u ON u.id = r.usuario_id
+       LEFT JOIN vehiculos v ON v.id = o.vehiculo_id
+       LEFT JOIN conductores cd ON cd.id = o.conductor_id
+       LEFT JOIN usuarios c ON c.id = cd.usuario_id
+       WHERE o.id = $1 AND o.requerimiento_id IS NOT NULL
+       LIMIT 1`,
+      [operationId]
+    );
+    if (!result.rowCount) return;
+    const operation = result.rows[0];
+    const unitLabel = `requerimiento #${operation.requerimiento_id}, grupo ${operation.grupo_numero}, unidad ${operation.unidad_numero}`;
+    const vehicleLabel = [operation.vehiculo_placa, operation.vehiculo_modelo].filter(Boolean).join(" · ");
+    const message = event === "asignada"
+      ? `Tu ${unitLabel} ya tiene recursos asignados${vehicleLabel ? `: ${vehicleLabel}` : ""}${operation.conductor_nombre ? ` · ${operation.conductor_nombre}` : ""}. Revisa la reserva #${operation.reserva_id} en tu portal.`
+      : event === "en_curso"
+        ? `El conductor inició la ${unitLabel} de tu reserva #${operation.reserva_id}.`
+        : `La ${unitLabel} de tu reserva #${operation.reserva_id} fue completada.`;
+
+    await crearNotificacion(senderId, operation.usuario_id, message, operation.reserva_id, "reserva", operation.reserva_id);
+    if (operation.conductor_usuario_id) {
+      await crearNotificacion(
+        senderId,
+        operation.conductor_usuario_id,
+        `Tienes la ${unitLabel} asignada para ${operation.origen} → ${operation.destino}.`,
+        operation.reserva_id,
+        "reserva",
+        operation.reserva_id
+      );
+    }
+
+    if (operation.cliente_email) {
+      const imageUrl = getPublicImageUrl(operation.vehiculo_imagen_url);
+      const image = imageUrl
+        ? `<p style="text-align:center"><img src="${escapeHtml(imageUrl)}" alt="Vehículo asignado" style="max-width:100%;max-height:240px;border-radius:8px"></p>`
+        : "";
+      await enviarCorreo({
+        to: operation.cliente_email,
+        subject: event === "asignada" ? "Unidad de tu servicio personalizado asignada" : "Actualización de tu servicio personalizado",
+        html: `<div style="font-family:Arial,sans-serif;color:#111827;max-width:560px;margin:auto"><h2>Turesma · Actualización del servicio</h2><p>Hola ${escapeHtml(String(operation.cliente_nombre || "cliente"))},</p><p>${escapeHtml(message)}</p><p><b>Ruta:</b> ${escapeHtml(String(operation.origen))} → ${escapeHtml(String(operation.destino))}</p><p><b>Fecha:</b> ${escapeHtml(fmtFecha(operation.fecha_programada))}</p><p><b>Vehículo:</b> ${escapeHtml(vehicleLabel || "Por confirmar")}</p><p><b>Conductor:</b> ${escapeHtml(String(operation.conductor_nombre || "Por confirmar"))}</p>${image}<p><a href="${escapeHtml(`${getWebBaseUrl()}/cliente/historial`)}">Ver estado de la reserva</a></p>${PIE_HTML}</div>`,
+        text: `${message}\nRuta: ${operation.origen} → ${operation.destino}\nVehículo: ${vehicleLabel || "Por confirmar"}\nConductor: ${operation.conductor_nombre || "Por confirmar"}\n${getWebBaseUrl()}/cliente/historial${PIE_TEXTO}`,
+      });
+    }
+  } catch (error: any) {
+    console.error(`Error notificando la operación personalizada #${operationId}:`, error?.message || error);
+  }
+};
+
 // El cliente reprogramó su reserva: correo de confirmación al cliente + aviso
 // in-app al admin y al conductor con la nueva fecha/hora. Todo best-effort.
 const notificarReprogramacion = async (reservaId: number, senderId: number | null | undefined) => {
@@ -256,4 +319,4 @@ const notificarReprogramacion = async (reservaId: number, senderId: number | nul
   }
 };
 
-module.exports = { notificarClienteReserva, notificarReprogramacion };
+module.exports = { notificarClienteReserva, notificarClienteOperacion, notificarReprogramacion };
