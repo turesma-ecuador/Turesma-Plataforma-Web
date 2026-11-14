@@ -7,7 +7,7 @@ const nodemailer = require("nodemailer");
 const { normalizeRole } = require("../config/catalogoHelpers");
 const { generateToken } = require("../middleware/auth.middleware");
 const { createEmailVerification } = require("../config/emailVerification");
-const { escapeHtml, renderBrandedEmail } = require("../config/emailTemplate");
+const { escapeHtml, getBrandedEmailLogoAttachment, renderBrandedEmail } = require("../config/emailTemplate");
 const { normalizeIdentification } = require("../config/identificacion");
 
 const PIN_TTL_MINUTES = Number(process.env.PASSWORD_RESET_PIN_TTL_MINUTES || 10);
@@ -92,6 +92,7 @@ const sendResetPinEmail = async ({ to, pin, nombre }) => {
         <p style="margin:0;color:#64748b;font-size:13px">Este código es personal. No lo compartas con nadie, incluido el personal de Turesma.</p>`,
       notice: `El PIN es válido durante ${ttlMinutes} minutos. Si no solicitaste este cambio, ignora este mensaje; tu contraseña no cambiará.`,
     }),
+    attachments: [getBrandedEmailLogoAttachment()],
   });
 
   console.log(`[RECUPERAR_CLAVE] Correo enviado a ${to}. messageId=${info.messageId || "N/A"}`);

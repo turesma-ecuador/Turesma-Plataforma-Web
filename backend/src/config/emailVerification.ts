@@ -3,7 +3,7 @@ export {};
 const crypto = require("crypto");
 const pool = require("./db");
 const { enviarCorreo } = require("./mailer");
-const { escapeHtml, getWebBaseUrl, renderBrandedEmail } = require("./emailTemplate");
+const { escapeHtml, getWebBaseUrl, getBrandedEmailLogoAttachment, renderBrandedEmail } = require("./emailTemplate");
 
 const VERIFICATION_TTL_HOURS = 24;
 
@@ -38,6 +38,7 @@ const sendEmailVerification = async (email: string, nombre: string, token: strin
       actionUrl: url,
       notice: `Por seguridad, este enlace es válido durante ${VERIFICATION_TTL_HOURS} horas. Si no solicitaste esta cuenta, puedes ignorar este mensaje.`,
     }),
+    attachments: [getBrandedEmailLogoAttachment()],
   });
 };
 

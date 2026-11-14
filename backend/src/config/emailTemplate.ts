@@ -1,8 +1,31 @@
 export {};
 
+const fs = require("fs");
+const path = require("path");
+
 const getWebBaseUrl = () => String(process.env.WEB_URL || "http://localhost:3000")
   .trim()
   .replace(/\/+$/, "");
+
+const EMAIL_LOGO_CID = "turesma-logo";
+
+const getBrandedEmailLogoAttachment = () => {
+  const logoPath = [
+    path.join(process.cwd(), "assets", "logo.png"),
+    path.join(__dirname, "..", "..", "assets", "logo.png"),
+    path.join(process.cwd(), "..", "web", "public", "logo.png"),
+  ].find((candidate) => fs.existsSync(candidate));
+
+  if (!logoPath) {
+    throw new Error("No se encontró el logo de Turesma para adjuntar al correo");
+  }
+
+  return {
+    filename: "turesma-logo.png",
+    path: logoPath,
+    cid: EMAIL_LOGO_CID,
+  };
+};
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
   "&": "&amp;",
@@ -63,7 +86,7 @@ const renderBrandedEmail = ({
             <tr>
               <td align="center" style="padding:24px 24px 20px">
                 <a href="${escapeHtml(webUrl)}" style="display:inline-block;text-decoration:none">
-                  <img src="${escapeHtml(`${webUrl}/logo.png`)}" alt="Turesma S.A. - Transporte turístico" width="250" style="display:block;width:250px;max-width:100%;height:auto;border:0">
+                  <img src="cid:${EMAIL_LOGO_CID}" alt="Turesma S.A. - Transporte turístico" width="260" style="display:block;width:260px;max-width:100%;height:auto;border:0">
                 </a>
                 <p style="margin:12px 0 0;color:#64748b;font-size:11px;font-weight:bold;letter-spacing:1.2px">TURESMA S.A. | TRANSPORTE TURÍSTICO Y EJECUTIVO</p>
               </td>
@@ -99,5 +122,6 @@ const renderBrandedEmail = ({
 module.exports = {
   getWebBaseUrl,
   escapeHtml,
+  getBrandedEmailLogoAttachment,
   renderBrandedEmail,
 };
