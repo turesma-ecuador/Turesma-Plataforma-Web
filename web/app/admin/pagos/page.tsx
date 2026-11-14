@@ -218,7 +218,7 @@ export default function AdminPagosPage() {
   );
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="min-w-0 w-full space-y-6 animate-in fade-in duration-500">
 
       {msg && <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700 text-sm font-bold rounded-r-xl">{msg}</div>}
       {err && <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm font-bold rounded-r-xl">{err}</div>}
@@ -249,9 +249,9 @@ export default function AdminPagosPage() {
           <p className="font-black text-slate-300 uppercase italic text-sm">Sin comprobantes {filtro !== "todos" ? `en estado "${filtro}"` : ""}</p>
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
           {pagos.map(p => (
-            <div key={p.id} id={`pago-${p.id}`} className={`bg-white rounded-2xl border shadow-sm p-4 space-y-3 ${focusedPaymentId === p.id ? "border-emerald-400 ring-2 ring-emerald-100" : "border-slate-200"}`}>
+            <div key={p.id} id={`pago-${p.id}`} className={`w-full min-w-0 bg-white rounded-2xl border shadow-sm p-4 space-y-3 ${focusedPaymentId === p.id ? "border-emerald-400 ring-2 ring-emerald-100" : "border-slate-200"}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-xs font-black text-slate-800">{p.cliente_nombre}</p>
@@ -260,18 +260,18 @@ export default function AdminPagosPage() {
                 <span className={`flex-shrink-0 text-[9px] font-black uppercase px-2.5 py-1 rounded-full border ${ESTADO_BADGE[p.estado] || ESTADO_BADGE.pendiente}`}>{p.estado}</span>
               </div>
 
-              <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
+              <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-bold text-slate-600">
                 <MapPin size={11} className="text-[#E31E24] flex-shrink-0" />
-                <span className="truncate">{p.origen || "—"}</span>
+                <span className="min-w-0 flex-1 truncate">{p.origen || "—"}</span>
                 <ArrowRight size={10} className="text-slate-300 flex-shrink-0" />
-                <span className="truncate">{p.destino || "—"}</span>
-                <span className="text-slate-300 ml-1">#{p.reserva_id}</span>
+                <span className="min-w-0 flex-1 truncate">{p.destino || "—"}</span>
+                <span className="ml-1 shrink-0 text-slate-300">#{p.reserva_id}</span>
               </div>
 
               <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="bg-slate-50 rounded-lg p-2"><p className="text-[8px] font-black uppercase text-slate-400">Monto</p><p className="text-xs font-black text-slate-800">${Number(p.monto).toFixed(2)}</p></div>
-                <div className="bg-slate-50 rounded-lg p-2"><p className="text-[8px] font-black uppercase text-slate-400">Método</p><p className="text-[10px] font-bold text-slate-600">{METODO_LABEL[p.metodo] || p.metodo}</p></div>
-                <div className="bg-slate-50 rounded-lg p-2"><p className="text-[8px] font-black uppercase text-slate-400">Pagado / falta</p><p className="text-[10px] font-bold text-slate-600">${Number(p.reserva_monto_pagado).toFixed(2)} / ${Math.max(0, Number(p.reserva_total) - Number(p.reserva_monto_pagado)).toFixed(2)}</p></div>
+                <div className="min-w-0 bg-slate-50 rounded-lg p-2"><p className="text-[8px] font-black uppercase text-slate-400">Monto</p><p className="break-words text-xs font-black text-slate-800">${Number(p.monto).toFixed(2)}</p></div>
+                <div className="min-w-0 bg-slate-50 rounded-lg p-2"><p className="text-[8px] font-black uppercase text-slate-400">Método</p><p className="break-words text-[10px] font-bold text-slate-600">{METODO_LABEL[p.metodo] || p.metodo}</p></div>
+                <div className="min-w-0 bg-slate-50 rounded-lg p-2"><p className="text-[8px] font-black uppercase text-slate-400">Pagado / falta</p><p className="break-words text-[10px] font-bold text-slate-600">${Number(p.reserva_monto_pagado).toFixed(2)} / ${Math.max(0, Number(p.reserva_total) - Number(p.reserva_monto_pagado)).toFixed(2)}</p></div>
               </div>
               <p className={`rounded-lg px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest ${
                 Number(p.reserva_total) - Number(p.reserva_monto_pagado || 0) <= 0.01
