@@ -1,6 +1,6 @@
 "use client";
 
-import React, { FormEvent, useEffect, useRef, useState } from "react";
+import React, { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   MapPin, Calendar, Users, Car, FileText, Clock, CheckCircle2,
@@ -134,6 +134,7 @@ export default function ClienteCotizarPage() {
   const [quoteReplyError, setQuoteReplyError] = useState("");
   const [quoteReplyMessageResult, setQuoteReplyMessageResult] = useState("");
   const [showForm, setShowForm] = useState(true);
+  const [bookingTourStep, setBookingTourStep] = useState(0);
   const [sending, setSending] = useState(false);
   const [formMsg, setFormMsg] = useState("");
   const [formErr, setFormErr] = useState("");
@@ -396,6 +397,14 @@ export default function ClienteCotizarPage() {
     return "";
   };
 
+  const handleBookingTourStepChange = useCallback((stepIndex: number) => {
+    setBookingTourStep(stepIndex);
+    setShowForm(true);
+    setWizardStep(stepIndex + 1);
+    setFormErr("");
+    setFormMsg("");
+  }, []);
+
   const goToStep = (stepNumber: number) => {
     setWizardStep(stepNumber);
     setFormErr("");
@@ -481,7 +490,16 @@ export default function ClienteCotizarPage() {
     <div className="space-y-6">
 
       <div className="flex justify-end">
-        <ClientGuidedTour variant="booking" />
+        <ClientGuidedTour
+          variant="booking"
+          onStepChange={handleBookingTourStepChange}
+          stepComplete={
+            bookingTourStep === 0 ? !getStepError(1)
+              : bookingTourStep === 1 ? !getStepError(2)
+                : bookingTourStep === 2 ? !getStepError(3)
+                  : Boolean(formMsg)
+          }
+        />
       </div>
 
       {false && <section className="overflow-hidden rounded-3xl border border-violet-200 bg-white shadow-lg">
@@ -706,7 +724,7 @@ export default function ClienteCotizarPage() {
       </section>}
 
       {/* TOGGLE FORM */}
-      <button onClick={() => { setShowForm(f => !f); setFormErr(""); setFormMsg(""); }}
+      <button data-tour-target="portal-cotizar-start" onClick={() => { setShowForm(f => !f); setFormErr(""); setFormMsg(""); }}
         className={`w-full flex items-center justify-between p-5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-lg ${showForm ? "bg-slate-800 text-white" : "bg-[#E31E24] text-white hover:bg-red-700"}`}>
         <span className="flex items-center gap-3"><div className="bg-white/20 p-2 rounded-xl"><FileText size={18} /></div>{showForm ? "Ocultar formulario" : "Nueva solicitud de servicio"}</span>
         {showForm ? <ChevronUp size={18} /> : <ArrowRight size={18} />}
@@ -752,7 +770,7 @@ export default function ClienteCotizarPage() {
               </div>
             </div>
 
-            <div className={`space-y-6 ${wizardStep === 3 ? "" : "hidden"}`}>
+            <div data-tour-target="booking-category" className={`space-y-6 ${wizardStep === 3 ? "" : "hidden"}`}>
             {/* PASO 1: PREFERENCIA DE CATEGORÍA */}
             <div className="space-y-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Car size={12} /> 3. Elige una categoría de vehículo</p>
@@ -811,7 +829,7 @@ export default function ClienteCotizarPage() {
             </div>
 
             {/* PASO 2: FECHA (calendario con días reservados bloqueados) */}
-            <div className={`space-y-4 ${wizardStep === 2 ? "" : "hidden"}`}>
+            <div data-tour-target="booking-schedule" className={`space-y-4 ${wizardStep === 2 ? "" : "hidden"}`}>
               <div className="space-y-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Calendar size={12} /> 2. Fecha del servicio</p>
               <p className="text-xs text-slate-500">
@@ -944,7 +962,7 @@ export default function ClienteCotizarPage() {
             </div>
 
             {/* PASO 3: MAPA origen/destino */}
-            <div className={`space-y-2 ${wizardStep === 1 ? "" : "hidden"}`}>
+            <div data-tour-target="booking-route" className={`space-y-2 ${wizardStep === 1 ? "" : "hidden"}`}>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><MapPin size={12} /> 1. Indica la ruta</p>
                 <button type="button" onClick={locateMyLocation} disabled={locatingOrigin}
@@ -1075,7 +1093,7 @@ export default function ClienteCotizarPage() {
                   Continuar <ArrowRight size={15} />
                 </button>
               ) : (
-                <button type="submit" disabled={sending || categorias.length === 0}
+                <button data-tour-target="booking-submit" type="submit" disabled={sending || categorias.length === 0}
                   className="ml-auto w-full py-4 bg-[#E31E24] hover:bg-black text-white font-black text-sm uppercase tracking-widest rounded-2xl transition-all shadow-lg shadow-red-200 flex items-center justify-center gap-2 disabled:opacity-60">
                   {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}{sending ? "Enviando cotización..." : "Solicitar cotización"}
                 </button>

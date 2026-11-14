@@ -126,7 +126,7 @@ export default function ClienteRequerimientoPersonalizadoPage() {
   if (checkingSession) return <div className="flex h-64 items-center justify-center"><Loader2 className="animate-spin text-[#E31E24]" size={34} /></div>;
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <header className="rounded-3xl bg-[#0b0f1a] p-6 text-white shadow-xl sm:p-8">
+      <header data-tour-target="portal-custom-request" className="rounded-3xl bg-[#0b0f1a] p-6 text-white shadow-xl sm:p-8">
         <div className="flex items-start gap-4">
           <div className="rounded-2xl bg-[#E31E24] p-3"><FileText size={24} /></div>
           <div><h1 className="text-xl font-black uppercase tracking-tight sm:text-2xl">Requerimiento personalizado</h1>

@@ -552,7 +552,7 @@ export default function ClienteHistorialPage() {
     <LocalizedContent>
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-black italic tracking-tighter uppercase text-slate-900">Historial de Viajes</h1>
+        <h1 data-tour-target="portal-travel-history" className="text-xl font-black italic tracking-tighter uppercase text-slate-900">Historial de Viajes</h1>
       </div>
 
       {msg && <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-sm text-emerald-700 font-bold flex items-center gap-2"><CheckCircle2 size={16} />{msg}</div>}

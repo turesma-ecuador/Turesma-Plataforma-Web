@@ -159,7 +159,7 @@ export default function ClientePerfilPage() {
     <LocalizedContent>
     <div className="space-y-5 max-w-3xl mx-auto">
       {/* CABECERA */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col sm:flex-row items-center gap-5 text-center sm:text-left">
+      <div data-tour-target="portal-profile" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col sm:flex-row items-center gap-5 text-center sm:text-left">
         <div className="relative shrink-0">
           {imagenUrl ? (
             <Image src={imagenUrl} alt="Perfil" width={96} height={96} sizes="96px" className="w-24 h-24 rounded-2xl object-cover border border-slate-200" />

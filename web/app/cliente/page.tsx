@@ -124,7 +124,7 @@ export default function ClienteInicioPage() {
         ))}
       </div>
 
-      <section className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:space-y-4 sm:p-5">
+      <section data-tour-target="portal-home-services" className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:space-y-4 sm:p-5">
         <div className="flex items-start justify-between gap-3 sm:items-end">
           <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-[0.2em] text-[#E31E24]">Compra directa</p>
