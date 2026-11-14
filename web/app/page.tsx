@@ -110,6 +110,8 @@ const TELEFONO_EMPRESA_DISPLAY = "+593 99 357 0061";
 
 const IMAGEN_FALLBACK = "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=800&auto=format&fit=crop";
 const PUBLIC_DATA_CACHE_KEY = "turesma_public_data";
+const HOME_SHOWCASE_IMAGES_CACHE_KEY = "turesma_home_showcase_images";
+const HOME_CITY_SHOWCASE_CACHE_KEY = "turesma_home_city_showcase";
 
 const getSafeImageSource = (source?: string | null) => {
   if (!source) return IMAGEN_FALLBACK;
@@ -167,6 +169,93 @@ type HomeShowcaseImage = {
 type HomeShowcaseImages = {
   primary: HomeShowcaseImage | null;
   secondary: HomeShowcaseImage | null;
+};
+
+const readLocalStorageJson = (key: string): unknown | null => {
+  try {
+    const storedValue = window.localStorage.getItem(key);
+    return storedValue ? JSON.parse(storedValue) as unknown : null;
+  } catch (error) {
+    console.error(`No se pudo leer la caché local (${key}):`, error);
+    try {
+      window.localStorage.removeItem(key);
+    } catch (removeError) {
+      console.error(`No se pudo limpiar la caché local (${key}):`, removeError);
+    }
+    return null;
+  }
+};
+
+const writeLocalStorageJson = (key: string, value: unknown) => {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error(`No se pudo guardar la caché local (${key}):`, error);
+  }
+};
+
+const removeLocalStorageItem = (key: string) => {
+  try {
+    window.localStorage.removeItem(key);
+  } catch (error) {
+    console.error(`No se pudo limpiar la caché local (${key}):`, error);
+  }
+};
+
+const toFiniteNumber = (value: unknown, fallback: number) => {
+  if (typeof value !== "number" && typeof value !== "string") return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeHomeShowcaseImages = (data: unknown): HomeShowcaseImages => {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("La respuesta de imágenes destacadas no es válida");
+  }
+  const images = data as Record<string, unknown>;
+  const normalizeImage = (value: unknown): HomeShowcaseImage | null => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const image = value as Record<string, unknown>;
+    if (typeof image.image_url !== "string" || !image.image_url.trim()) return null;
+    return {
+      image_url: image.image_url,
+      position_x: toFiniteNumber(image.position_x, 50),
+      position_y: toFiniteNumber(image.position_y, 50),
+      zoom: toFiniteNumber(image.zoom, 100),
+    };
+  };
+  return {
+    primary: normalizeImage(images.primary),
+    secondary: normalizeImage(images.secondary),
+  };
+};
+
+const normalizeHomeCityShowcase = (value: unknown): HomeCityShowcase => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("La respuesta de presentación de Manta no es válida");
+  }
+  const city = value as Record<string, unknown>;
+  const text = (key: string) => {
+    const field = city[key];
+    if (typeof field !== "string") throw new Error("La respuesta de presentación de Manta no es válida");
+    return field;
+  };
+  return {
+    primary_image_url: text("primary_image_url"),
+    secondary_image_url: text("secondary_image_url"),
+    primary_alt: text("primary_alt"),
+    secondary_alt: text("secondary_alt"),
+    primary_position_x: toFiniteNumber(city.primary_position_x, 50),
+    primary_position_y: toFiniteNumber(city.primary_position_y, 50),
+    primary_zoom: toFiniteNumber(city.primary_zoom, 100),
+    secondary_position_x: toFiniteNumber(city.secondary_position_x, 50),
+    secondary_position_y: toFiniteNumber(city.secondary_position_y, 50),
+    secondary_zoom: toFiniteNumber(city.secondary_zoom, 100),
+    eyebrow: text("eyebrow"),
+    title: text("title"),
+    description: text("description"),
+    label: text("label"),
+  };
 };
 
 function VideoPlayer({ src, posterUrl, title, offsetX, offsetY, zoom, videoFormat, aspectRatio, className }: { src: string; posterUrl?: string | null; title: string | null; offsetX?: number | null; offsetY?: number | null; zoom?: number | null; videoFormat?: "original" | "horizontal" | "vertical"; aspectRatio?: number | null; className?: string }) {
@@ -501,44 +590,65 @@ export default function RootPage() {
   }, []);
 
   useEffect(() => {
+    let isCurrent = true;
+    const cachedCityShowcase = readLocalStorageJson(HOME_CITY_SHOWCASE_CACHE_KEY);
+    if (cachedCityShowcase !== null) {
+      try {
+        const showcase = normalizeHomeCityShowcase(cachedCityShowcase);
+        Promise.resolve().then(() => {
+          if (isCurrent) setHomeCityShowcase(showcase);
+        });
+      } catch (error) {
+        console.error("La caché de presentación de Manta no es válida:", error);
+        removeLocalStorageItem(HOME_CITY_SHOWCASE_CACHE_KEY);
+      }
+    }
+
     fetch(`${API_URL}/api/usuarios/home-city-showcase`, { cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`No se pudo cargar la presentación de Manta (${response.status})`);
         return response.json();
       })
-      .then((data: HomeCityShowcase) => setHomeCityShowcase(data))
+      .then((data: unknown) => {
+        const showcase = normalizeHomeCityShowcase(data);
+        if (!isCurrent) return;
+        setHomeCityShowcase(showcase);
+        setFailedShowcaseImages((current) => ({ ...current, cityPrimary: false, citySecondary: false }));
+        writeLocalStorageJson(HOME_CITY_SHOWCASE_CACHE_KEY, showcase);
+      })
       .catch((error: unknown) => console.error("Error cargando la presentación de Manta:", error));
+
+    return () => {
+      isCurrent = false;
+    };
   }, []);
 
   useEffect(() => {
     let isCurrent = true;
+    const cachedShowcaseImages = readLocalStorageJson(HOME_SHOWCASE_IMAGES_CACHE_KEY);
+    if (cachedShowcaseImages !== null) {
+      try {
+        const images = normalizeHomeShowcaseImages(cachedShowcaseImages);
+        Promise.resolve().then(() => {
+          if (isCurrent) setHomeShowcaseImages(images);
+        });
+      } catch (error) {
+        console.error("La caché de imágenes destacadas no es válida:", error);
+        removeLocalStorageItem(HOME_SHOWCASE_IMAGES_CACHE_KEY);
+      }
+    }
+
     fetch(`${API_URL}/api/usuarios/home-showcase-images`, { cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`No se pudieron cargar las imágenes destacadas (${response.status})`);
         return response.json();
       })
       .then((data: unknown) => {
-        if (!data || typeof data !== "object") throw new Error("La respuesta de imágenes destacadas no es válida");
-        const images = data as Partial<HomeShowcaseImages>;
+        const images = normalizeHomeShowcaseImages(data);
         if (!isCurrent) return;
-        setHomeShowcaseImages({
-          primary: images.primary && typeof images.primary.image_url === "string"
-            ? {
-                image_url: images.primary.image_url,
-                position_x: Number.isFinite(images.primary.position_x) ? images.primary.position_x : 50,
-                position_y: Number.isFinite(images.primary.position_y) ? images.primary.position_y : 50,
-                zoom: Number.isFinite(images.primary.zoom) ? images.primary.zoom : 100,
-              }
-            : null,
-          secondary: images.secondary && typeof images.secondary.image_url === "string"
-            ? {
-                image_url: images.secondary.image_url,
-                position_x: Number.isFinite(images.secondary.position_x) ? images.secondary.position_x : 50,
-                position_y: Number.isFinite(images.secondary.position_y) ? images.secondary.position_y : 50,
-                zoom: Number.isFinite(images.secondary.zoom) ? images.secondary.zoom : 100,
-              }
-            : null,
-        });
+        setHomeShowcaseImages(images);
+        setFailedShowcaseImages((current) => ({ ...current, experiencePrimary: false, experienceSecondary: false }));
+        writeLocalStorageJson(HOME_SHOWCASE_IMAGES_CACHE_KEY, images);
       })
       .catch((error: unknown) => {
         console.error("Error cargando las imágenes destacadas:", error);
