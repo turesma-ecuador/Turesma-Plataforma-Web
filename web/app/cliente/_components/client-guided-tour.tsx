@@ -286,7 +286,13 @@ export function ClientGuidedTour({
     const spaceBelow = bounds ? window.innerHeight - bounds.bottom - gap : 0;
     let panelTop = window.innerHeight - panelHeight - gap;
     if (bounds && variant === "booking" && currentStep.target === "booking-route") {
-      panelTop = Math.min(bounds.bottom + gap, window.innerHeight - panelHeight - gap);
+      if (spaceBelow >= panelHeight) {
+        panelTop = bounds.bottom + gap;
+      } else if (spaceAbove >= panelHeight) {
+        panelTop = bounds.top - panelHeight - gap;
+      } else if (spaceAbove > spaceBelow) {
+        panelTop = gap;
+      }
     } else if (bounds && spaceBelow >= panelHeight) {
       panelTop = bounds.bottom + gap;
     } else if (bounds && spaceAbove >= panelHeight) {

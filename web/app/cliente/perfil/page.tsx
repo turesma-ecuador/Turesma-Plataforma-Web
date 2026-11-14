@@ -171,10 +171,13 @@ export default function ClientePerfilPage() {
             <input type="file" accept="image/*" className="hidden" onChange={e => handlePhoto(e.target.files?.[0] || null)} disabled={uploading} />
           </label>
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="w-full min-w-0 flex-1 sm:w-auto">
           <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Cliente</p>
-          <h1 data-no-translate className="text-2xl font-black text-slate-900 truncate">{perfil?.nombre}</h1>
-          <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-1.5 justify-center sm:justify-start"><Mail size={13} /> {perfil?.email}</p>
+          <h1 data-no-translate className="whitespace-normal break-words text-xl font-black text-slate-900 sm:truncate sm:text-2xl">{perfil?.nombre}</h1>
+          <p className="mt-0.5 flex min-w-0 flex-wrap items-center justify-center gap-1.5 text-sm text-slate-500 sm:justify-start">
+            <Mail size={13} className="shrink-0" />
+            <span className="min-w-0 break-all">{perfil?.email}</span>
+          </p>
         </div>
         <span className={`shrink-0 inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-full border ${estadoInfo.cls}`}>
           <ShieldCheck size={13} /> {estadoInfo.label}
