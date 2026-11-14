@@ -206,6 +206,7 @@ export function ClientGuidedTour({
 
     let active = true;
     let timeout: ReturnType<typeof setTimeout>;
+    let refreshFrame: number | null = null;
     const refreshBounds = () => {
       const target = findVisibleTarget(currentStep.target);
       if (!target) {
@@ -224,6 +225,13 @@ export function ClientGuidedTour({
         return { selector: currentStep.target, bounds };
       });
     };
+    const scheduleRefreshBounds = () => {
+      if (refreshFrame !== null) return;
+      refreshFrame = window.requestAnimationFrame(() => {
+        refreshFrame = null;
+        if (active) refreshBounds();
+      });
+    };
     const locateTarget = (attempt = 0) => {
       const target = findVisibleTarget(currentStep.target);
       if (!target) {
@@ -238,22 +246,30 @@ export function ClientGuidedTour({
     };
 
     locateTarget();
-    const observer = new MutationObserver(refreshBounds);
+    const observer = new MutationObserver((mutations) => {
+      const hasRelevantMutation = mutations.some(({ target }) => {
+        if (currentStep.target !== "booking-route") return true;
+        const element = target instanceof Element ? target : target.parentElement;
+        return !element?.closest('[data-tour-target="booking-route"]');
+      });
+      if (hasRelevantMutation) scheduleRefreshBounds();
+    });
     observer.observe(document.body, {
       attributes: true,
       attributeFilter: ["class", "hidden", "data-tour-target"],
       childList: true,
       subtree: true,
     });
-    window.addEventListener("resize", refreshBounds);
-    window.addEventListener("scroll", refreshBounds, true);
+    window.addEventListener("resize", scheduleRefreshBounds);
+    window.addEventListener("scroll", scheduleRefreshBounds, true);
 
     return () => {
       active = false;
       clearTimeout(timeout);
+      if (refreshFrame !== null) window.cancelAnimationFrame(refreshFrame);
       observer.disconnect();
-      window.removeEventListener("resize", refreshBounds);
-      window.removeEventListener("scroll", refreshBounds, true);
+      window.removeEventListener("resize", scheduleRefreshBounds);
+      window.removeEventListener("scroll", scheduleRefreshBounds, true);
     };
   }, [currentStep.target, currentStep.href, isOpen, pathname, variant]);
 
