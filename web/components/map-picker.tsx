@@ -11,7 +11,7 @@ export type Punto = { lat: number; lng: number; label: string };
 // los puntos (sin escribir). Hace geocodificación inversa para mostrar el nombre.
 export function MapPicker({
   origin, destination, onChange, focusDestinationSignal = 0,
-  pickupOnly = false, localized = false, addressSearch = false, onClear,
+  pickupOnly = false, localized = false, addressSearch = false, onClear, tourTarget,
 }: {
   origin: Punto | null;
   destination: Punto | null;
@@ -20,6 +20,7 @@ export function MapPicker({
   pickupOnly?: boolean;
   localized?: boolean;
   addressSearch?: boolean;
+  tourTarget?: string;
   // Al incrementar este número (p.ej. tras autocompletar el origen por GPS),
   // el mapa cambia el foco a "destino" para que el usuario solo tenga que
   // seleccionar ese punto. Ignorado si no se usa.
@@ -291,7 +292,11 @@ export function MapPicker({
         </div>
       )}
 
-      <div ref={mapEl} className="w-full h-64 sm:h-72 rounded-2xl border-2 border-slate-200 overflow-hidden z-0" />
+      <div
+        ref={mapEl}
+        data-tour-target={tourTarget}
+        className="z-0 h-64 w-full overflow-hidden rounded-2xl border-2 border-slate-200 sm:h-72"
+      />
 
       <p className="text-[10px] text-slate-400 font-bold text-center">
         {geocoding ? <span className="inline-flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Obteniendo dirección…</span>

@@ -24,6 +24,7 @@ type TourStep = {
   title: string;
   description: string;
   target: string;
+  completionHint?: string;
   href?: string;
   icon: LucideIcon;
 };
@@ -64,21 +65,21 @@ const getPortalTourSeen = () => {
 const PORTAL_STEPS: TourStep[] = [
   {
     title: "Inicio",
-    description: "Aquí puedes revisar los viajes publicados y el resumen de tus solicitudes y servicios.",
+    description: "Consulta los viajes publicados y el resumen de tus solicitudes y servicios.",
     target: "portal-home-services",
     href: "/cliente",
     icon: LayoutDashboard,
   },
   {
     title: "Cotizar",
-    description: "Solicita un servicio a medida o reserva un viaje publicado. La guía de reserva te acompaña por el formulario.",
+    description: "Solicita un servicio o reserva un viaje publicado. La guía de reserva te acompaña por el formulario.",
     target: "portal-cotizar-start",
     href: "/cliente/cotizar",
     icon: FileText,
   },
   {
     title: "Requerimiento especial",
-    description: "Solicita varios vehículos, rutas especiales o un servicio para tu organización; el equipo revisará los detalles y responderá con una propuesta.",
+    description: "Solicita varios vehículos o un servicio especial; el equipo revisará los detalles y te enviará una propuesta.",
     target: "portal-custom-request",
     href: "/cliente/requerimiento-personalizado",
     icon: Bus,
@@ -92,7 +93,7 @@ const PORTAL_STEPS: TourStep[] = [
   },
   {
     title: "Perfil",
-    description: "Actualiza tus datos de contacto y gestiona la información de tu cuenta y verificación.",
+    description: "Actualiza tus datos de contacto y revisa la información de tu cuenta.",
     target: "portal-profile",
     href: "/cliente/perfil",
     icon: UserRound,
@@ -102,26 +103,30 @@ const PORTAL_STEPS: TourStep[] = [
 const BOOKING_STEPS: TourStep[] = [
   {
     title: "Indica tu ruta",
-    description: "Marca el origen y el destino en el mapa o búscalos por dirección. El paso siguiente se habilitará cuando ambos puntos estén definidos.",
+    description: "Busca salida y destino o marca ambos puntos en el mapa.",
     target: "booking-route",
+    completionHint: "Selecciona origen y destino para continuar.",
     icon: MapPin,
   },
   {
     title: "Elige fecha y pasajeros",
-    description: "Selecciona la fecha, horario y cantidad de personas. La disponibilidad final se confirma al revisar tu solicitud.",
+    description: "Elige fecha, horario y pasajeros. La disponibilidad se confirma al revisar tu solicitud.",
     target: "booking-schedule",
+    completionHint: "Completa fecha, hora y cantidad de pasajeros.",
     icon: LayoutDashboard,
   },
   {
     title: "Selecciona una categoría",
-    description: "Elige el tipo de vehículo que prefieres. Las fotos son referenciales; no estás reservando una unidad o placa específica.",
+    description: "Elige una categoría. Las fotos son referenciales; no reservas una unidad específica.",
     target: "booking-category",
+    completionHint: "Elige una categoría disponible para continuar.",
     icon: Bus,
   },
   {
     title: "Revisa y envía",
-    description: "Confirma los datos del viaje y solicita la cotización. El equipo definirá el precio y podrás revisarlo desde Historial.",
+    description: "Revisa los datos y envía la solicitud. El equipo definirá el precio para que lo revises desde Historial.",
     target: "booking-submit",
+    completionHint: "Envía la solicitud para finalizar la guía.",
     icon: CheckCircle2,
   },
 ];
@@ -275,7 +280,20 @@ export function ClientGuidedTour({
   const overlay = useMemo(() => {
     if (!isOpen || !mounted) return null;
     const bounds = targetBounds?.selector === currentStep.target ? targetBounds.bounds : null;
-    const useTopPanel = bounds ? bounds.top > window.innerHeight / 2 : false;
+    const panelHeight = Math.min(180, window.innerHeight - 24);
+    const gap = 12;
+    const spaceAbove = bounds ? bounds.top - gap : 0;
+    const spaceBelow = bounds ? window.innerHeight - bounds.bottom - gap : 0;
+    let panelTop = window.innerHeight - panelHeight - gap;
+    if (bounds && variant === "booking" && currentStep.target === "booking-route") {
+      panelTop = Math.min(bounds.bottom + gap, window.innerHeight - panelHeight - gap);
+    } else if (bounds && spaceBelow >= panelHeight) {
+      panelTop = bounds.bottom + gap;
+    } else if (bounds && spaceAbove >= panelHeight) {
+      panelTop = bounds.top - panelHeight - gap;
+    } else if (bounds && spaceAbove > spaceBelow) {
+      panelTop = gap;
+    }
     const blockers = bounds ? [
       { top: 0, left: 0, width: window.innerWidth, height: bounds.top },
       { top: bounds.bottom, left: 0, width: window.innerWidth, height: window.innerHeight - bounds.bottom },
@@ -289,14 +307,14 @@ export function ClientGuidedTour({
           <div
             key={index}
             aria-hidden="true"
-            className="fixed z-[10000] bg-slate-950/65 backdrop-blur-[1px]"
+            className={`fixed z-[10000] backdrop-blur-[1px] ${variant === "booking" ? "pointer-events-none bg-slate-950/35" : "bg-slate-950/55"}`}
             style={style}
           />
         ))}
         {bounds && (
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed z-[10001] rounded-xl border-2 border-red-500 shadow-[0_0_0_3px_rgba(227,30,36,0.2)]"
+            className="pointer-events-none fixed z-[10001] rounded-xl border-2 border-red-500/80 shadow-[0_0_0_3px_rgba(227,30,36,0.12)]"
             style={{ top: bounds.top, left: bounds.left, width: bounds.width, height: bounds.height }}
           />
         )}
@@ -305,60 +323,56 @@ export function ClientGuidedTour({
           aria-modal="false"
           aria-labelledby="client-tour-title"
           aria-describedby="client-tour-description"
-          className={`fixed left-3 right-3 z-[10002] mx-auto max-h-[42dvh] w-auto max-w-lg overflow-y-auto rounded-3xl border border-white/70 bg-white shadow-2xl sm:left-auto sm:right-6 sm:w-[min(28rem,calc(100vw-3rem))] ${useTopPanel ? "top-3" : "bottom-3"}`}
+          className="fixed left-1/2 z-[10002] w-[calc(100vw-1.5rem)] max-w-[21rem] -translate-x-1/2 rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-950/15"
+          style={{ left: "50%", top: panelTop }}
         >
-          <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-4 sm:p-5">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-600">
-                {variant === "portal" ? "Ayuda para clientes" : "Guía de reserva"}
-              </p>
-              <h2 id="client-tour-title" className="mt-1 text-lg font-black tracking-tight text-slate-950 sm:text-xl">
-                {currentStep.title}
-              </h2>
+          <div className="flex items-start justify-between gap-3 px-3 pt-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-700">
+                <StepIcon size={15} aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-[0.14em] text-red-600">
+                  {variant === "portal" ? "Recorrido del portal" : `Paso ${stepIndex + 1} de ${steps.length}`}
+                </p>
+                <h2 id="client-tour-title" className="text-[13px] font-black leading-tight text-slate-950">
+                  {currentStep.title}
+                </h2>
+              </div>
             </div>
             <button
               type="button"
               onClick={closeTour}
               aria-label="Cerrar recorrido"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-900"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
           </div>
 
-          <div className="space-y-4 p-4 sm:p-5">
-            <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-700">
-                <StepIcon size={20} aria-hidden="true" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Paso {stepIndex + 1} de {steps.length}
-                </p>
-                <p id="client-tour-description" className="mt-1 text-sm leading-relaxed text-slate-700">
-                  {currentStep.description}
-                </p>
-              </div>
-            </div>
+          <div className="px-3 pb-3 pt-1.5">
+            <p id="client-tour-description" className="text-[11px] leading-snug text-slate-600">
+              {currentStep.description}
+            </p>
 
-            <div className="flex gap-1.5" aria-hidden="true">
+            <div className="mt-2 flex gap-1" aria-hidden="true">
               {steps.map((step, index) => (
-                <span key={step.title} className={`h-1.5 flex-1 rounded-full ${index <= stepIndex ? "bg-red-600" : "bg-slate-200"}`} />
+                <span key={step.title} className={`h-1 flex-1 rounded-full ${index <= stepIndex ? "bg-red-600" : "bg-slate-200"}`} />
               ))}
             </div>
 
             {variant === "booking" && !stepComplete && (
-              <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
-                Completa la acción resaltada para continuar.
+              <p role="status" className="mt-1.5 text-[10px] font-semibold text-amber-700">
+                {currentStep.completionHint}
               </p>
             )}
 
-            <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={closeTour}
-                  className="rounded-xl px-3 py-2.5 text-xs font-bold text-slate-500 transition hover:bg-slate-100"
+                  className="rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-500 transition hover:bg-slate-100"
                 >
                   Salir
                 </button>
@@ -366,9 +380,9 @@ export function ClientGuidedTour({
                   <button
                     type="button"
                     onClick={() => moveToStep(stepIndex - 1)}
-                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-100"
                   >
-                    <ArrowLeft size={14} aria-hidden="true" /> Anterior
+                    <ArrowLeft size={13} aria-hidden="true" /> Anterior
                   </button>
                 )}
               </div>
@@ -377,16 +391,16 @@ export function ClientGuidedTour({
                   type="button"
                   disabled={variant === "booking" && !stepComplete}
                   onClick={() => moveToStep(stepIndex + 1)}
-                  className="inline-flex items-center justify-center gap-1 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex min-h-8 items-center justify-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-[10px] font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
                 >
-                  Siguiente <ArrowRight size={14} aria-hidden="true" />
+                  Siguiente <ArrowRight size={13} aria-hidden="true" />
                 </button>
               ) : (
                 <button
                   type="button"
                   disabled={variant === "booking" && !stepComplete}
                   onClick={closeTour}
-                  className="inline-flex items-center justify-center gap-1 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex min-h-8 items-center justify-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-[10px] font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
                 >
                   Finalizar <CheckCircle2 size={15} aria-hidden="true" />
                 </button>

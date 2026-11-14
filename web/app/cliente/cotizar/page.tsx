@@ -829,8 +829,8 @@ export default function ClienteCotizarPage() {
             </div>
 
             {/* PASO 2: FECHA (calendario con días reservados bloqueados) */}
-            <div data-tour-target="booking-schedule" className={`space-y-4 ${wizardStep === 2 ? "" : "hidden"}`}>
-              <div className="space-y-2">
+            <div className={`space-y-4 ${wizardStep === 2 ? "" : "hidden"}`}>
+              <div data-tour-target="booking-schedule" className="space-y-2 scroll-mt-24">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Calendar size={12} /> 2. Fecha del servicio</p>
               <p className="text-xs text-slate-500">
                 {variosDias
@@ -962,7 +962,7 @@ export default function ClienteCotizarPage() {
             </div>
 
             {/* PASO 3: MAPA origen/destino */}
-            <div data-tour-target="booking-route" className={`space-y-2 ${wizardStep === 1 ? "" : "hidden"}`}>
+            <div className={`space-y-2 ${wizardStep === 1 ? "" : "hidden"}`}>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><MapPin size={12} /> 1. Indica la ruta</p>
                 <button type="button" onClick={locateMyLocation} disabled={locatingOrigin}
@@ -984,6 +984,7 @@ export default function ClienteCotizarPage() {
               <MapPicker
                 localized
                 addressSearch
+                tourTarget="booking-route"
                 origin={origin}
                 destination={destination}
                 onChange={onMapChange}

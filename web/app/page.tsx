@@ -122,12 +122,34 @@ const getSafeImageSource = (source?: string | null) => {
   return source;
 };
 
+const getConfiguredImageSource = (source?: string | null): string | null => {
+  if (!source) return null;
+  try {
+    const hostname = new URL(source, "http://localhost").hostname.toLowerCase();
+    if (hostname === "supabase.co" || hostname.endsWith(".supabase.co")) return null;
+  } catch {
+    return null;
+  }
+  return source;
+};
+
 const handleRemoteImageError = (event: SyntheticEvent<HTMLImageElement>) => {
   const image = event.currentTarget;
   if (image.src === IMAGEN_FALLBACK) return;
   image.onerror = null;
   image.src = IMAGEN_FALLBACK;
   image.srcset = "";
+};
+
+const observeNearViewport = (element: HTMLElement | null, rootMargin: string, onNearViewport: () => void) => {
+  if (!element || typeof IntersectionObserver === "undefined") return () => {};
+  const observer = new IntersectionObserver(([entry]) => {
+    if (!entry?.isIntersecting) return;
+    onNearViewport();
+    observer.disconnect();
+  }, { rootMargin });
+  observer.observe(element);
+  return () => observer.disconnect();
 };
 
 type PublicDataCache = {
@@ -324,20 +346,32 @@ export default function RootPage() {
     secondary: null,
   });
   const [homeCityShowcase, setHomeCityShowcase] = useState<HomeCityShowcase | null>(null);
+  const [failedShowcaseImages, setFailedShowcaseImages] = useState({
+    experiencePrimary: false,
+    experienceSecondary: false,
+    cityPrimary: false,
+    citySecondary: false,
+  });
+  const [experienceImagesNearViewport, setExperienceImagesNearViewport] = useState(false);
+  const [cityImagesNearViewport, setCityImagesNearViewport] = useState(false);
   const [shouldLoadGallery, setShouldLoadGallery] = useState(false);
   const flotaRef = useRef<HTMLDivElement | null>(null);
   const galleryTriggerRef = useRef<HTMLDivElement | null>(null);
+  const experienceSectionRef = useRef<HTMLElement | null>(null);
+  const citySectionRef = useRef<HTMLElement | null>(null);
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
   const mobileMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const mobileMenuWasOpen = useRef(false);
   const publicDataCacheRef = useRef<PublicDataCache>({ vehiculos: [], galeria: [] });
   const fotosGaleria = galeria.filter((contenido) => contenido.categoria !== "destinos" && contenido.tipo !== "video");
   const videosGaleria = galeria.filter((contenido) => contenido.categoria !== "destinos" && contenido.tipo === "video");
-  const imagenPrincipal = getSafeImageSource(homeShowcaseImages.primary?.image_url || HERO_IMAGE_URL);
-  const imagenSecundaria = getSafeImageSource(homeShowcaseImages.secondary?.image_url || "/destinos/puerto-lopez.jpg");
+  const imagenPrincipal = getConfiguredImageSource(homeShowcaseImages.primary?.image_url);
+  const imagenSecundaria = getConfiguredImageSource(homeShowcaseImages.secondary?.image_url);
+  const cityPrimaryImage = getConfiguredImageSource(homeCityShowcase?.primary_image_url);
+  const citySecondaryImage = getConfiguredImageSource(homeCityShowcase?.secondary_image_url);
   const cityShowcase = homeCityShowcase || {
-    primary_image_url: "/manta-city.jpg",
-    secondary_image_url: "/manta-flag.png",
+    primary_image_url: "",
+    secondary_image_url: "",
     primary_alt: "Vista de la costa y la ciudad de Manta, Ecuador",
     secondary_alt: "Bandera y escudo de Manta frente a la costa de la ciudad",
     primary_position_x: 50,
@@ -350,6 +384,10 @@ export default function RootPage() {
     title: "Una empresa que conecta personas, destinos y experiencias en todo el Ecuador.",
     description: "En TURESMA S.A. redefinimos el transporte turístico con un compromiso inquebrantable con la seguridad y la elegancia. Nuestra operación nace en Manta y acompaña cada recorrido con servicio, comodidad y confianza.",
     label: "Servicio turístico, ejecutivo y empresarial",
+  };
+  const markShowcaseImageFailed = (slot: keyof typeof failedShowcaseImages) => {
+    console.error(`No se pudo cargar la imagen destacada: ${slot}`);
+    setFailedShowcaseImages((current) => ({ ...current, [slot]: true }));
   };
   const mosaicosVideos = createVideoMosaics(videosGaleria);
   const fotosDestinos = galeria.filter((contenido) => contenido.categoria === "destinos" && contenido.tipo !== "video");
@@ -510,6 +548,18 @@ export default function RootPage() {
       isCurrent = false;
     };
   }, []);
+
+  useEffect(() => observeNearViewport(
+    experienceSectionRef.current,
+    "1200px 0px",
+    () => setExperienceImagesNearViewport(true),
+  ), []);
+
+  useEffect(() => observeNearViewport(
+    citySectionRef.current,
+    "500px 0px",
+    () => setCityImagesNearViewport(true),
+  ), []);
 
   useEffect(() => {
     const trigger = galleryTriggerRef.current;
@@ -714,38 +764,48 @@ export default function RootPage() {
       </section>
 
       {/* SECCIÓN DE EXPERIENCIA Y COTIZACIÓN */}
-      <section className="overflow-hidden border-b border-gray-100 bg-[#f7f8fa] py-20 sm:py-24">
+      <section ref={experienceSectionRef} className="overflow-hidden border-b border-gray-100 bg-[#f7f8fa] py-20 sm:py-24">
         <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:gap-20 lg:px-8" data-reveal>
           <div className="relative mx-auto h-[390px] w-full max-w-[520px] sm:h-[480px]">
             <figure className="absolute left-[3%] top-0 h-[88%] w-[68%] overflow-hidden rounded-[48%_48%_38%_38%] border border-white bg-gray-200 shadow-xl">
-              <Image
-                src={imagenPrincipal}
-                alt="Vehículo de la flota de TURESMA"
-                fill
-                sizes="(max-width: 640px) 68vw, (max-width: 1024px) 38vw, 330px"
-                quality={75}
-                onError={handleRemoteImageError}
-                className="object-cover"
-                style={{
-                  objectPosition: `${homeShowcaseImages.primary?.position_x ?? 50}% ${homeShowcaseImages.primary?.position_y ?? 50}%`,
-                  transform: `scale(${(homeShowcaseImages.primary?.zoom ?? 100) / 100})`,
-                }}
-              />
+              {imagenPrincipal && !failedShowcaseImages.experiencePrimary ? (
+                <Image
+                  src={imagenPrincipal}
+                  alt="Vehículo de la flota de TURESMA"
+                  fill
+                  sizes="(max-width: 640px) 68vw, (max-width: 1024px) 38vw, 330px"
+                  quality={75}
+                  loading={experienceImagesNearViewport ? "eager" : "lazy"}
+                  onError={() => markShowcaseImageFailed("experiencePrimary")}
+                  className="object-cover"
+                  style={{
+                    objectPosition: `${homeShowcaseImages.primary?.position_x ?? 50}% ${homeShowcaseImages.primary?.position_y ?? 50}%`,
+                    transform: `scale(${(homeShowcaseImages.primary?.zoom ?? 100) / 100})`,
+                  }}
+                />
+              ) : (
+                <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300" />
+              )}
             </figure>
             <figure className="absolute bottom-[2%] right-[2%] h-[48%] w-[55%] overflow-hidden rounded-[46%_46%_30%_30%] border-[6px] border-[#f7f8fa] bg-gray-200 shadow-xl">
-              <Image
-                src={imagenSecundaria}
-                alt="Destino para un recorrido con TURESMA"
-                fill
-                sizes="(max-width: 640px) 55vw, (max-width: 1024px) 31vw, 270px"
-                quality={75}
-                onError={handleRemoteImageError}
-                className="object-cover"
-                style={{
-                  objectPosition: `${homeShowcaseImages.secondary?.position_x ?? 50}% ${homeShowcaseImages.secondary?.position_y ?? 50}%`,
-                  transform: `scale(${(homeShowcaseImages.secondary?.zoom ?? 100) / 100})`,
-                }}
-              />
+              {imagenSecundaria && !failedShowcaseImages.experienceSecondary ? (
+                <Image
+                  src={imagenSecundaria}
+                  alt="Destino para un recorrido con TURESMA"
+                  fill
+                  sizes="(max-width: 640px) 55vw, (max-width: 1024px) 31vw, 270px"
+                  quality={75}
+                  loading={experienceImagesNearViewport ? "eager" : "lazy"}
+                  onError={() => markShowcaseImageFailed("experienceSecondary")}
+                  className="object-cover"
+                  style={{
+                    objectPosition: `${homeShowcaseImages.secondary?.position_x ?? 50}% ${homeShowcaseImages.secondary?.position_y ?? 50}%`,
+                    transform: `scale(${(homeShowcaseImages.secondary?.zoom ?? 100) / 100})`,
+                  }}
+                />
+              ) : (
+                <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300" />
+              )}
             </figure>
             <div className="absolute right-[5%] top-[25%] flex h-16 w-16 rotate-12 items-center justify-center rounded-full bg-[#E31E24] text-4xl font-black text-white shadow-lg sm:right-[8%] sm:h-20 sm:w-20 sm:text-5xl" aria-hidden="true">
               *
@@ -823,7 +883,7 @@ export default function RootPage() {
       </section>
 
       {/* SECCIÓN NOSOTROS */}
-      <section id="nosotros" className="relative scroll-mt-24 border-b border-gray-50 bg-white py-32">
+      <section ref={citySectionRef} id="nosotros" className="relative scroll-mt-24 border-b border-gray-50 bg-white py-32">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8" data-reveal>
           <div className="mb-12 text-center">
             <h2 className="text-4xl font-black italic tracking-tighter text-[#E31E24] md:text-6xl uppercase">Sobre Nosotros</h2>
@@ -832,36 +892,48 @@ export default function RootPage() {
           <div className="mb-16 grid items-center gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
             <div className="relative min-h-[380px] pr-4 sm:min-h-[390px] sm:pr-14">
               <figure className="absolute left-0 right-0 top-0 h-[320px] overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-900 shadow-[0_18px_45px_-24px_rgba(15,23,42,0.65)] sm:inset-y-0 sm:right-10 sm:h-auto">
-              <Image
-                src={getSafeImageSource(cityShowcase.primary_image_url)}
-                alt={cityShowcase.primary_alt}
-                fill
-                sizes="(max-width: 1024px) 100vw, 55vw"
-                quality={75}
-                className="object-cover brightness-105 saturate-[1.08] transition-transform duration-700 hover:scale-105"
-                style={{
-                  objectPosition: `${cityShowcase.primary_position_x}% ${cityShowcase.primary_position_y}%`,
-                  transform: `scale(${cityShowcase.primary_zoom / 100})`,
-                }}
-              />
+              {cityPrimaryImage && !failedShowcaseImages.cityPrimary ? (
+                <Image
+                  src={cityPrimaryImage}
+                  alt={cityShowcase.primary_alt}
+                  fill
+                  sizes="(max-width: 1024px) 100vw, 55vw"
+                  quality={75}
+                  loading={cityImagesNearViewport ? "eager" : "lazy"}
+                  onError={() => markShowcaseImageFailed("cityPrimary")}
+                  className="object-cover brightness-105 saturate-[1.08] transition-transform duration-700 hover:scale-105"
+                  style={{
+                    objectPosition: `${cityShowcase.primary_position_x}% ${cityShowcase.primary_position_y}%`,
+                    transform: `scale(${cityShowcase.primary_zoom / 100})`,
+                  }}
+                />
+              ) : (
+                <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300" />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent" />
                 <figcaption className="absolute bottom-3 left-4 text-[10px] font-medium text-white/65 drop-shadow-md">
                   Manta, Manabí, Ecuador
                 </figcaption>
               </figure>
               <figure className="absolute bottom-0 right-0 aspect-square w-36 overflow-hidden rounded-2xl border-2 border-white/90 bg-white shadow-[0_16px_30px_-18px_rgba(15,23,42,0.8)] sm:bottom-4 sm:h-40 sm:w-40">
-                <Image
-                  src={getSafeImageSource(cityShowcase.secondary_image_url)}
-                  alt={cityShowcase.secondary_alt}
-                  fill
-                  sizes="(max-width: 640px) 128px, 160px"
-                  quality={75}
-                  className="object-cover"
-                  style={{
-                    objectPosition: `${cityShowcase.secondary_position_x}% ${cityShowcase.secondary_position_y}%`,
-                    transform: `scale(${cityShowcase.secondary_zoom / 100})`,
-                  }}
-                />
+                {citySecondaryImage && !failedShowcaseImages.citySecondary ? (
+                  <Image
+                    src={citySecondaryImage}
+                    alt={cityShowcase.secondary_alt}
+                    fill
+                    sizes="(max-width: 640px) 128px, 160px"
+                    quality={75}
+                    loading={cityImagesNearViewport ? "eager" : "lazy"}
+                    onError={() => markShowcaseImageFailed("citySecondary")}
+                    className="object-cover"
+                    style={{
+                      objectPosition: `${cityShowcase.secondary_position_x}% ${cityShowcase.secondary_position_y}%`,
+                      transform: `scale(${cityShowcase.secondary_zoom / 100})`,
+                    }}
+                  />
+                ) : (
+                  <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300" />
+                )}
                 <figcaption className="absolute inset-x-1 bottom-1 rounded-md bg-slate-950/65 px-1 py-1 text-center text-[8px] font-bold uppercase tracking-wide text-white">
                   Manta, Manabí
                 </figcaption>
