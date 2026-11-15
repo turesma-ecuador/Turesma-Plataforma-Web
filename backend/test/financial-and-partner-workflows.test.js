@@ -109,7 +109,7 @@ const pool = {
           state.history.push(JSON.parse(params[5]));
           return result();
         }
-        if (query.startsWith("select o.*, v.placa as vehiculo_placa")) return result([{ ...state.operation }]);
+        if (query.startsWith("select o.*, coalesce(nullif(o.tipo_vehiculo_solicitado")) return result([{ ...state.operation }]);
         throw new Error(`Unexpected transaction query: ${query}`);
       },
       release() {},

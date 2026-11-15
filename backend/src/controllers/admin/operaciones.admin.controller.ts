@@ -37,6 +37,10 @@ const dateOnly = (value: unknown) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
 };
 
+const normalizeVehicleType = (value: unknown) => typeof value === "string"
+  ? value.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  : "";
+
 const endOfEstimatedTrip = (date: string, time: string, durationMinutes: number | null) => {
   if (!durationMinutes || durationMinutes <= 0) return { date, time: null };
   const start = new Date(`${date}T${time}:00Z`);
@@ -233,10 +237,12 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
 
 const getOperation = async (client: any, id: number) => {
   const result = await client.query(
-    `SELECT o.*, v.placa AS vehiculo_placa, v.modelo AS vehiculo_modelo,
+    `SELECT o.*, COALESCE(NULLIF(o.tipo_vehiculo_solicitado, ''), r.tipo_vehiculo) AS tipo_vehiculo_solicitado,
+            v.placa AS vehiculo_placa, v.modelo AS vehiculo_modelo,
             u.id AS conductor_usuario_id,
             u.nombre AS conductor_nombre, u.apellido AS conductor_apellido
      FROM operaciones o
+     LEFT JOIN reservas r ON r.id = o.reserva_id
      LEFT JOIN vehiculos v ON v.id = o.vehiculo_id
      LEFT JOIN conductores c ON c.id = o.conductor_id
      LEFT JOIN usuarios u ON u.id = c.usuario_id
@@ -266,10 +272,12 @@ const listarOperaciones = async (req: any, res: any) => {
     }
 
     const result = await pool.query(
-      `SELECT o.*, v.placa AS vehiculo_placa, v.modelo AS vehiculo_modelo,
+      `SELECT o.*, COALESCE(NULLIF(o.tipo_vehiculo_solicitado, ''), r.tipo_vehiculo) AS tipo_vehiculo_solicitado,
+              v.placa AS vehiculo_placa, v.modelo AS vehiculo_modelo,
               u.id AS conductor_usuario_id,
               u.nombre AS conductor_nombre, u.apellido AS conductor_apellido
        FROM operaciones o
+       LEFT JOIN reservas r ON r.id = o.reserva_id
        LEFT JOIN vehiculos v ON v.id = o.vehiculo_id
        LEFT JOIN conductores c ON c.id = o.conductor_id
        LEFT JOIN usuarios u ON u.id = c.usuario_id
@@ -333,7 +341,7 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
   try {
     await client.query("BEGIN");
     const reservation = await client.query(
-      `SELECT id, fecha_reserva, fecha_servicio, fecha_salida, fecha_llegada, fecha_fin,
+      `SELECT id, fecha_reserva, fecha_servicio, fecha_salida, fecha_llegada, fecha_fin, tipo_vehiculo,
               fecha_regreso::date::text AS fecha_regreso, hora_regreso,
               COALESCE(fecha_salida::date, fecha_servicio::date, fecha_reserva)::text AS fecha_inicio,
               COALESCE(NULLIF(hora_salida, ''), to_char(fecha_salida, 'HH24:MI')) AS hora_salida_programada,
@@ -445,13 +453,13 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
       }
       const created = await client.query(
         `INSERT INTO operaciones
-         (reserva_id, tipo_servicio, fecha_programada, fecha_fin_programada, hora_inicio, hora_fin,
+         (reserva_id, tipo_servicio, tipo_vehiculo_solicitado, fecha_programada, fecha_fin_programada, hora_inicio, hora_fin,
           origen, destino, pasajeros, vehiculo_id, conductor_id, estado, creado_por,
           duracion_estimada_minutos, origen_lat, origen_lng, destino_lat, destino_lng)
-         VALUES ($1, $2, $3::date, $4::date, $5::time, $6::time, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+         VALUES ($1, $2, $3, $4::date, $5::date, $6::time, $7::time, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
          RETURNING id`,
         [
-          reservationId, leg.type, leg.date, leg.end.date, leg.time, leg.end.time,
+          reservationId, leg.type, textOrNull(current.tipo_vehiculo, 100), leg.date, leg.end.date, leg.time, leg.end.time,
           String(leg.origin || "Origen pendiente").trim(),
           String(leg.destination || "Destino pendiente").trim(),
           Number(current.num_personas) || 1, vehicleId, driverId, initialState, req.user?.id || null,
@@ -525,6 +533,7 @@ const asignarOperacion = async (req: any, res: any) => {
   const operationId = Number(req.params.id);
   const vehicleId = Number(req.body?.vehiculo_id);
   const driverUserId = Number(req.body?.conductor_id);
+  const confirmarSustitucion = req.body?.confirmar_sustitucion === true;
   const decisionId = req.body?.decision_id === undefined ? null : Number(req.body.decision_id);
   const decisionReason = typeof req.body?.decision_reason === "string" ? req.body.decision_reason.trim() : "";
   if (!Number.isInteger(operationId) || operationId <= 0
@@ -564,7 +573,10 @@ const asignarOperacion = async (req: any, res: any) => {
     }
 
     const linkedReservation = current.reserva_id
-      ? await client.query("SELECT fecha_fin::text AS fecha_fin, fecha_regreso::text AS fecha_regreso FROM reservas WHERE id = $1", [current.reserva_id])
+      ? await client.query(
+        "SELECT fecha_fin::text AS fecha_fin, fecha_regreso::text AS fecha_regreso, tipo_vehiculo FROM reservas WHERE id = $1",
+        [current.reserva_id]
+      )
       : { rows: [] };
     const endDate = current.fecha_fin_programada
       || linkedReservation.rows[0]?.fecha_fin
@@ -572,7 +584,7 @@ const asignarOperacion = async (req: any, res: any) => {
       || current.fecha_programada;
 
     const vehicle = await client.query(
-      `SELECT id, placa, capacidad, estado, activo,
+      `SELECT id, placa, tipo, capacidad, estado, activo,
               (fecha_proximo_mantenimiento IS NOT NULL AND fecha_proximo_mantenimiento <= CURRENT_DATE)
               OR (proximo_km_mantenimiento IS NOT NULL AND proximo_km_mantenimiento <= COALESCE(kilometraje, 0)) AS mantenimiento_vencido
        FROM vehiculos WHERE id = $1 FOR UPDATE`,
@@ -585,6 +597,16 @@ const asignarOperacion = async (req: any, res: any) => {
     }
     if (Number(vehicleData.capacidad) < Number(current.pasajeros)) {
       return reject(409, { success: false, error: "La capacidad del vehículo es insuficiente" });
+    }
+    const requestedType = normalizeVehicleType(current.tipo_vehiculo_solicitado || linkedReservation.rows[0]?.tipo_vehiculo);
+    const assignedType = normalizeVehicleType(vehicleData.tipo);
+    const categorySubstitution = Boolean(requestedType && requestedType !== assignedType);
+    if (categorySubstitution && !confirmarSustitucion) {
+      return reject(409, {
+        success: false,
+        code: "VEHICLE_CATEGORY_SUBSTITUTION_CONFIRMATION_REQUIRED",
+        error: `Se solicitó la categoría ${current.tipo_vehiculo_solicitado || linkedReservation.rows[0]?.tipo_vehiculo}, pero se eligió ${vehicleData.tipo || "una categoría no registrada"}. Confirma la sustitución para continuar.`,
+      });
     }
     if (vehicleData.mantenimiento_vencido) {
       return reject(409, { success: false, error: "El vehículo tiene mantenimiento vencido" });
@@ -936,12 +958,18 @@ const asignarOperacion = async (req: any, res: any) => {
         return reject(409, { success: false, error: "La recomendación ya se registró o el vehículo no es una alternativa válida. Si elegiste otra opción, indica el motivo." });
       }
     }
-    await recordHistory(client, operationId, req.user?.id || null, "asignacion", current.estado, "asignada", { vehiculo_id: vehicleId, conductor_id: driverId });
+    const assignmentDetails = {
+      vehiculo_id: vehicleId,
+      conductor_id: driverId,
+      tipo_vehiculo_solicitado: current.tipo_vehiculo_solicitado || linkedReservation.rows[0]?.tipo_vehiculo || null,
+      tipo_vehiculo_asignado: vehicleData.tipo || null,
+      categoria_sustituida: categorySubstitution,
+    };
+    await recordHistory(client, operationId, req.user?.id || null, "asignacion", current.estado, "asignada", assignmentDetails);
     for (const leg of linkedLegs.rows) {
       if (Number(leg.id) !== operationId) {
         await recordHistory(client, Number(leg.id), req.user?.id || null, "asignacion_tramo_reserva", leg.estado || "programada", "asignada", {
-          vehiculo_id: vehicleId,
-          conductor_id: driverId,
+          ...assignmentDetails,
         });
       }
     }

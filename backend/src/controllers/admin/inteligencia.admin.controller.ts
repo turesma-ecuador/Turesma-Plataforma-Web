@@ -2,6 +2,10 @@ export {};
 
 const pool = require("../../config/db");
 
+const normalizeVehicleType = (value: unknown) => typeof value === "string"
+  ? value.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  : "";
+
 const safeCount = async (sql, params = []) => {
   const result = await pool.query(sql, params);
   return Number(result.rows[0]?.total || 0);
@@ -564,6 +568,7 @@ const recomendarAsignacion = async (req: any, res: any) => {
   const horaFin = typeof req.query.hora_fin === "string" ? req.query.hora_fin : null;
   const operationId = req.query.operacion_id === undefined ? null : Number(req.query.operacion_id);
   const soloDisponibles = req.query.solo_disponibles === "true";
+  let tipoPreferido = normalizeVehicleType(req.query.tipo_vehiculo);
 
   const isValidDate = (value: string) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -604,16 +609,20 @@ const recomendarAsignacion = async (req: any, res: any) => {
     if (operationId !== null) {
       const period = await pool.query(
         `SELECT o.id, o.reserva_id, o.tipo_servicio,
+                COALESCE(NULLIF(o.tipo_vehiculo_solicitado, ''), r.tipo_vehiculo) AS tipo_vehiculo_solicitado,
                 o.fecha_programada::date::text AS fecha_inicio,
                 COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada)::text AS fecha_fin,
                 to_char(o.hora_inicio, 'HH24:MI') AS hora_inicio,
                 COALESCE(to_char(o.eta_actualizada, 'HH24:MI'), to_char(o.hora_fin, 'HH24:MI')) AS hora_fin
-         FROM operaciones o WHERE o.id = $1`,
+         FROM operaciones o
+         LEFT JOIN reservas r ON r.id = o.reserva_id
+         WHERE o.id = $1`,
         [operationId]
       );
       if (!period.rowCount) {
         return res.status(404).json({ success: false, error: "Operación no encontrada" });
       }
+      tipoPreferido = normalizeVehicleType(period.rows[0].tipo_vehiculo_solicitado) || tipoPreferido;
       fecha = period.rows[0].fecha_inicio || fecha;
       fechaFin = period.rows[0].fecha_fin || fechaFin;
       if (!isValidDate(fechaFin) || fechaFin < fecha) {
@@ -886,20 +895,27 @@ const recomendarAsignacion = async (req: any, res: any) => {
           )
         ),
       };
+      const availableVehicles = evaluatedResult.rows
+        .filter((vehicle: any) => vehicle.bloqueos.length === 0)
+        .map((vehicle: any) => ({
+          id: vehicle.vehiculo_id,
+          placa: vehicle.placa,
+          modelo: vehicle.modelo,
+          tipo: vehicle.tipo,
+          capacidad: vehicle.capacidad,
+          estado: vehicle.estado,
+          activo: vehicle.activo,
+        }))
+        .sort((a: any, b: any) =>
+          Number(normalizeVehicleType(b.tipo) === tipoPreferido)
+          - Number(normalizeVehicleType(a.tipo) === tipoPreferido)
+        );
 
       return res.json({
         success: true,
         data: {
-          vehiculos: evaluatedResult.rows
-            .filter((vehicle: any) => vehicle.bloqueos.length === 0)
-            .map((vehicle: any) => ({
-              id: vehicle.vehiculo_id,
-              placa: vehicle.placa,
-              modelo: vehicle.modelo,
-              capacidad: vehicle.capacidad,
-              estado: vehicle.estado,
-              activo: vehicle.activo,
-            })),
+          tipo_vehiculo_solicitado: tipoPreferido || null,
+          vehiculos: availableVehicles,
           conductores: availableDrivers.rows,
         },
       });
@@ -1000,10 +1016,16 @@ const recomendarAsignacion = async (req: any, res: any) => {
           + (GREATEST(0, 20 - LEAST(carga_30_dias, 20)))
         )::numeric, 2) AS puntaje
       FROM candidatos
-      ORDER BY puntaje DESC, carga_30_dias ASC, kilometraje ASC
+      ORDER BY CASE
+        WHEN $8::text IS NOT NULL
+          AND translate(LOWER(BTRIM(tipo)), 'áéíóúüñ', 'aeiouun') = $8 THEN 1
+        ELSE 0
+      END DESC,
+        puntaje DESC, carga_30_dias ASC, kilometraje ASC
       LIMIT 5
     `, [fecha, pasajeros, horaInicio, horaFin, operationId, fechaFin,
-      evaluatedResult.rows.filter((vehicle: any) => vehicle.bloqueos.length === 0).map((vehicle: any) => vehicle.vehiculo_id)]);
+      evaluatedResult.rows.filter((vehicle: any) => vehicle.bloqueos.length === 0).map((vehicle: any) => vehicle.vehiculo_id),
+      tipoPreferido || null]);
 
     const opciones = result.rows;
     const evaluados = evaluatedResult.rows.map((vehicle: any) => ({
@@ -1026,6 +1048,7 @@ const recomendarAsignacion = async (req: any, res: any) => {
           fecha_fin: fechaFin,
           pasajeros,
           operacion_id: operationId,
+          tipo_vehiculo_solicitado: tipoPreferido || null,
           vehiculo: null,
           alternativas: [],
           evaluados,
@@ -1063,6 +1086,7 @@ const recomendarAsignacion = async (req: any, res: any) => {
       fecha,
       fecha_fin: fechaFin,
       pasajeros,
+      tipo_vehiculo_solicitado: tipoPreferido || null,
       hora_inicio: horaInicio,
       hora_fin: horaFin,
       operacion_id: operationId,

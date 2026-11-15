@@ -103,7 +103,7 @@ type ReservationReady = {
   vehiculo_placa?: string | null;
 };
 
-type Vehicle = { id: number; placa: string; modelo: string; capacidad: number; estado: string; activo: boolean };
+type Vehicle = { id: number; placa: string; modelo: string; tipo?: string | null; capacidad: number; estado: string; activo: boolean };
 type Driver = {
   id: number;
   nombre: string;
@@ -173,6 +173,8 @@ const formatDate = (value: string) => {
 
 const formatTime = (value?: string | null) => value?.slice(0, 5) || null;
 const dateKey = (value?: string | null) => value?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || "";
+const normalizeVehicleType = (value?: string | null) =>
+  value?.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() || "";
 const localToday = () => {
   const today = new Date();
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
@@ -256,6 +258,7 @@ export default function OperacionesPage() {
   });
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [selectedDriverId, setSelectedDriverId] = useState("");
+  const [confirmVehicleSubstitution, setConfirmVehicleSubstitution] = useState(false);
   const [form, setForm] = useState({
     tipo_servicio: "viaje",
     fecha_programada: new Date().toISOString().slice(0, 10),
@@ -280,6 +283,16 @@ export default function OperacionesPage() {
       )
       || a.id - b.id;
   });
+  const selectedAvailableVehicle = vehicles.find((vehicle) => String(vehicle.id) === selectedVehicleId);
+  const requestedVehicleType = assignment?.tipo_vehiculo_solicitado?.trim() || "";
+  const hasRequestedVehicleTypeAvailable = Boolean(
+    requestedVehicleType
+    && vehicles.some((vehicle) => normalizeVehicleType(vehicle.tipo) === normalizeVehicleType(requestedVehicleType))
+  );
+  const selectedVehicleIsSubstitution = Boolean(
+    requestedVehicleType
+    && normalizeVehicleType(selectedAvailableVehicle?.tipo) !== normalizeVehicleType(requestedVehicleType)
+  );
 
   const load = async (silent = false) => {
     if (!silent) {
@@ -409,6 +422,10 @@ export default function OperacionesPage() {
   const assignOperation = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!assignment) return;
+    if (selectedVehicleIsSubstitution && !confirmVehicleSubstitution) {
+      setError("Confirma la sustitución de la categoría solicitada antes de asignar.");
+      return;
+    }
     const selectedVehicle = Number(selectedVehicleId);
     const selectedDriver = Number(selectedDriverId);
     setSaving(true);
@@ -419,6 +436,7 @@ export default function OperacionesPage() {
         body: JSON.stringify({
           vehiculo_id: selectedVehicle,
           conductor_id: selectedDriver,
+          confirmar_sustitucion: selectedVehicleIsSubstitution && confirmVehicleSubstitution,
         }),
       });
       setMessage("Recursos asignados. Las validaciones operativas fueron aprobadas.");
@@ -495,6 +513,7 @@ export default function OperacionesPage() {
     setAssignmentResourcesError("");
     setSelectedVehicleId("");
     setSelectedDriverId("");
+    setConfirmVehicleSubstitution(false);
     setError("");
     try {
       const startDate = dateKey(operation.fecha_programada);
@@ -517,13 +536,20 @@ export default function OperacionesPage() {
       const headers = getAuthHeaders();
       const availabilityPath = `/api/admin/inteligencia/asignacion-recomendada?${query}`;
       const availability = await readApiJson<{
-        data?: { vehiculos?: Vehicle[]; conductores?: Driver[] };
+        data?: { tipo_vehiculo_solicitado?: string | null; vehiculos?: Vehicle[]; conductores?: Driver[] };
       }>(await fetch(`${API_URL}${availabilityPath}`, { headers }), availabilityPath);
       const resources = availability.data;
       if (!resources || !Array.isArray(resources.vehiculos) || !Array.isArray(resources.conductores)) {
         throw new Error("La API no devolvió la lista de recursos disponibles.");
       }
-      const availableVehicles = resources.vehiculos;
+      const requestedType = resources.tipo_vehiculo_solicitado || operation.tipo_vehiculo_solicitado || "";
+      if (requestedType && !operation.tipo_vehiculo_solicitado) {
+        setAssignment({ ...operation, tipo_vehiculo_solicitado: requestedType });
+      }
+      const availableVehicles = [...resources.vehiculos].sort((a, b) =>
+        Number(normalizeVehicleType(b.tipo) === normalizeVehicleType(requestedType))
+        - Number(normalizeVehicleType(a.tipo) === normalizeVehicleType(requestedType))
+      );
       const availableDrivers = resources.conductores;
       setVehicles(availableVehicles);
       setDrivers(availableDrivers);
@@ -775,6 +801,12 @@ export default function OperacionesPage() {
                   <span>{assignment.destino || "Destino pendiente"}</span>
                 </p>
               </div>
+              {requestedVehicleType && (
+                <div className="col-span-2 border-t border-slate-200 pt-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Categoría solicitada</p>
+                  <p className="mt-1 text-sm font-bold capitalize text-slate-800">{requestedVehicleType}</p>
+                </div>
+              )}
             </section>
 
             {assignmentResourcesLoading && (
@@ -804,7 +836,10 @@ export default function OperacionesPage() {
                 <select
                   name="vehiculo_id"
                   value={selectedVehicleId}
-                  onChange={(event) => setSelectedVehicleId(event.target.value)}
+                  onChange={(event) => {
+                    setSelectedVehicleId(event.target.value);
+                    setConfirmVehicleSubstitution(false);
+                  }}
                   className="w-full rounded-xl border border-slate-200 bg-white p-3.5 text-sm font-semibold text-slate-800 shadow-sm transition focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                   disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)}
                   required
@@ -816,14 +851,44 @@ export default function OperacionesPage() {
                         ? "Disponibilidad no consultada"
                         : vehicles.length ? "Selecciona un vehículo" : "Sin vehículos disponibles"}
                   </option>
-                  {vehicles.map((vehicle) => (
-                    <option key={vehicle.id} value={vehicle.id}>{vehicle.placa} · {vehicle.modelo} · {vehicle.capacidad} pax</option>
-                  ))}
+                  {vehicles.map((vehicle) => {
+                    const isAlternative = requestedVehicleType
+                      && normalizeVehicleType(vehicle.tipo) !== normalizeVehicleType(requestedVehicleType);
+                    return (
+                      <option key={vehicle.id} value={vehicle.id}>
+                        {vehicle.placa} · {vehicle.modelo} · {vehicle.capacidad} pax · {vehicle.tipo || "tipo no registrado"}
+                        {isAlternative ? " · alternativa" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
                 {!assignmentResourcesLoading && !assignmentResourcesError && vehicles.length === 0 && (
                   <span className="mt-1.5 block text-xs font-medium text-slate-500">
                     No se encontraron vehículos disponibles para este servicio.
                   </span>
+                )}
+                {!assignmentResourcesLoading && !assignmentResourcesError && vehicles.length > 0
+                  && requestedVehicleType && !hasRequestedVehicleTypeAvailable && (
+                  <span className="mt-1.5 block text-xs font-semibold text-amber-800">
+                    No hay vehículos disponibles de la categoría solicitada. Elegir otra categoría requerirá confirmación.
+                  </span>
+                )}
+                {selectedVehicleIsSubstitution && (
+                  <div className="mt-2 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                    <p>
+                      La cotización solicita <strong className="capitalize">{requestedVehicleType}</strong>, pero elegiste
+                      {" "}<strong className="capitalize">{selectedAvailableVehicle?.tipo || "una categoría no registrada"}</strong>.
+                    </p>
+                    <label className="flex items-start gap-2 font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={confirmVehicleSubstitution}
+                        onChange={(event) => setConfirmVehicleSubstitution(event.target.checked)}
+                        className="mt-0.5 accent-amber-700"
+                      />
+                      Confirmo esta sustitución de categoría.
+                    </label>
+                  </div>
                 )}
               </label>
 
@@ -865,7 +930,7 @@ export default function OperacionesPage() {
 
             <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs leading-relaxed text-amber-900">
               <Info size={16} className="mt-0.5 shrink-0 text-amber-700" />
-              <p>Solo se muestran recursos disponibles para este servicio. El backend volverá a validar la disponibilidad al confirmar.</p>
+              <p>Se prioriza la categoría solicitada. Si eliges otra disponible, confirma la sustitución; el backend volverá a validar la asignación.</p>
             </div>
 
             <footer className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
@@ -877,7 +942,8 @@ export default function OperacionesPage() {
                 Cancelar
               </button>
               <button
-                disabled={saving || assignmentResourcesLoading || Boolean(assignmentResourcesError)}
+                disabled={saving || assignmentResourcesLoading || Boolean(assignmentResourcesError)
+                  || (selectedVehicleIsSubstitution && !confirmVehicleSubstitution)}
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
               >
                 {saving ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={17} />}

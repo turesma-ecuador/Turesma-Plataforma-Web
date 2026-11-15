@@ -20,6 +20,7 @@ const state = {
       origen: "Quito",
       destino: "Otavalo",
       num_personas: 8,
+      tipo_vehiculo: "bus",
       total: 240,
       estado: "confirmada",
       vehiculo_id: null,
@@ -37,6 +38,7 @@ const state = {
       origen: "Quito",
       destino: "Cotacachi",
       num_personas: 5,
+      tipo_vehiculo: "sedan",
       total: 150,
       estado: "confirmada",
       vehiculo_id: null,
@@ -54,6 +56,7 @@ const state = {
       origen: "Quito",
       destino: "Latacunga",
       num_personas: 4,
+      tipo_vehiculo: "sedan",
       total: 120,
       estado: "confirmada",
       vehiculo_id: 701,
@@ -74,6 +77,7 @@ const state = {
       origen: "Quito",
       destino: "Ambato",
       num_personas: 4,
+      tipo_vehiculo: "sedan",
       total: 120,
       estado: "confirmada",
       vehiculo_id: null,
@@ -83,8 +87,8 @@ const state = {
     },
   ],
   vehicles: [
-    { id: 701, placa: "TEST-701", modelo: "Van test 1", capacidad: 12, estado: "disponible", activo: true, usuario_id: 301 },
-    { id: 702, placa: "TEST-702", modelo: "Van test 2", capacidad: 15, estado: "disponible", activo: true, usuario_id: 302 },
+    { id: 701, placa: "TEST-701", tipo: "sedan", modelo: "Sedan test", capacidad: 12, estado: "disponible", activo: true, usuario_id: 301 },
+    { id: 702, placa: "TEST-702", tipo: "bus", modelo: "Bus test", capacidad: 15, estado: "disponible", activo: true, usuario_id: 302 },
   ],
   drivers: [
     { id: 501, usuario_id: 301, estado: "disponible", activo: true, fecha_licencia_vencimiento: "2027-12-31" },
@@ -120,6 +124,7 @@ const operationView = (operation) => {
   const driver = state.drivers.find((row) => row.id === operation.conductor_id);
   return {
     ...operation,
+    tipo_vehiculo_solicitado: operation.tipo_vehiculo_solicitado || reservationFor(operation.reserva_id)?.tipo_vehiculo || null,
     vehiculo_placa: vehicle?.placa || null,
     vehiculo_modelo: vehicle?.modelo || null,
     conductor_usuario_id: driver?.usuario_id || null,
@@ -138,6 +143,7 @@ const pool = {
         id: operation.id,
         reserva_id: operation.reserva_id,
         tipo_servicio: operation.tipo_servicio,
+        tipo_vehiculo_solicitado: operation.tipo_vehiculo_solicitado || reservationFor(operation.reserva_id)?.tipo_vehiculo || null,
         fecha_inicio: operation.fecha_programada,
         fecha_fin: operation.fecha_fin_programada || operation.fecha_programada,
         hora_inicio: operation.hora_inicio,
@@ -204,7 +210,8 @@ const pool = {
           const reservationEnd = asDate(reservation.fecha_fin || reservation.fecha_regreso || reservation.fecha_llegada || reservationStart);
           if (reservation.vehiculo_id !== vehicle.id || reservationStart > endDate || reservationEnd < startDate
             || ["cancelada", "finalizada"].includes(reservation.estado)
-            || reservation.id === operation?.reserva_id) return false;
+            || reservation.id === operation?.reserva_id
+            || state.operations.some((item) => item.reserva_id === reservation.id && item.estado !== "cancelada")) return false;
           if (startDate !== endDate || reservationStart !== reservationEnd) return true;
           return intersects(startTime ? asTime(startTime) : null, endTime ? asTime(endTime) : null,
             reservation.fecha_salida && asTime(reservation.fecha_salida), reservation.fecha_llegada && asTime(reservation.fecha_llegada));
@@ -222,7 +229,7 @@ const pool = {
           vehiculo_id: vehicle.id,
           placa: vehicle.placa,
           modelo: vehicle.modelo,
-          tipo: "van",
+          tipo: vehicle.tipo,
           capacidad: vehicle.capacidad,
           estado: vehicle.estado,
           activo: vehicle.activo,
@@ -332,7 +339,7 @@ const pool = {
             vehiculo_id: vehicle.id,
             placa: vehicle.placa,
             modelo: vehicle.modelo,
-            tipo: "van",
+            tipo: vehicle.tipo,
             capacidad: vehicle.capacidad,
             fecha_proximo_mantenimiento: "2027-12-31",
             conductor_id: driver?.usuario_id || null,
@@ -421,11 +428,12 @@ const pool = {
           return result(state.operations.filter((operation) => operation.reserva_id === Number(params[0])).map(({ id }) => ({ id })));
         }
         if (query.startsWith("insert into operaciones")) {
-          const [reservationId, serviceType, scheduled, fechaFin, start, finish, origin, destination, passengers, vehicleId, driverId, operationState, createdBy, duration, originLat, originLng, destinationLat, destinationLng] = params;
+          const [reservationId, serviceType, requestedType, scheduled, fechaFin, start, finish, origin, destination, passengers, vehicleId, driverId, operationState, createdBy, duration, originLat, originLng, destinationLat, destinationLng] = params;
           const operation = {
             id: state.nextOperationId++,
             reserva_id: Number(reservationId),
             tipo_servicio: serviceType,
+            tipo_vehiculo_solicitado: requestedType,
             fecha_programada: asDate(scheduled),
             fecha_fin_programada: asDate(fechaFin || scheduled),
             hora_inicio: start,
@@ -456,14 +464,14 @@ const pool = {
           });
           return result();
         }
-        if (query.startsWith("select o.*, v.placa")) {
+        if (query.startsWith("select o.*, coalesce(nullif(o.tipo_vehiculo_solicitado")) {
           return result([operationView(operationFor(params[0]))].filter(Boolean));
         }
         if (query.startsWith("select * from operaciones where id")) {
           const operation = operationFor(params[0]);
           return result(operation ? [{ ...operation }] : []);
         }
-        if (query.startsWith("select id, placa, capacidad, estado, activo")) {
+        if (query.startsWith("select id, placa, tipo, capacidad, estado, activo")) {
           const vehicle = vehicleFor(params[0]);
           return result(vehicle ? [{ ...vehicle, mantenimiento_vencido: false }] : []);
         }
@@ -534,11 +542,12 @@ const pool = {
             licencia_vencida: Boolean(driver.fecha_licencia_vencimiento && driver.fecha_licencia_vencimiento < today),
           }] : []);
         }
-        if (query.startsWith("select fecha_fin::text as fecha_fin, fecha_regreso::text as fecha_regreso from reservas")) {
+        if (query.startsWith("select fecha_fin::text as fecha_fin, fecha_regreso::text as fecha_regreso, tipo_vehiculo from reservas")) {
           const reservation = reservationFor(params[0]);
           return result(reservation ? [{
             fecha_fin: reservation.fecha_fin || null,
             fecha_regreso: reservation.fecha_regreso || null,
+            tipo_vehiculo: reservation.tipo_vehiculo || null,
           }] : []);
         }
         if (query.startsWith("select o.id, o.vehiculo_id, o.conductor_id")) {
@@ -845,11 +854,11 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     assert.equal(created.body.data.reserva_id, 801);
     assert.equal(created.body.data.estado, "programada");
     assert.deepEqual(created.body.operation_ids, [1001, 1002]);
-    assert.deepEqual(state.operations.map(({ tipo_servicio, fecha_programada, hora_inicio, fecha_fin_programada, hora_fin }) => ({
-      tipo_servicio, fecha_programada, hora_inicio, fecha_fin_programada, hora_fin,
+    assert.deepEqual(state.operations.map(({ tipo_servicio, tipo_vehiculo_solicitado, fecha_programada, hora_inicio, fecha_fin_programada, hora_fin }) => ({
+      tipo_servicio, tipo_vehiculo_solicitado, fecha_programada, hora_inicio, fecha_fin_programada, hora_fin,
     })), [
-      { tipo_servicio: "reserva_ida", fecha_programada: "2026-10-21", hora_inicio: "09:00", fecha_fin_programada: "2026-10-21", hora_fin: "11:00" },
-      { tipo_servicio: "reserva_regreso", fecha_programada: "2026-10-23", hora_inicio: "09:00", fecha_fin_programada: "2026-10-23", hora_fin: "11:00" },
+      { tipo_servicio: "reserva_ida", tipo_vehiculo_solicitado: "bus", fecha_programada: "2026-10-21", hora_inicio: "09:00", fecha_fin_programada: "2026-10-21", hora_fin: "11:00" },
+      { tipo_servicio: "reserva_regreso", tipo_vehiculo_solicitado: "bus", fecha_programada: "2026-10-23", hora_inicio: "09:00", fecha_fin_programada: "2026-10-23", hora_fin: "11:00" },
     ]);
 
     const duplicate = await request("/api/admin/operaciones/reservas/801/despachar", { method: "POST", body: {} });
@@ -865,6 +874,8 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     const availableResources = await request(`/api/admin/inteligencia/asignacion-recomendada?solo_disponibles=true&fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);
     assert.equal(availableResources.status, 200);
     assert.deepEqual(availableResources.body.data.vehiculos.map((vehicle) => vehicle.id), [702]);
+    assert.equal(availableResources.body.data.tipo_vehiculo_solicitado, "bus");
+    assert.equal(availableResources.body.data.vehiculos[0].tipo, "bus");
     assert.deepEqual(availableResources.body.data.conductores.map((driver) => driver.id), [302]);
     assert.equal(state.decisions.length, 0, "Cargar los recursos no debe registrar una recomendación");
 
@@ -949,7 +960,7 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
 
     const unavailableVehicle = await request(`/api/admin/operaciones/${operationId}/asignar`, {
       method: "PATCH",
-      body: { vehiculo_id: 701, conductor_id: 302 },
+      body: { vehiculo_id: 701, conductor_id: 302, confirmar_sustitucion: true },
     });
     assert.equal(unavailableVehicle.status, 409);
     assert.match(unavailableVehicle.body.error, /No Disponible.*vehículo/i);
@@ -1005,7 +1016,7 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     reservationFor(803).estado = "cancelada";
     const reassigned = await request(`/api/admin/operaciones/${operationId}/asignar`, {
       method: "PATCH",
-      body: { vehiculo_id: 701, conductor_id: 301 },
+      body: { vehiculo_id: 701, conductor_id: 301, confirmar_sustitucion: true },
     });
     assert.equal(reassigned.status, 409);
     assert.match(reassigned.body.error, /deben conservar el mismo vehículo y conductor/i);
@@ -1060,6 +1071,7 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
       },
     });
     assert.equal(missingReason.status, 409);
+    assert.equal(missingReason.body.code, "VEHICLE_CATEGORY_SUBSTITUTION_CONFIRMATION_REQUIRED");
     assert.equal(operationFor(operationId).vehiculo_id, null);
 
     const assignedAlternative = await request(`/api/admin/operaciones/${operationId}/asignar`, {
@@ -1069,10 +1081,12 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
         conductor_id: alternativeVehicle.conductor_id,
         decision_id: recommendation.body.data.decisionId,
         decision_reason: "Se distribuye la carga de trabajo de la flota.",
+        confirmar_sustitucion: true,
       },
     });
     assert.equal(assignedAlternative.status, 200);
     assert.equal(assignedAlternative.body.data.vehiculo_id, alternativeVehicle.vehiculo_id);
+    assert.equal(state.history.find((entry) => entry.operacion_id === operationId && entry.accion === "asignacion").detalle.categoria_sustituida, true);
     assert.equal(state.decisions[1].resultado, "alternativa");
     assert.equal(state.decisions[1].factores.decision_operador.motivo, "Se distribuye la carga de trabajo de la flota.");
 
