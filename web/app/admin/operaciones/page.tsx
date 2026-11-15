@@ -6,6 +6,13 @@ import { getAuthHeaders } from "../../../lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
+class ApiResponseError extends Error {
+  constructor(message: string, readonly code: string | null = null) {
+    super(message);
+    this.name = "ApiResponseError";
+  }
+}
+
 const readApiJson = async <T,>(response: Response, path: string): Promise<T> => {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("application/json") && !contentType.includes("+json")) {
@@ -26,7 +33,11 @@ const readApiJson = async <T,>(response: Response, path: string): Promise<T> => 
       && typeof payload.error === "string"
       ? payload.error
       : `La solicitud a ${path} falló (HTTP ${response.status}).`;
-    throw new Error(errorMessage);
+    const errorCode = typeof payload === "object" && payload !== null && "code" in payload
+      && typeof payload.code === "string"
+      ? payload.code
+      : null;
+    throw new ApiResponseError(errorMessage, errorCode);
   }
 
   return payload;
@@ -168,6 +179,36 @@ const reservationServiceTime = (reservation: ReservationReady) => {
 };
 const compareSchedule = (dateA: string, timeA: string, dateB: string, timeB: string) =>
   dateA.localeCompare(dateB) || timeA.localeCompare(timeB);
+const assignmentScheduleLabel = (operation: Operation) => {
+  const startDate = formatDate(operation.fecha_programada);
+  const endDate = operation.fecha_fin_programada
+    ? formatDate(operation.fecha_fin_programada)
+    : startDate;
+  const startTime = formatTime(operation.hora_inicio) || "hora pendiente";
+  const endTime = formatTime(operation.hora_fin) || "sin hora registrada";
+  return endDate === startDate
+    ? `Salida ${startDate} ${startTime} · llegada ${endTime}`
+    : `Salida ${startDate} ${startTime} · llegada ${endDate} ${endTime}`;
+};
+
+const assignmentAvailabilityMessage = (error: unknown) => {
+  if (!(error instanceof ApiResponseError)) {
+    return "No fue posible consultar la disponibilidad en este momento. Intenta nuevamente.";
+  }
+
+  switch (error.code) {
+    case "INVALID_ASSIGNMENT_DATE_RANGE":
+      return "Revisa la fecha de salida y regreso del servicio antes de consultar disponibilidad.";
+    case "INVALID_ASSIGNMENT_PASSENGER_COUNT":
+      return "La cantidad de pasajeros de esta reserva no es válida. Corrige la reserva e inténtalo de nuevo.";
+    case "INVALID_ASSIGNMENT_TIME_RANGE":
+      return "Revisa las horas de salida y llegada. La hora de llegada debe ser posterior a la de salida.";
+    case "INVALID_ASSIGNMENT_OPERATION":
+      return "No se pudo identificar esta operación. Actualiza la página e inténtalo de nuevo.";
+    default:
+      return "No fue posible consultar la disponibilidad en este momento. Intenta nuevamente.";
+  }
+};
 
 export default function OperacionesPage() {
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -481,7 +522,8 @@ export default function OperacionesPage() {
           : "",
       );
     } catch (loadError) {
-      setAssignmentResourcesError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los vehículos y conductores");
+      console.error("No se pudo consultar la disponibilidad para la operación.", loadError);
+      setAssignmentResourcesError(assignmentAvailabilityMessage(loadError));
     } finally {
       setAssignmentResourcesLoading(false);
     }
@@ -686,9 +728,9 @@ export default function OperacionesPage() {
 
             <section aria-label="Resumen del servicio" className="grid grid-cols-2 gap-2.5 rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Fecha y hora</p>
-                <p className="mt-1 text-sm font-bold text-slate-800">
-                  {formatDate(assignment.fecha_programada)} · {formatTime(assignment.hora_inicio) || "Hora pendiente"}
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Horario del servicio</p>
+                <p className="mt-1 text-sm font-bold leading-relaxed text-slate-800">
+                  {assignmentScheduleLabel(assignment)}
                 </p>
               </div>
               <div>
@@ -717,7 +759,7 @@ export default function OperacionesPage() {
               <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-800">
                 <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" />
                 <div>
-                  <p className="font-black">No fue posible cargar los recursos</p>
+                  <p className="font-black">No fue posible consultar la disponibilidad</p>
                   <p className="mt-0.5 leading-relaxed">{assignmentResourcesError}</p>
                 </div>
               </div>

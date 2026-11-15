@@ -570,14 +570,27 @@ const recomendarAsignacion = async (req: any, res: any) => {
     const parsed = new Date(`${value}T00:00:00.000Z`);
     return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   };
-  if (!isValidDate(fecha) || !isValidDate(fechaFin) || fechaFin < fecha
-    || !Number.isInteger(pasajeros) || pasajeros <= 0
-    || (operationId !== null && (!Number.isInteger(operationId) || operationId <= 0))
+  const invalidAvailabilityRequest = (code: string) =>
+    res.status(400).json({ success: false, code, error: "No se pudo consultar la disponibilidad." });
+
+  if (!isValidDate(fecha) || !isValidDate(fechaFin) || fechaFin < fecha) {
+    return invalidAvailabilityRequest("INVALID_ASSIGNMENT_DATE_RANGE");
+  }
+  if (!Number.isInteger(pasajeros) || pasajeros <= 0) {
+    return invalidAvailabilityRequest("INVALID_ASSIGNMENT_PASSENGER_COUNT");
+  }
+  if (
+    (operationId !== null && (!Number.isInteger(operationId) || operationId <= 0))
     || (soloDisponibles && operationId === null)
-    || (horaInicio !== null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(horaInicio))
+  ) {
+    return invalidAvailabilityRequest("INVALID_ASSIGNMENT_OPERATION");
+  }
+  if (
+    (horaInicio !== null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(horaInicio))
     || (horaFin !== null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(horaFin))
-    || (horaInicio && horaFin && horaFin <= horaInicio)) {
-    return res.status(400).json({ success: false, error: "Fecha o cantidad de pasajeros inválida" });
+    || (horaInicio && horaFin && horaFin <= horaInicio)
+  ) {
+    return invalidAvailabilityRequest("INVALID_ASSIGNMENT_TIME_RANGE");
   }
 
   try {

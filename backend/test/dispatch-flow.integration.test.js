@@ -723,6 +723,13 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     const duplicate = await request("/api/admin/operaciones/reservas/801/despachar", { method: "POST", body: {} });
     assert.equal(duplicate.status, 409);
 
+    const invalidSchedule = await request(
+      `/api/admin/inteligencia/asignacion-recomendada?solo_disponibles=true&fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=08%3A59&operacion_id=${operationId}`
+    );
+    assert.equal(invalidSchedule.status, 400);
+    assert.equal(invalidSchedule.body.code, "INVALID_ASSIGNMENT_TIME_RANGE");
+    assert.equal(invalidSchedule.body.error, "No se pudo consultar la disponibilidad.");
+
     const availableResources = await request(`/api/admin/inteligencia/asignacion-recomendada?solo_disponibles=true&fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);
     assert.equal(availableResources.status, 200);
     assert.deepEqual(availableResources.body.data.vehiculos.map((vehicle) => vehicle.id), [702]);
