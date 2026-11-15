@@ -129,7 +129,7 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
              WHERE tc.table_schema = 'public' AND tc.table_name = 'reservas'
                AND tc.constraint_type = 'FOREIGN KEY' AND kcu.column_name = 'conductor_id'
                AND ccu.table_name = 'conductores'
-           ) THEN $8 ELSE $7
+           ) THEN $8::int ELSE $7::int
          END
        )
        AND (
@@ -169,7 +169,7 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
            WHERE tc.table_schema = 'public' AND tc.table_name = 'reservas'
              AND tc.constraint_type = 'FOREIGN KEY' AND kcu.column_name = 'conductor_id'
              AND ccu.table_name = 'conductores'
-         ) THEN $6 ELSE $5
+         ) THEN $6::int ELSE $5::int
        END)
        AND NOT EXISTS (
          SELECT 1 FROM operaciones o
