@@ -92,7 +92,7 @@ export default function AdminConductoresPage() {
 
   useEffect(() => { if (!checkingSession) load(); }, [checkingSession]);
 
-  useAutoRefresh(() => load(true), { enabled: !checkingSession, immediate: false });
+  useAutoRefresh(() => load(true), { enabled: !checkingSession, immediate: false, intervalMs: 30000 });
 
   const filtered = conductores.filter((c) => {
     const matchSearch = !search ||
@@ -316,7 +316,7 @@ export default function AdminConductoresPage() {
         ) : (
           <>
           {/* MÓVIL: tarjetas */}
-          <div className="lg:hidden divide-y divide-slate-100">
+          <div className="xl:hidden divide-y divide-slate-100">
             {filtered.map((c) => (
               <div key={c.id} className="p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -331,8 +331,10 @@ export default function AdminConductoresPage() {
                       )}
                     </div>
                     <div className="min-w-0">
-                      <p className="font-bold text-slate-900 text-sm truncate">{c.nombre}</p>
-                      <p className="text-[11px] text-slate-400 truncate">{c.telefono || "Sin teléfono"}</p>
+                      <p className="font-bold text-slate-900 text-sm break-words">{c.nombre}</p>
+                      <p className="text-[11px] text-slate-500 break-all">{c.email}</p>
+                      <p className="text-[11px] text-slate-400">{c.telefono || "Sin teléfono"}</p>
+                      <p className="text-[10px] text-slate-400">Registrado: {new Date(c.creado_en).toLocaleDateString("es-ES")}</p>
                     </div>
                   </div>
                   <span className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase border ${ESTADO_BADGE[c.estado || "disponible"] || ESTADO_BADGE.disponible}`}>
@@ -343,7 +345,11 @@ export default function AdminConductoresPage() {
                   <div className="flex gap-0.5">{renderStars(c.rating_promedio || 5)}</div>
                   <span>{c.viajes_completados || 0} viajes · {c.horas_conduccion || 0}h</span>
                 </div>
-                <p className="text-[11px] text-slate-500">Licencia: <span className="font-semibold text-slate-700">{c.licencia || c.licencia_tipo || "No registrada"}</span></p>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                  <p className="text-slate-500">Licencia: <span className="font-semibold text-slate-700">{c.licencia || c.licencia_tipo || "No registrada"}</span></p>
+                  <p className="text-slate-500">Vence: <span className="font-semibold text-slate-700">{c.fecha_licencia_vencimiento ? new Date(c.fecha_licencia_vencimiento).toLocaleDateString("es-ES") : "Sin fecha"}</span></p>
+                  <p className="text-slate-500">Documentos: <span className={`inline-block rounded px-1.5 py-0.5 font-bold ${DOC_BADGE[c.estado_documentos || ""] || "bg-slate-100 text-slate-600"}`}>{c.estado_documentos || "Sin estado"}</span></p>
+                </div>
                 <div className="flex gap-2 pt-1 items-center">
                   <WhatsAppButton telefono={c.telefono} title={`WhatsApp de ${c.nombre}`} mensaje={`Hola ${c.nombre}, le saludamos de Turesma S.A.`} />
                   <button onClick={() => openEdit(c)} className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-black uppercase text-blue-600 bg-blue-50 rounded-lg">
@@ -357,20 +363,23 @@ export default function AdminConductoresPage() {
             ))}
           </div>
           {/* ESCRITORIO: tabla */}
-          <div className="hidden lg:block overflow-x-auto">
-            <table className="min-w-[920px] w-full text-left border-collapse">
+          <div className="hidden xl:block">
+            <table className="w-full table-fixed text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/60 border-b border-slate-100">
-                  {["Conductor", "Contacto", "Licencia", "Desempeño", "Estado", "Acciones"].map(h => (
-                    <th key={h} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
-                  ))}
+                  <th className="w-[19%] px-2.5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Conductor</th>
+                  <th className="w-[22%] px-2.5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Contacto</th>
+                  <th className="w-[17%] px-2.5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Licencia</th>
+                  <th className="w-[15%] px-2.5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Desempeño</th>
+                  <th className="w-[14%] px-2.5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
+                  <th className="w-[13%] px-2.5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filtered.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50/80 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
+                    <td className="px-2.5 py-3">
+                      <div className="flex min-w-0 items-center gap-2">
                         <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center">
                           {((c as any).foto_conductor) ? (
                             <Image src={(c as any).foto_conductor} alt={c.nombre} fill sizes="80px" unoptimized className="object-cover" />
@@ -380,17 +389,17 @@ export default function AdminConductoresPage() {
                             </div>
                           )}
                         </div>
-                        <div>
-                          <p className="font-black text-slate-900 italic tracking-tighter uppercase text-sm">{c.nombre}</p>
+                        <div className="min-w-0">
+                          <p className="break-words font-black text-slate-900 italic tracking-tighter uppercase text-sm">{c.nombre}</p>
                           <p className="text-[10px] text-slate-400 font-bold">{new Date(c.creado_en).toLocaleDateString("es-ES")}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-xs font-bold text-slate-600">{c.email}</p>
-                      <p className="text-[10px] text-slate-400">{c.telefono || "Sin teléfono"}</p>
+                    <td className="px-2.5 py-3">
+                      <p className="break-all text-xs font-bold text-slate-600">{c.email}</p>
+                      <p className="break-words text-[10px] text-slate-400">{c.telefono || "Sin teléfono"}</p>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-2.5 py-3">
                       <p className="text-xs font-bold text-slate-700">{c.licencia || c.licencia_tipo || "No registrada"}</p>
                       {c.fecha_licencia_vencimiento && (
                         <p className="text-[10px] text-slate-400">Vence: {new Date(c.fecha_licencia_vencimiento).toLocaleDateString("es-ES")}</p>
@@ -401,23 +410,23 @@ export default function AdminConductoresPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-2.5 py-3">
                       <div className="flex gap-0.5 mb-1">{renderStars(c.rating_promedio || 5)}</div>
-                      <p className="text-[10px] font-bold text-slate-400">{c.viajes_completados || 0} viajes · {c.horas_conduccion || 0}h</p>
+                      <p className="break-words text-[10px] font-bold text-slate-400">{c.viajes_completados || 0} viajes · {c.horas_conduccion || 0}h</p>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-black uppercase border ${ESTADO_BADGE[c.estado || "disponible"] || ESTADO_BADGE.disponible}`}>
+                    <td className="px-2.5 py-3">
+                      <span className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black uppercase border ${ESTADO_BADGE[c.estado || "disponible"] || ESTADO_BADGE.disponible}`}>
                         {c.estado === "disponible" || !c.estado ? <CheckCircle size={10} /> : <AlertCircle size={10} />}
                         {(c.estado || "disponible").replace("_", " ")}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="flex gap-2">
+                    <td className="px-2.5 py-3">
+                      <div className="flex items-center gap-1">
                         <WhatsAppButton telefono={c.telefono} title={`WhatsApp de ${c.nombre}`} mensaje={`Hola ${c.nombre}, le saludamos de Turesma S.A.`} />
-                        <button onClick={() => openEdit(c)} className="p-2.5 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Editar">
+                        <button onClick={() => openEdit(c)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Editar">
                           <Edit3 size={16} />
                         </button>
-                        <button onClick={() => handleDelete(c)} className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Dar de baja">
+                        <button onClick={() => handleDelete(c)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Dar de baja">
                           <Trash2 size={16} />
                         </button>
                       </div>
