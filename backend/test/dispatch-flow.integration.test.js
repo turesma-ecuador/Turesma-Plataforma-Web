@@ -551,8 +551,8 @@ const pool = {
           }] : []);
         }
         if (query.startsWith("select o.id, o.vehiculo_id, o.conductor_id")) {
-          assert.equal(params.length, 8, "La consulta debe enviar solo los parámetros que utiliza");
-          const [operationId, startDateValue, endDateValue, , , activeStates, vehicleId, driverId] = params;
+          assert.equal(params.length, 6, "La consulta debe enviar solo los parámetros que utiliza");
+          const [operationId, startDateValue, endDateValue, activeStates, vehicleId, driverId] = params;
           const startDate = asDate(startDateValue);
           const endDate = asDate(endDateValue);
           const conflicts = state.operations.filter((operation) =>

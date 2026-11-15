@@ -76,11 +76,11 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
      LEFT JOIN conductores c ON c.id = o.conductor_id
      LEFT JOIN usuarios u ON u.id = c.usuario_id
      WHERE o.id <> $1
-       AND o.estado = ANY($6::text[])
-       AND (o.vehiculo_id = $7 OR o.conductor_id = $8)
+       AND o.estado = ANY($4::text[])
+       AND (o.vehiculo_id = $5 OR o.conductor_id = $6)
        AND o.fecha_programada <= $3::date
        AND COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada) >= $2::date`,
-    [operationId, date, endDate, start, end, ACTIVE_STATES, vehicleId, driverId]
+    [operationId, date, endDate, ACTIVE_STATES, vehicleId, driverId]
   );
 
   const candidateSlot = {
