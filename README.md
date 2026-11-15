@@ -96,6 +96,11 @@ error JSON explícito (`502`). Esto evita que el navegador intente interpretar
 una página de bloqueo como datos. No elimina el bloqueo del hosting: el
 proveedor debe permitir las solicitudes legítimas a la API.
 
+Los videos y sus portadas públicas también pueden servirse mediante
+`/api-proxy/uploads/...`. El proxy conserva las solicitudes y respuestas
+parciales (`Range`/`Content-Range`) requeridas para reproducir y adelantar videos
+en el navegador; solo permite rutas conocidas de videos y portadas de galería.
+
 ## Inteligencia operativa
 
 El panel administrativo incluye analítica descriptiva y recomendaciones basadas en

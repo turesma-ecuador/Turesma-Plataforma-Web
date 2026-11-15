@@ -13,6 +13,24 @@ const FORWARDED_DOWNLOAD_HEADERS = [
   "accept-ranges",
   "last-modified",
 ];
+const FORWARDED_MEDIA_HEADERS = [
+  "content-type",
+  "content-length",
+  "content-range",
+  "accept-ranges",
+  "last-modified",
+  "etag",
+  "cache-control",
+  "expires",
+];
+const PUBLIC_MEDIA_PATH = /^\/uploads\/(?:videos\/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:mp4|webm|mov)|galeria\/[A-Za-z0-9][A-Za-z0-9._-]*\.webp)$/i;
+
+const isExpectedMediaType = (path: string, contentType: string) => {
+  if (path.toLowerCase().endsWith(".mp4")) return contentType === "video/mp4";
+  if (path.toLowerCase().endsWith(".webm")) return contentType === "video/webm";
+  if (path.toLowerCase().endsWith(".mov")) return contentType === "video/quicktime";
+  return contentType === "image/webp";
+};
 
 const jsonError = (
   error: string,
@@ -41,9 +59,82 @@ const isDownloadResponse = (contentType: string, disposition: string) =>
   || contentType.startsWith("audio/")
   || contentType.includes("spreadsheetml");
 
+async function proxyPublicMedia(request: Request, mediaPath: string): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return jsonError("El método solicitado no está permitido para archivos públicos.", "MEDIA_METHOD_NOT_ALLOWED", 405);
+  }
+  if (!PUBLIC_MEDIA_PATH.test(mediaPath)) {
+    return jsonError("La ruta del archivo público no es válida.", "INVALID_MEDIA_PATH", 404);
+  }
+
+  let upstreamUrl: URL;
+  try {
+    const backendOrigin = getBackendApiUrl();
+    upstreamUrl = new URL(`${mediaPath}${new URL(request.url).search}`, backendOrigin);
+    if (upstreamUrl.origin !== backendOrigin || !PUBLIC_MEDIA_PATH.test(upstreamUrl.pathname)) {
+      return jsonError("La ruta del archivo público no es válida.", "INVALID_MEDIA_PATH", 400);
+    }
+  } catch (error) {
+    console.error("[api-proxy] Configuración del backend inválida para medios:", error);
+    return jsonError("El servicio de archivos no está configurado correctamente.", "API_CONFIGURATION_ERROR", 500);
+  }
+
+  const headers = new Headers();
+  for (const name of ["accept", "range", "if-range", "if-none-match", "if-modified-since"]) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(upstreamUrl, {
+      method: request.method,
+      headers,
+      cache: "no-store",
+      redirect: "manual",
+    });
+  } catch (error) {
+    console.error(`[api-proxy] No se pudo obtener el archivo público ${mediaPath}:`, error);
+    return jsonError("No se pudo conectar con el servicio de archivos.", "MEDIA_UPSTREAM_UNAVAILABLE", 502);
+  }
+
+  const contentType = (upstream.headers.get("content-type") || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  if (
+    contentType === "text/html"
+    || contentType === "application/xhtml+xml"
+    || (upstream.ok && !isExpectedMediaType(mediaPath, contentType))
+  ) {
+    console.error(`[api-proxy] El backend devolvió ${contentType || "sin tipo"} para el archivo ${mediaPath}.`);
+    return jsonError(
+      "El servidor de archivos devolvió contenido inválido para este recurso.",
+      "MEDIA_INVALID_RESPONSE",
+      502,
+      upstream.status,
+    );
+  }
+
+  const mediaHeaders = new Headers();
+  for (const name of FORWARDED_MEDIA_HEADERS) {
+    const value = upstream.headers.get(name);
+    if (value) mediaHeaders.set(name, value);
+  }
+
+  return new Response(request.method === "HEAD" ? null : upstream.body, {
+    status: upstream.status,
+    headers: mediaHeaders,
+  });
+}
+
 async function proxy(request: Request): Promise<Response> {
   const incomingUrl = new URL(request.url);
   const apiPath = incomingUrl.pathname.slice("/api-proxy".length);
+
+  if (apiPath.startsWith("/uploads/")) {
+    return proxyPublicMedia(request, apiPath);
+  }
 
   if (!apiPath.startsWith("/api/")) {
     return jsonError("La ruta solicitada no pertenece a la API.", "INVALID_API_PATH", 404);

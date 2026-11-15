@@ -100,8 +100,12 @@ const createVideoMosaics = (videos: GaleriaFoto[]) => {
   return mosaics;
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = process.env.NODE_ENV === "production"
+  ? "/api-proxy"
+  : process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const HERO_IMAGE_URL = "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=2069&auto=format&fit=crop";
+const PUBLIC_API_ORIGIN = "https://api.turesma.com";
+const PROXYABLE_MEDIA_PATH = /^\/uploads\/(?:videos\/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:mp4|webm|mov)|galeria\/[A-Za-z0-9][A-Za-z0-9._-]*\.webp)$/i;
 
 // Número oficial de la empresa (formato internacional sin +). Cambiarlo aquí
 // actualiza el botón flotante, el CTA del hero y el pie de página a la vez.
@@ -122,6 +126,19 @@ const getSafeImageSource = (source?: string | null) => {
     return IMAGEN_FALLBACK;
   }
   return source;
+};
+
+const getProxiedMediaSource = (source?: string | null) => {
+  if (!source) return source;
+  try {
+    const mediaUrl = new URL(source);
+    if (mediaUrl.origin !== PUBLIC_API_ORIGIN || !PROXYABLE_MEDIA_PATH.test(mediaUrl.pathname)) {
+      return source;
+    }
+    return `/api-proxy${mediaUrl.pathname}${mediaUrl.search}`;
+  } catch {
+    return source;
+  }
 };
 
 const getConfiguredImageSource = (source?: string | null): string | null => {
@@ -1448,8 +1465,8 @@ export default function RootPage() {
                             }`}
                           >
                             <VideoPlayer
-                              src={video.imagen_url}
-                              posterUrl={getSafeImageSource(video.video_poster_url)}
+                              src={getProxiedMediaSource(video.imagen_url) || video.imagen_url}
+                              posterUrl={getProxiedMediaSource(getSafeImageSource(video.video_poster_url))}
                               title={video.titulo}
                               offsetX={video.video_offset_x}
                               offsetY={video.video_offset_y}
