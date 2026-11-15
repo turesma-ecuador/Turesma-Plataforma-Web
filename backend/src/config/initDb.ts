@@ -475,6 +475,13 @@ const initDatabase = async () => {
       kilometros_reales NUMERIC(10, 2),
       hora_inicio_real TIMESTAMP,
       hora_fin_real TIMESTAMP,
+      duracion_estimada_minutos INT,
+      origen_lat NUMERIC(10, 7),
+      origen_lng NUMERIC(10, 7),
+      destino_lat NUMERIC(10, 7),
+      destino_lng NUMERIC(10, 7),
+      eta_actualizada TIMESTAMP,
+      incidencia_detalle TEXT,
       subcontratacion_estado VARCHAR(20) NOT NULL DEFAULT 'no_requerida',
       subcontratista_empresa VARCHAR(160),
       subcontratista_contacto VARCHAR(120),
@@ -490,7 +497,11 @@ const initDatabase = async () => {
       creado_por INT REFERENCES usuarios(id) ON DELETE SET NULL,
       creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      CONSTRAINT operaciones_horas_validas CHECK (hora_fin IS NULL OR hora_inicio IS NULL OR hora_fin > hora_inicio),
+      CONSTRAINT operaciones_horas_validas CHECK (
+        hora_fin IS NULL OR hora_inicio IS NULL
+        OR COALESCE(fecha_fin_programada, fecha_programada) > fecha_programada
+        OR hora_fin > hora_inicio
+      ),
       CONSTRAINT operaciones_estado_valido CHECK (estado IN ('programada', 'asignada', 'en_curso', 'completada', 'cancelada', 'incidencia')),
       CONSTRAINT operaciones_subcontratacion_estado_check CHECK (subcontratacion_estado IN ('no_requerida', 'pendiente', 'confirmada')),
       CONSTRAINT operaciones_subcontratacion_costo_check CHECK (subcontratacion_costo IS NULL OR subcontratacion_costo >= 0)
@@ -514,12 +525,25 @@ const initDatabase = async () => {
     ADD COLUMN IF NOT EXISTS grupo_numero INT,
     ADD COLUMN IF NOT EXISTS unidad_numero INT,
     ADD COLUMN IF NOT EXISTS tipo_vehiculo_solicitado VARCHAR(100),
-    ADD COLUMN IF NOT EXISTS fecha_fin_programada DATE;
+    ADD COLUMN IF NOT EXISTS fecha_fin_programada DATE,
+    ADD COLUMN IF NOT EXISTS duracion_estimada_minutos INT,
+    ADD COLUMN IF NOT EXISTS origen_lat NUMERIC(10, 7),
+    ADD COLUMN IF NOT EXISTS origen_lng NUMERIC(10, 7),
+    ADD COLUMN IF NOT EXISTS destino_lat NUMERIC(10, 7),
+    ADD COLUMN IF NOT EXISTS destino_lng NUMERIC(10, 7),
+    ADD COLUMN IF NOT EXISTS eta_actualizada TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS incidencia_detalle TEXT;
   `);
 
   await pool.query(`
     DO $$
     BEGIN
+      ALTER TABLE operaciones DROP CONSTRAINT IF EXISTS operaciones_horas_validas;
+      ALTER TABLE operaciones ADD CONSTRAINT operaciones_horas_validas CHECK (
+        hora_fin IS NULL OR hora_inicio IS NULL
+        OR COALESCE(fecha_fin_programada, fecha_programada) > fecha_programada
+        OR hora_fin > hora_inicio
+      );
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'operaciones_subcontratacion_estado_check') THEN
         ALTER TABLE operaciones
         ADD CONSTRAINT operaciones_subcontratacion_estado_check
@@ -645,7 +669,12 @@ const initDatabase = async () => {
     ADD COLUMN IF NOT EXISTS conductor_id INT REFERENCES usuarios(id),
     ADD COLUMN IF NOT EXISTS origen VARCHAR(300),
     ADD COLUMN IF NOT EXISTS destino VARCHAR(300),
-    ADD COLUMN IF NOT EXISTS hora_salida VARCHAR(10);
+    ADD COLUMN IF NOT EXISTS hora_salida VARCHAR(10),
+    ADD COLUMN IF NOT EXISTS duracion_estimada_minutos INT,
+    ADD COLUMN IF NOT EXISTS origen_lat NUMERIC(10, 7),
+    ADD COLUMN IF NOT EXISTS origen_lng NUMERIC(10, 7),
+    ADD COLUMN IF NOT EXISTS destino_lat NUMERIC(10, 7),
+    ADD COLUMN IF NOT EXISTS destino_lng NUMERIC(10, 7);
   `);
 
   await pool.query(`
@@ -1170,6 +1199,8 @@ const initDatabase = async () => {
     ADD COLUMN IF NOT EXISTS destino_lat DECIMAL(10,7),
     ADD COLUMN IF NOT EXISTS destino_lng DECIMAL(10,7),
     ADD COLUMN IF NOT EXISTS hora_salida VARCHAR(10),
+    ADD COLUMN IF NOT EXISTS hora_llegada_estimada VARCHAR(10),
+    ADD COLUMN IF NOT EXISTS duracion_estimada_minutos INT,
     ADD COLUMN IF NOT EXISTS fecha_fin DATE;
   `);
 

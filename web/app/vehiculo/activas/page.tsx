@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useConductorPanel, type ReservaConductor } from "../_components/use-conductor-panel";
 import { LocationSharing } from "../_components/location-sharing";
 import { WhatsAppButton } from "../../../components/whatsapp-button";
@@ -60,6 +61,11 @@ const formatEstadoLabel = (estado: string) => {
   }
 };
 
+const localDateTimeValue = (date: Date) => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
 const ESTADO_BADGE: Record<string, string> = {
   confirmada: "bg-blue-100 text-blue-700 border-blue-200",
   en_curso: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -73,6 +79,7 @@ const ESTADO_ICON: Record<string, React.ReactNode> = {
 
 export default function ConductorActivasPage() {
   const { checkingSession, panel, msg, err, user, callAction, actionLoadingId } = useConductorPanel();
+  const [delayForms, setDelayForms] = useState<Record<number, { detalle: string; eta: string }>>({});
 
   if (checkingSession) return (
     <div className="flex h-64 items-center justify-center">
@@ -138,6 +145,15 @@ export default function ConductorActivasPage() {
             const regresoEnCurso = Boolean(r.ida_finalizada && r.fecha_regreso);
             const regresoHabilitado = regresoDisponible(r);
             const destinoFinal = regresoEnCurso ? r.origen : (r.destino || r.tour_ubicacion);
+            const delayForm = delayForms[r.id] || { detalle: "", eta: "" };
+            const reportDelay = () => {
+              const eta = new Date(delayForm.eta);
+              if (!Number.isFinite(eta.getTime())) return;
+              void callAction(r.id, "incidencia", {
+                detalle: delayForm.detalle,
+                nueva_eta: eta.toISOString(),
+              });
+            };
 
             return (
               <article
@@ -233,6 +249,56 @@ export default function ConductorActivasPage() {
                         <MapPin size={12} /> {regresoEnCurso ? "Punto de llegada" : "Destino"}
                       </p>
                       <p className="text-sm font-bold text-red-900 mt-2">{destinoFinal}</p>
+                    </div>
+                  )}
+
+                  {r.eta_actualizada && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Retraso reportado</p>
+                      <p className="mt-1 text-sm font-bold text-amber-950">
+                        Nueva llegada estimada: {new Date(r.eta_actualizada).toLocaleString("es-EC", { dateStyle: "medium", timeStyle: "short" })}
+                      </p>
+                      {r.incidencia_detalle && <p className="mt-1 text-xs text-amber-900">{r.incidencia_detalle}</p>}
+                    </div>
+                  )}
+
+                  {r.estado === "en_curso" && !isCustomOperation && (
+                    <div className="space-y-3 rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-orange-800">¿Tuviste un retraso?</p>
+                      <textarea
+                        value={delayForm.detalle}
+                        onChange={(event) => setDelayForms((current) => ({
+                          ...current,
+                          [r.id]: { ...delayForm, detalle: event.target.value },
+                        }))}
+                        maxLength={500}
+                        rows={2}
+                        placeholder="Describe brevemente el obstáculo"
+                        className="w-full rounded-xl border border-orange-200 bg-white p-3 text-sm text-slate-800"
+                      />
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <label className="flex-1 text-xs font-bold text-orange-900">
+                          Nueva llegada estimada
+                          <input
+                            type="datetime-local"
+                            value={delayForm.eta}
+                            onChange={(event) => setDelayForms((current) => ({
+                              ...current,
+                              [r.id]: { ...delayForm, eta: event.target.value },
+                            }))}
+                            min={localDateTimeValue(new Date())}
+                            className="mt-1 w-full rounded-xl border border-orange-200 bg-white p-3 text-sm text-slate-800"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={reportDelay}
+                          disabled={actionLoadingId === r.id || delayForm.detalle.trim().length < 8 || !delayForm.eta}
+                          className="self-end rounded-xl bg-orange-700 px-4 py-3 text-xs font-black text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Reportar retraso
+                        </button>
+                      </div>
                     </div>
                   )}
 

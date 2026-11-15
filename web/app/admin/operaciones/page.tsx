@@ -55,6 +55,8 @@ type Operation = {
   fecha_fin_programada?: string | null;
   hora_inicio?: string | null;
   hora_fin?: string | null;
+  eta_actualizada?: string | null;
+  incidencia_detalle?: string | null;
   origen: string;
   destino: string;
   pasajeros: number;
@@ -84,6 +86,11 @@ type ReservationReady = {
   fecha_servicio?: string | null;
   fecha_salida?: string | null;
   fecha_llegada?: string | null;
+  fecha_fin?: string | null;
+  fecha_regreso?: string | null;
+  hora_regreso?: string | null;
+  duracion_estimada_minutos?: number | null;
+  hora_salida?: string | null;
   origen?: string | null;
   destino?: string | null;
   num_personas: number;
@@ -173,6 +180,7 @@ const localToday = () => {
 const reservationServiceDate = (reservation: ReservationReady) =>
   dateKey(reservation.fecha_salida) || dateKey(reservation.fecha_servicio) || dateKey(reservation.fecha_reserva);
 const reservationServiceTime = (reservation: ReservationReady) => {
+  if (reservation.hora_salida) return formatTime(reservation.hora_salida);
   const dateTime = [reservation.fecha_salida, reservation.fecha_servicio, reservation.fecha_llegada]
     .find((value) => value && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value));
   return dateTime ? dateTime.slice(11, 16) : "";
@@ -591,6 +599,9 @@ export default function OperacionesPage() {
                       {serviceDate ? formatDate(serviceDate) : "Fecha pendiente"}{serviceTime ? ` · ${serviceTime}` : ""}
                     </span>
                     <span>{reservation.num_personas} pasajeros</span>
+                    {reservation.fecha_fin && <span>Servicio continuo hasta {formatDate(reservation.fecha_fin)}</span>}
+                    {reservation.fecha_regreso && <span>Regreso: {formatDate(reservation.fecha_regreso)}{reservation.hora_regreso ? ` · ${formatTime(reservation.hora_regreso)}` : ""}</span>}
+                    {reservation.duracion_estimada_minutos && <span>Duración estimada: {Math.floor(reservation.duracion_estimada_minutos / 60)} h {reservation.duracion_estimada_minutos % 60} min por tramo</span>}
                     <span>Vehículo: {reservation.vehiculo_placa || "pendiente"}</span>
                     {reservation.tipo_vehiculo && <span>Preferencia: {reservation.tipo_vehiculo}</span>}
                     <span>Conductor: {reservation.conductor_id ? "asignado" : "pendiente"}</span>
@@ -656,6 +667,15 @@ export default function OperacionesPage() {
                       <p className="my-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">hasta</p>
                       <p className="break-words text-sm font-semibold leading-relaxed text-slate-900">{operation.destino || "Destino pendiente"}</p>
                     </div>
+                    {operation.eta_actualizada && (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">Retraso reportado por el conductor</p>
+                        <p className="mt-1 text-sm font-bold text-amber-950">
+                          Nueva llegada estimada: {new Date(operation.eta_actualizada).toLocaleString("es-EC", { dateStyle: "medium", timeStyle: "short" })}
+                        </p>
+                        {operation.incidencia_detalle && <p className="mt-1 text-xs text-amber-900">{operation.incidencia_detalle}</p>}
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-xl border border-slate-100 p-3">
                         <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Fecha y hora</p>

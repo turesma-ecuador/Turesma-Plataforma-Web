@@ -2,6 +2,7 @@ export {};
 
 const pool = require("../../config/db");
 const { notificarClienteReserva, notificarClienteOperacion } = require("../../config/reservaMailer");
+const { scheduleConflictWithBuffer } = require("../../config/schedule");
 
 const ACTIVE_STATES = ["programada", "asignada", "en_curso", "incidencia"];
 const VALID_STATES = ["programada", "asignada", "en_curso", "completada", "cancelada", "incidencia"];
@@ -30,6 +31,20 @@ const textOrNull = (value: unknown, maxLength: number) => {
   return text && text.length <= maxLength ? text : null;
 };
 
+const dateOnly = (value: unknown) => {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const date = String(value || "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+};
+
+const endOfEstimatedTrip = (date: string, time: string, durationMinutes: number | null) => {
+  if (!durationMinutes || durationMinutes <= 0) return { date, time: null };
+  const start = new Date(`${date}T${time}:00Z`);
+  if (!Number.isFinite(start.getTime())) return { date, time: null };
+  start.setUTCMinutes(start.getUTCMinutes() + durationMinutes);
+  return { date: start.toISOString().slice(0, 10), time: start.toISOString().slice(11, 16) };
+};
+
 const hasInvalidText = (value: unknown, maxLength: number) =>
   value !== null && value !== undefined && value !== ""
   && (typeof value !== "string" || value.trim().length > maxLength);
@@ -42,37 +57,56 @@ const recordHistory = async (client: any, operationId: number, userId: number | 
   );
 };
 
-const findScheduleConflict = async (client: any, operationId: number, date: string, endDate: string, start: string | null, end: string | null, vehicleId: number | null, driverId: number | null, driverUserId: number | null) => {
+const findScheduleConflict = async (client: any, operationId: number, date: string, endDate: string, start: string | null, end: string | null, vehicleId: number | null, driverId: number | null, driverUserId: number | null, candidateCoordinates: Record<string, unknown> = {}) => {
   if (!vehicleId && !driverId) return null;
 
   const result = await client.query(
-    `SELECT o.id, o.vehiculo_id, o.conductor_id, v.placa, u.nombre AS conductor_nombre
+    `SELECT o.id, o.vehiculo_id, o.conductor_id, v.placa, u.nombre AS conductor_nombre,
+            o.fecha_programada::text AS fecha_inicio,
+            COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada)::text AS fecha_fin,
+            to_char(o.hora_inicio, 'HH24:MI') AS hora_inicio,
+            COALESCE(to_char(o.eta_actualizada, 'HH24:MI'), to_char(o.hora_fin, 'HH24:MI')) AS hora_fin,
+            o.origen_lat, o.origen_lng, o.destino_lat, o.destino_lng
      FROM operaciones o
      LEFT JOIN vehiculos v ON v.id = o.vehiculo_id
      LEFT JOIN conductores c ON c.id = o.conductor_id
      LEFT JOIN usuarios u ON u.id = c.usuario_id
      WHERE o.id <> $1
-       AND o.fecha_programada <= $3::date
-       AND COALESCE(o.fecha_fin_programada, o.fecha_programada) >= $2::date
        AND o.estado = ANY($6::text[])
        AND (o.vehiculo_id = $7 OR o.conductor_id = $8)
-       AND (
-         $2::date <> $3::date
-         OR COALESCE(o.fecha_fin_programada, o.fecha_programada) <> o.fecha_programada
-         OR $4::time IS NULL OR o.hora_inicio IS NULL OR $5::time IS NULL OR o.hora_fin IS NULL
-         OR (o.hora_inicio < $5::time AND $4::time < o.hora_fin)
-       )
-     LIMIT 1`,
+       AND o.fecha_programada <= $3::date
+       AND COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada) >= $2::date`,
     [operationId, date, endDate, start, end, ACTIVE_STATES, vehicleId, driverId]
   );
 
-  if (result.rows[0]) return result.rows[0];
+  const candidateSlot = {
+    startDate: date,
+    startTime: start,
+    endDate,
+    endTime: end,
+    originLat: candidateCoordinates.origen_lat,
+    originLng: candidateCoordinates.origen_lng,
+    destinationLat: candidateCoordinates.destino_lat,
+    destinationLng: candidateCoordinates.destino_lng,
+  };
+  const operationConflict = result.rows.find((row: any) => scheduleConflictWithBuffer(candidateSlot, {
+    startDate: row.fecha_inicio,
+    startTime: row.hora_inicio,
+    endDate: row.fecha_fin,
+    endTime: row.hora_fin,
+    originLat: row.origen_lat,
+    originLng: row.origen_lng,
+    destinationLat: row.destino_lat,
+    destinationLng: row.destino_lng,
+  }));
+  if (operationConflict) return operationConflict;
 
   const reservationConflict = await client.query(
     `SELECT r.id AS reserva_id, r.vehiculo_id, v.placa
      FROM reservas r
      LEFT JOIN vehiculos v ON v.id = r.vehiculo_id
      WHERE r.id <> COALESCE((SELECT reserva_id FROM operaciones WHERE id = $1), -1)
+       AND NOT (r.fecha_regreso IS NOT NULL AND r.fecha_fin IS NULL)
        AND (
          COALESCE(r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date) <= $3::date
          AND COALESCE(r.fecha_fin, r.fecha_regreso, r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date) >= $2::date
@@ -105,7 +139,96 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
     [operationId, date, endDate, start, end, ACTIVE_STATES, vehicleId, driverUserId, driverId]
   );
 
-  return reservationConflict.rows[0] || null;
+  if (reservationConflict.rows[0]) return reservationConflict.rows[0];
+
+  const unpreparedReservations = await client.query(
+    `SELECT r.id AS reserva_id, r.vehiculo_id, v.placa,
+            COALESCE(r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date)::text AS fecha_inicio,
+            COALESCE(NULLIF(r.hora_salida, ''), to_char(r.fecha_salida, 'HH24:MI')) AS hora_salida,
+            r.fecha_fin::date::text AS fecha_fin,
+            to_char(r.fecha_llegada, 'HH24:MI') AS hora_llegada,
+            r.fecha_regreso::date::text AS fecha_regreso,
+            r.hora_regreso, r.duracion_estimada_minutos,
+            r.origen_lat, r.origen_lng, r.destino_lat, r.destino_lng
+     FROM reservas r
+     LEFT JOIN vehiculos v ON v.id = r.vehiculo_id
+     WHERE r.id <> COALESCE((SELECT reserva_id FROM operaciones WHERE id = $1), -1)
+       AND r.estado NOT IN ('cancelada', 'finalizada')
+       AND (r.vehiculo_id = $7 OR r.conductor_id = CASE
+         WHEN EXISTS (
+           SELECT 1
+           FROM information_schema.table_constraints tc
+           INNER JOIN information_schema.key_column_usage kcu
+             ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+           INNER JOIN information_schema.constraint_column_usage ccu
+             ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+           WHERE tc.table_schema = 'public' AND tc.table_name = 'reservas'
+             AND tc.constraint_type = 'FOREIGN KEY' AND kcu.column_name = 'conductor_id'
+             AND ccu.table_name = 'conductores'
+         ) THEN $9 ELSE $8
+       END)
+       AND NOT EXISTS (
+         SELECT 1 FROM operaciones o
+         WHERE o.reserva_id = r.id AND o.estado <> 'cancelada'
+       )
+       AND (
+         (r.fecha_regreso IS NOT NULL AND r.fecha_fin IS NULL)
+         OR (
+           COALESCE(r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date) <= $3::date
+           AND COALESCE(r.fecha_fin, r.fecha_llegada::date, r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date) >= $2::date
+         )
+       )`,
+    [operationId, date, endDate, start, end, ACTIVE_STATES, vehicleId, driverUserId, driverId]
+  );
+
+  for (const row of unpreparedReservations.rows) {
+    const reservationStartDate = dateOnly(row.fecha_inicio);
+    const reservationStartTime = timeOrNull(row.hora_salida) || "00:00";
+    const reservationDuration = Number(row.duracion_estimada_minutos) > 0
+      ? Number(row.duracion_estimada_minutos)
+      : null;
+    const outboundEnd = reservationDuration
+      ? endOfEstimatedTrip(reservationStartDate, reservationStartTime, reservationDuration)
+      : { date: dateOnly(row.fecha_fin) || reservationStartDate, time: timeOrNull(row.hora_llegada) };
+    const reservationSlots = row.fecha_regreso && !row.fecha_fin
+      ? [
+        {
+          startDate: reservationStartDate,
+          startTime: reservationStartTime,
+          endDate: outboundEnd.date,
+          endTime: outboundEnd.time,
+          originLat: row.origen_lat,
+          originLng: row.origen_lng,
+          destinationLat: row.destino_lat,
+          destinationLng: row.destino_lng,
+        },
+        {
+          startDate: dateOnly(row.fecha_regreso),
+          startTime: timeOrNull(row.hora_regreso) || "00:00",
+          ...endOfEstimatedTrip(dateOnly(row.fecha_regreso), timeOrNull(row.hora_regreso) || "00:00", reservationDuration),
+          originLat: row.destino_lat,
+          originLng: row.destino_lng,
+          destinationLat: row.origen_lat,
+          destinationLng: row.origen_lng,
+        },
+      ]
+      : [{
+        startDate: reservationStartDate,
+        startTime: reservationStartTime,
+        endDate: row.fecha_fin ? dateOnly(row.fecha_fin) : outboundEnd.date,
+        endTime: row.fecha_fin ? null : outboundEnd.time,
+        originLat: row.origen_lat,
+        originLng: row.origen_lng,
+        destinationLat: row.destino_lat,
+        destinationLng: row.destino_lng,
+      }];
+
+    if (reservationSlots.some((slot: any) => scheduleConflictWithBuffer(candidateSlot, slot))) {
+      return row;
+    }
+  }
+
+  return null;
 };
 
 const getOperation = async (client: any, id: number) => {
@@ -167,6 +290,7 @@ const listarReservasPorDespachar = async (_req: any, res: any) => {
   try {
     const result = await pool.query(
       `SELECT r.id, r.fecha_reserva, r.fecha_servicio, r.fecha_salida, r.fecha_llegada,
+              r.fecha_fin, r.fecha_regreso, r.hora_regreso, r.hora_salida, r.duracion_estimada_minutos,
               r.origen, r.destino, r.num_personas, r.total, r.vehiculo_id, r.tipo_vehiculo, r.conductor_id,
               r.estado_operativo,
               u.nombre AS cliente_nombre, v.placa AS vehiculo_placa,
@@ -209,7 +333,12 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
   try {
     await client.query("BEGIN");
     const reservation = await client.query(
-      `SELECT id, fecha_reserva, fecha_servicio, fecha_salida, fecha_llegada, fecha_fin, fecha_regreso,
+      `SELECT id, fecha_reserva, fecha_servicio, fecha_salida, fecha_llegada, fecha_fin,
+              fecha_regreso::date::text AS fecha_regreso, hora_regreso,
+              COALESCE(fecha_salida::date, fecha_servicio::date, fecha_reserva)::text AS fecha_inicio,
+              COALESCE(NULLIF(hora_salida, ''), to_char(fecha_salida, 'HH24:MI')) AS hora_salida_programada,
+              to_char(fecha_llegada, 'HH24:MI') AS hora_llegada_real,
+              duracion_estimada_minutos, origen_lat, origen_lng, destino_lat, destino_lng,
               origen, destino, num_personas, estado, estado_operativo, vehiculo_id, conductor_id
        FROM reservas WHERE id = $1 FOR UPDATE`,
       [reservationId]
@@ -248,39 +377,91 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
     const vehicleId = current.vehiculo_id || null;
     const driverId = assignedDriver?.rows[0]?.id || null;
     const initialState = vehicleId && driverId ? "asignada" : "programada";
-    const created = await client.query(
-      `INSERT INTO operaciones
-       (reserva_id, tipo_servicio, fecha_programada, fecha_fin_programada, hora_inicio, hora_fin, origen, destino, pasajeros,
-        vehiculo_id, conductor_id, estado, creado_por)
-       VALUES (
-         $1, 'reserva',
-         COALESCE($2::timestamp::date, $3::timestamp::date, $4::date),
-         COALESCE($6::date, $7::date, COALESCE($2::timestamp::date, $3::timestamp::date, $4::date)),
-         $2::timestamp::time,
-         CASE WHEN $5::timestamp::date = COALESCE($2::timestamp::date, $3::timestamp::date, $4::date)
-              THEN $5::timestamp::time ELSE NULL END,
-         $8, $9, $10, $11, $12, $13, $14
-       )
-       RETURNING id`,
-      [
-        reservationId,
-        current.fecha_salida,
-        current.fecha_servicio,
-        current.fecha_reserva,
-        current.fecha_llegada,
-        current.fecha_fin,
-        current.fecha_regreso,
-        String(current.origen || "Origen pendiente").trim(),
-        String(current.destino || "Destino pendiente").trim(),
-        Number(current.num_personas) || 1,
-        vehicleId,
-        driverId,
-        initialState,
-        req.user?.id || null,
+    const startDate = dateOnly(current.fecha_inicio) || dateOnly(current.fecha_servicio) || dateOnly(current.fecha_reserva);
+    const startTime = timeOrNull(current.hora_salida_programada);
+    const returnDate = dateOnly(current.fecha_regreso);
+    const returnTime = timeOrNull(current.hora_regreso);
+    if (!startDate || (current.fecha_regreso && (!returnDate || !returnTime || returnDate <= startDate))) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ success: false, error: "La reserva tiene un horario de salida o regreso inválido" });
+    }
+    const durationMinutes = Number.isInteger(Number(current.duracion_estimada_minutos))
+      && Number(current.duracion_estimada_minutos) > 0
+      ? Number(current.duracion_estimada_minutos)
+      : null;
+    const outboundEnd = durationMinutes && startTime
+      ? endOfEstimatedTrip(startDate, startTime, durationMinutes)
+      : { date: dateOnly(current.fecha_llegada) || startDate, time: current.hora_llegada_real };
+    const isLaterReturn = Boolean(returnDate);
+    const legs = isLaterReturn
+      ? [
+        {
+          type: "reserva_ida",
+          date: startDate,
+          time: startTime,
+          end: outboundEnd,
+          origin: current.origen,
+          destination: current.destino,
+          originLat: current.origen_lat,
+          originLng: current.origen_lng,
+          destinationLat: current.destino_lat,
+          destinationLng: current.destino_lng,
+        },
+        {
+          type: "reserva_regreso",
+          date: returnDate,
+          time: returnTime,
+          end: durationMinutes && returnTime
+            ? endOfEstimatedTrip(returnDate, returnTime, durationMinutes)
+            : { date: returnDate, time: null },
+          origin: current.destino,
+          destination: current.origen,
+          originLat: current.destino_lat,
+          originLng: current.destino_lng,
+          destinationLat: current.origen_lat,
+          destinationLng: current.origen_lng,
+        },
       ]
-    );
+      : [{
+        type: "reserva",
+        date: startDate,
+        time: startTime,
+        end: current.fecha_fin
+          ? { date: dateOnly(current.fecha_fin), time: null }
+          : outboundEnd,
+        origin: current.origen,
+        destination: current.destino,
+        originLat: current.origen_lat,
+        originLng: current.origen_lng,
+        destinationLat: current.destino_lat,
+        destinationLng: current.destino_lng,
+      }];
 
-    const operationId = Number(created.rows[0].id);
+    const createdOperations = [];
+    for (const leg of legs) {
+      if (!leg.date || !leg.end.date) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ success: false, error: "La reserva no tiene fechas válidas para preparar sus tramos" });
+      }
+      const created = await client.query(
+        `INSERT INTO operaciones
+         (reserva_id, tipo_servicio, fecha_programada, fecha_fin_programada, hora_inicio, hora_fin,
+          origen, destino, pasajeros, vehiculo_id, conductor_id, estado, creado_por,
+          duracion_estimada_minutos, origen_lat, origen_lng, destino_lat, destino_lng)
+         VALUES ($1, $2, $3::date, $4::date, $5::time, $6::time, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+         RETURNING id`,
+        [
+          reservationId, leg.type, leg.date, leg.end.date, leg.time, leg.end.time,
+          String(leg.origin || "Origen pendiente").trim(),
+          String(leg.destination || "Destino pendiente").trim(),
+          Number(current.num_personas) || 1, vehicleId, driverId, initialState, req.user?.id || null,
+          durationMinutes, leg.originLat || null, leg.originLng || null, leg.destinationLat || null, leg.destinationLng || null,
+        ]
+      );
+      createdOperations.push(Number(created.rows[0].id));
+    }
+
+    const operationId = createdOperations[0];
     if (current.conductor_id && !driverId) {
       await client.query("UPDATE reservas SET conductor_id = NULL WHERE id = $1", [reservationId]);
     }
@@ -288,10 +469,15 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
       "UPDATE reservas SET estado_operativo = $1 WHERE id = $2",
       [initialState, reservationId]
     );
-    await recordHistory(client, operationId, req.user?.id || null, "creacion_desde_reserva", null, initialState, { reserva_id: reservationId });
+    for (const createdId of createdOperations) {
+      await recordHistory(client, createdId, req.user?.id || null, "creacion_desde_reserva", null, initialState, {
+        reserva_id: reservationId,
+        tramo: legs.find((_, index) => createdOperations[index] === createdId)?.type,
+      });
+    }
     const operation = await getOperation(client, operationId);
     await client.query("COMMIT");
-    return res.status(201).json({ success: true, data: operation });
+    return res.status(201).json({ success: true, data: operation, operation_ids: createdOperations });
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("Error creando despacho desde reserva:", error);
@@ -357,6 +543,15 @@ const asignarOperacion = async (req: any, res: any) => {
       await client.query("ROLLBACK");
       return res.status(status).json(body);
     };
+    const operationLink = await client.query("SELECT reserva_id FROM operaciones WHERE id = $1", [operationId]);
+    if (!operationLink.rowCount) return reject(404, { success: false, error: "Operación no encontrada" });
+    if (operationLink.rows[0].reserva_id) {
+      const reservationLock = await client.query(
+        "SELECT id FROM reservas WHERE id = $1 FOR UPDATE",
+        [operationLink.rows[0].reserva_id]
+      );
+      if (!reservationLock.rowCount) return reject(409, { success: false, error: "La reserva vinculada ya no existe" });
+    }
     const operation = await client.query("SELECT * FROM operaciones WHERE id = $1 FOR UPDATE", [operationId]);
     if (!operation.rowCount) return reject(404, { success: false, error: "Operación no encontrada" });
     const current = operation.rows[0];
@@ -523,31 +718,130 @@ const asignarOperacion = async (req: any, res: any) => {
       });
     }
 
-    const conflict = await findScheduleConflict(
-      client,
-      operationId,
-      current.fecha_programada,
-      endDate,
-      current.hora_inicio,
-      current.hora_fin,
-      vehicleId,
-      driverId,
-      driverUserId
+    const linkedLegs = current.reserva_id && ["reserva_ida", "reserva_regreso"].includes(current.tipo_servicio)
+      ? await client.query(
+        `SELECT id, tipo_servicio, estado, fecha_programada::text AS fecha_programada,
+                COALESCE(fecha_fin_programada, fecha_programada)::text AS fecha_fin_programada,
+                hora_inicio::text AS hora_inicio, hora_fin::text AS hora_fin,
+                vehiculo_id, conductor_id, origen_lat, origen_lng, destino_lat, destino_lng
+         FROM operaciones
+         WHERE reserva_id = $1 AND tipo_servicio IN ('reserva_ida', 'reserva_regreso')
+           AND estado <> 'cancelada'
+         ORDER BY fecha_programada, id
+         FOR UPDATE`,
+        [current.reserva_id]
+      )
+      : { rows: [] };
+    const conflictingAssignment = linkedLegs.rows.find((leg: any) =>
+      (leg.vehiculo_id && Number(leg.vehiculo_id) !== vehicleId)
+      || (leg.conductor_id && Number(leg.conductor_id) !== driverId)
     );
-    if (conflict) {
-      const isVehicleConflict = Number(conflict.vehiculo_id) === vehicleId;
-      const resource = isVehicleConflict
-        ? `vehículo ${conflict.placa || vehicleId}`
-        : "conductor seleccionado";
-      const occupation = conflict.reserva_id
-        ? `ocupado en otra reserva #${conflict.reserva_id}`
-        : "ocupado en otro servicio";
-      return reject(409, { success: false, error: `No Disponible: el ${resource} está ${occupation}.`, conflicto: conflict });
+    if (conflictingAssignment) {
+      return reject(409, { success: false, error: "La ida y el regreso de una reserva deben conservar el mismo vehículo y conductor" });
+    }
+
+    const legsToCheck = linkedLegs.rows.length
+      ? linkedLegs.rows
+      : [{
+        id: operationId,
+        fecha_programada: current.fecha_programada,
+        fecha_fin_programada: endDate,
+        hora_inicio: current.hora_inicio,
+        hora_fin: current.hora_fin,
+      }];
+    for (const leg of legsToCheck) {
+      const legDate = dateOnly(leg.fecha_programada) || current.fecha_programada;
+      const legEndDate = dateOnly(leg.fecha_fin_programada) || legDate;
+      const legStart = timeOrNull(leg.hora_inicio);
+      const legEnd = timeOrNull(leg.hora_fin);
+      const conflict = await findScheduleConflict(
+        client,
+        Number(leg.id),
+        legDate,
+        legEndDate,
+        legStart,
+        legEnd,
+        vehicleId,
+        driverId,
+        driverUserId,
+        leg
+      );
+      if (conflict) {
+        const isVehicleConflict = Number(conflict.vehiculo_id) === vehicleId;
+        const resource = isVehicleConflict
+          ? `vehículo ${conflict.placa || vehicleId}`
+          : "conductor seleccionado";
+        const occupation = conflict.reserva_id
+          ? `ocupado en otra reserva #${conflict.reserva_id}`
+          : "ocupado en otro servicio";
+        return reject(409, { success: false, error: `No Disponible: el ${resource} está ${occupation}.`, conflicto: conflict });
+      }
+      if (Number(leg.id) === operationId) continue;
+
+      const legUnavailableDate = await client.query(
+        `SELECT dia.fecha::date::text AS fecha,
+                CASE WHEN vd.disponible = false THEN 'bloqueo manual' ELSE 'día no laborable' END AS motivo
+         FROM vehiculos v
+         CROSS JOIN LATERAL generate_series($2::date, $3::date, INTERVAL '1 day') AS dia(fecha)
+         LEFT JOIN vehiculo_disponibilidad vd ON vd.vehiculo_id = v.id AND vd.fecha = dia.fecha
+         WHERE v.id = $1 AND (
+           vd.disponible = false
+           OR (vd.disponible IS DISTINCT FROM true
+               AND NOT (EXTRACT(DOW FROM dia.fecha)::int = ANY(COALESCE(v.dias_servicio, ARRAY[0,1,2,3,4,5,6]))))
+         )
+         ORDER BY dia.fecha LIMIT 1`,
+        [vehicleId, legDate, legEndDate]
+      );
+      if (legUnavailableDate.rowCount) {
+        return reject(409, { success: false, error: `El vehículo no está disponible el ${legUnavailableDate.rows[0].fecha}`, disponibilidad: legUnavailableDate.rows[0] });
+      }
+
+      const legMaintenance = await client.query(
+        `SELECT id, tipo, fecha_programada::text AS fecha_programada, estado
+         FROM mantenimiento_vehiculos
+         WHERE vehiculo_id = $1
+           AND (estado = 'en_progreso' OR (estado = 'programado' AND fecha_programada BETWEEN $2::date AND $3::date))
+         ORDER BY fecha_programada ASC, id ASC LIMIT 1`,
+        [vehicleId, legDate, legEndDate]
+      );
+      if (legMaintenance.rowCount) {
+        return reject(409, { success: false, error: `El vehículo tiene mantenimiento previsto para el ${legMaintenance.rows[0].fecha_programada}`, mantenimiento: legMaintenance.rows[0] });
+      }
+
+      const externalLegBlock = await client.query(
+        `SELECT id, fecha_inicio::text, fecha_fin::text, hora_inicio::text, hora_fin::text, motivo
+         FROM disponibilidad_externa
+         WHERE vehiculo_id = $1 AND estado = 'activo'
+           AND fecha_inicio <= $3::date AND fecha_fin >= $2::date
+           AND ($2::date <> $3::date OR hora_inicio IS NULL OR $4::time IS NULL
+             OR hora_fin IS NULL OR $5::time IS NULL OR (hora_inicio < $5::time AND $4::time < hora_fin))
+         ORDER BY fecha_inicio, hora_inicio NULLS LAST, id LIMIT 1`,
+        [vehicleId, legDate, legEndDate, legStart, legEnd]
+      );
+      if (externalLegBlock.rowCount) {
+        return reject(409, { success: false, error: "El vehículo está ocupado externamente en el horario del regreso", conflicto: externalLegBlock.rows[0] });
+      }
+
+      const externalDriverLegBlock = await client.query(
+        `SELECT id, fecha_inicio::text, fecha_fin::text, hora_inicio::text, hora_fin::text, motivo
+         FROM disponibilidad_externa
+         WHERE conductor_usuario_id = $1 AND estado = 'activo' AND motivo <> 'fuera_de_servicio'
+           AND fecha_inicio <= $3::date AND fecha_fin >= $2::date
+           AND ($2::date <> $3::date OR hora_inicio IS NULL OR $4::time IS NULL
+             OR hora_fin IS NULL OR $5::time IS NULL OR (hora_inicio < $5::time AND $4::time < hora_fin))
+         ORDER BY fecha_inicio, hora_inicio NULLS LAST, id LIMIT 1`,
+        [driverUserId, legDate, legEndDate, legStart, legEnd]
+      );
+      if (externalDriverLegBlock.rowCount) {
+        return reject(409, { success: false, error: "El conductor está ocupado externamente en el horario del regreso", conflicto: externalDriverLegBlock.rows[0] });
+      }
     }
 
     await client.query(
-      `UPDATE operaciones SET vehiculo_id = $1, conductor_id = $2, estado = 'asignada', actualizado_en = CURRENT_TIMESTAMP WHERE id = $3`,
-      [vehicleId, driverId, operationId]
+      `UPDATE operaciones
+       SET vehiculo_id = $1, conductor_id = $2, estado = 'asignada', actualizado_en = CURRENT_TIMESTAMP
+       WHERE id = ANY($3::int[])`,
+      [vehicleId, driverId, linkedLegs.rows.length ? linkedLegs.rows.map((leg: any) => Number(leg.id)) : [operationId]]
     );
     if (current.reserva_id) {
       const reservation = await client.query(
@@ -643,6 +937,14 @@ const asignarOperacion = async (req: any, res: any) => {
       }
     }
     await recordHistory(client, operationId, req.user?.id || null, "asignacion", current.estado, "asignada", { vehiculo_id: vehicleId, conductor_id: driverId });
+    for (const leg of linkedLegs.rows) {
+      if (Number(leg.id) !== operationId) {
+        await recordHistory(client, Number(leg.id), req.user?.id || null, "asignacion_tramo_reserva", leg.estado || "programada", "asignada", {
+          vehiculo_id: vehicleId,
+          conductor_id: driverId,
+        });
+      }
+    }
     const updated = await getOperation(client, operationId);
     await client.query("COMMIT");
     if (current.reserva_id && !current.requerimiento_id && assignmentChanged) {
@@ -881,12 +1183,24 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const operationLink = await client.query("SELECT reserva_id FROM operaciones WHERE id = $1", [operationId]);
+    if (!operationLink.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ success: false, error: "Operación no encontrada" });
+    }
+    if (operationLink.rows[0].reserva_id) {
+      await client.query("SELECT id FROM reservas WHERE id = $1 FOR UPDATE", [operationLink.rows[0].reserva_id]);
+    }
     const current = await client.query("SELECT * FROM operaciones WHERE id = $1 FOR UPDATE", [operationId]);
     if (!current.rowCount) {
       await client.query("ROLLBACK");
       return res.status(404).json({ success: false, error: "Operación no encontrada" });
     }
     const operation = current.rows[0];
+    if (operation.estado === "completada" && nextState === "cancelada") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ success: false, error: "Una operación completada no se puede cancelar" });
+    }
     if (operation.reserva_id && !operation.requerimiento_id && ["en_curso", "completada"].includes(nextState)) {
       await client.query("ROLLBACK");
       return res.status(403).json({ success: false, error: "El conductor actualiza el inicio y la finalización desde su portal" });
@@ -902,7 +1216,28 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
       return res.status(409).json({ success: false, error: "No se puede iniciar una operación sin vehículo y conductor" });
     }
     const now = nextState === "en_curso" ? "hora_inicio_real = CURRENT_TIMESTAMP," : nextState === "completada" ? "hora_fin_real = CURRENT_TIMESTAMP," : "";
-    await client.query(`UPDATE operaciones SET estado = $1, ${now} actualizado_en = CURRENT_TIMESTAMP WHERE id = $2`, [nextState, operationId]);
+    const linkedCancellation = nextState === "cancelada"
+      && operation.reserva_id && !operation.requerimiento_id
+      && ["reserva_ida", "reserva_regreso"].includes(operation.tipo_servicio)
+      ? await client.query(
+        `SELECT id, estado FROM operaciones
+         WHERE reserva_id = $1 AND tipo_servicio IN ('reserva_ida', 'reserva_regreso')
+           AND estado = ANY($2::text[])
+         ORDER BY fecha_programada, id FOR UPDATE`,
+        [operation.reserva_id, ACTIVE_STATES]
+      )
+      : { rows: [] };
+    const affectedOperations = linkedCancellation.rows.length
+      ? linkedCancellation.rows
+      : [{ id: operationId, estado: operation.estado }];
+    if (affectedOperations.length > 1) {
+      await client.query(
+        `UPDATE operaciones SET estado = $1, actualizado_en = CURRENT_TIMESTAMP WHERE id = ANY($2::int[])`,
+        [nextState, affectedOperations.map((item: any) => Number(item.id))]
+      );
+    } else {
+      await client.query(`UPDATE operaciones SET estado = $1, ${now} actualizado_en = CURRENT_TIMESTAMP WHERE id = $2`, [nextState, operationId]);
+    }
     if (operation.requerimiento_id && nextState === "completada") {
       const progress = await client.query(
         `SELECT COUNT(*)::int AS total,
@@ -926,7 +1261,16 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
         [operation.reserva_id]
       );
     }
-    await recordHistory(client, operationId, req.user?.id || null, "cambio_estado", operation.estado, nextState);
+    for (const affected of affectedOperations) {
+      await recordHistory(
+        client,
+        Number(affected.id),
+        req.user?.id || null,
+        "cambio_estado",
+        affected.estado,
+        nextState
+      );
+    }
     const updated = await getOperation(client, operationId);
     await client.query("COMMIT");
     return res.json({ success: true, data: updated });
@@ -948,6 +1292,14 @@ const reabrirOperacion = async (req: any, res: any) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const operationLink = await client.query("SELECT reserva_id FROM operaciones WHERE id = $1", [operationId]);
+    if (!operationLink.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ success: false, error: "Operación no encontrada" });
+    }
+    if (operationLink.rows[0].reserva_id) {
+      await client.query("SELECT id FROM reservas WHERE id = $1 FOR UPDATE", [operationLink.rows[0].reserva_id]);
+    }
     const current = await client.query("SELECT * FROM operaciones WHERE id = $1 FOR UPDATE", [operationId]);
     if (!current.rowCount) {
       await client.query("ROLLBACK");
@@ -959,6 +1311,7 @@ const reabrirOperacion = async (req: any, res: any) => {
       return res.status(409).json({ success: false, error: "Solo se pueden reabrir operaciones canceladas" });
     }
 
+    let reopenOperations = [{ id: operationId, estado: operation.estado }];
     if (operation.reserva_id && !operation.requerimiento_id) {
       const reservation = await client.query(
         "SELECT id, estado FROM reservas WHERE id = $1 FOR UPDATE",
@@ -972,15 +1325,27 @@ const reabrirOperacion = async (req: any, res: any) => {
         "UPDATE reservas SET vehiculo_id = NULL, conductor_id = NULL, estado_operativo = NULL WHERE id = $1",
         [operation.reserva_id]
       );
+      if (["reserva_ida", "reserva_regreso"].includes(operation.tipo_servicio)) {
+        const linkedOperations = await client.query(
+          `SELECT id, estado FROM operaciones
+           WHERE reserva_id = $1 AND tipo_servicio IN ('reserva_ida', 'reserva_regreso')
+             AND estado = 'cancelada'
+           ORDER BY fecha_programada, id FOR UPDATE`,
+          [operation.reserva_id]
+        );
+        if (linkedOperations.rowCount) reopenOperations = linkedOperations.rows;
+      }
     }
 
     await client.query(
       `UPDATE operaciones
        SET estado = 'programada', vehiculo_id = NULL, conductor_id = NULL, actualizado_en = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      [operationId]
+       WHERE id = ANY($1::int[])`,
+      [reopenOperations.map((item) => Number(item.id))]
     );
-    await recordHistory(client, operationId, req.user?.id || null, "reapertura_despacho", "cancelada", "programada");
+    for (const reopened of reopenOperations) {
+      await recordHistory(client, Number(reopened.id), req.user?.id || null, "reapertura_despacho", reopened.estado, "programada");
+    }
     const updated = await getOperation(client, operationId);
     await client.query("COMMIT");
     return res.json({ success: true, data: updated });

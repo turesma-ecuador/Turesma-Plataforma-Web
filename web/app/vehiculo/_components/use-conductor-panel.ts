@@ -33,6 +33,8 @@ export type ReservaConductor = {
   ida_finalizada?: boolean;
   fecha_salida?: string | null;
   fecha_llegada?: string | null;
+  eta_actualizada?: string | null;
+  incidencia_detalle?: string | null;
   origen?: string | null;
   destino?: string | null;
   estado: string;

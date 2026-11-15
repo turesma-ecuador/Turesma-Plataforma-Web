@@ -13,7 +13,10 @@ const state = {
       fecha_servicio: "2026-10-21T09:00:00.000Z",
       fecha_salida: "2026-10-21T09:00:00.000Z",
       fecha_llegada: "2026-10-21T11:00:00.000Z",
+      hora_salida: "09:00",
       fecha_regreso: "2026-10-23",
+      hora_regreso: "09:00",
+      duracion_estimada_minutos: 120,
       origen: "Quito",
       destino: "Otavalo",
       num_personas: 8,
@@ -30,6 +33,7 @@ const state = {
       fecha_servicio: "2026-10-22T09:00:00.000Z",
       fecha_salida: "2026-10-22T09:00:00.000Z",
       fecha_llegada: "2026-10-22T11:00:00.000Z",
+      hora_salida: "09:00",
       origen: "Quito",
       destino: "Cotacachi",
       num_personas: 5,
@@ -46,6 +50,7 @@ const state = {
       fecha_servicio: "2026-10-21T09:00:00.000Z",
       fecha_salida: "2026-10-21T09:00:00.000Z",
       fecha_llegada: "2026-10-21T11:00:00.000Z",
+      hora_salida: "09:00",
       origen: "Quito",
       destino: "Latacunga",
       num_personas: 4,
@@ -55,6 +60,26 @@ const state = {
       conductor_id: 301,
       usuario_id: 903,
       cliente_nombre: "Reserva que ocupa recursos",
+    },
+    {
+      id: 804,
+      fecha_reserva: "2026-10-19",
+      fecha_servicio: "2026-10-25T09:00:00.000Z",
+      fecha_salida: "2026-10-25T09:00:00.000Z",
+      fecha_llegada: "2026-10-25T11:00:00.000Z",
+      fecha_regreso: "2026-10-27",
+      hora_salida: "09:00",
+      hora_regreso: "09:00",
+      duracion_estimada_minutos: 120,
+      origen: "Quito",
+      destino: "Ambato",
+      num_personas: 4,
+      total: 120,
+      estado: "confirmada",
+      vehiculo_id: null,
+      conductor_id: null,
+      usuario_id: 904,
+      cliente_nombre: "Reserva ida y regreso",
     },
   ],
   vehicles: [
@@ -107,12 +132,31 @@ const pool = {
   async query(sql, params = []) {
     const query = sql.replace(/\s+/g, " ").trim().toLowerCase();
     if (query.startsWith("select session_version from usuarios")) return result([{ session_version: 0 }]);
-    if (query.startsWith("select coalesce(o.fecha_fin_programada")) {
+    if (query.startsWith("select o.id, o.reserva_id, o.tipo_servicio")) {
       const operation = operationFor(params[0]);
-      const reservation = operation?.reserva_id ? reservationFor(operation.reserva_id) : null;
       return result(operation ? [{
-        fecha_fin: operation.fecha_fin_programada || reservation?.fecha_fin || reservation?.fecha_regreso || operation.fecha_programada,
+        id: operation.id,
+        reserva_id: operation.reserva_id,
+        tipo_servicio: operation.tipo_servicio,
+        fecha_inicio: operation.fecha_programada,
+        fecha_fin: operation.fecha_fin_programada || operation.fecha_programada,
+        hora_inicio: operation.hora_inicio,
+        hora_fin: operation.hora_fin,
       }] : []);
+    }
+    if (query.startsWith("select id, fecha_programada::date::text as fecha_inicio")) {
+      return result(state.operations
+        .filter((operation) => operation.reserva_id === Number(params[0])
+          && ["reserva_ida", "reserva_regreso"].includes(operation.tipo_servicio)
+          && operation.estado !== "cancelada")
+        .sort((a, b) => a.fecha_programada.localeCompare(b.fecha_programada))
+        .map((operation) => ({
+          id: operation.id,
+          fecha_inicio: operation.fecha_programada,
+          fecha_fin: operation.fecha_fin_programada || operation.fecha_programada,
+          hora_inicio: operation.hora_inicio,
+          hora_fin: operation.hora_fin,
+        })));
     }
     if (query.startsWith("with vehiculos_evaluados as")) {
       const [startValue, endValue, passengers, operationId, startTime, endTime] = params;
@@ -362,25 +406,28 @@ const pool = {
         }
         if (query.startsWith("select id, fecha_reserva, fecha_servicio")) {
           const reservation = reservationFor(params[0]);
-          return result(reservation ? [{ ...reservation }] : []);
+          return result(reservation ? [{
+            ...reservation,
+            fecha_inicio: asDate(reservation.fecha_salida || reservation.fecha_servicio || reservation.fecha_reserva),
+            hora_salida_programada: reservation.hora_salida || (reservation.fecha_salida ? asTime(reservation.fecha_salida).slice(0, 5) : null),
+            hora_llegada_real: reservation.fecha_llegada ? asTime(reservation.fecha_llegada).slice(0, 5) : null,
+            origen_lat: null,
+            origen_lng: null,
+            destino_lat: null,
+            destino_lng: null,
+          }] : []);
         }
         if (query.startsWith("select id from operaciones where reserva_id")) {
           return result(state.operations.filter((operation) => operation.reserva_id === Number(params[0])).map(({ id }) => ({ id })));
         }
         if (query.startsWith("insert into operaciones")) {
-          const [reservationId, , , reservationDate, , fechaFin, fechaRegreso, origin, destination, passengers, vehicleId, driverId, operationState, createdBy] = params;
-          const reservation = reservationFor(reservationId);
-          const scheduled = reservation.fecha_salida || reservation.fecha_servicio || reservationDate;
-          const start = reservation.fecha_salida ? asTime(reservation.fecha_salida) : null;
-          const finish = reservation.fecha_llegada && asDate(reservation.fecha_llegada) === asDate(scheduled)
-            ? asTime(reservation.fecha_llegada)
-            : null;
+          const [reservationId, serviceType, scheduled, fechaFin, start, finish, origin, destination, passengers, vehicleId, driverId, operationState, createdBy, duration, originLat, originLng, destinationLat, destinationLng] = params;
           const operation = {
             id: state.nextOperationId++,
             reserva_id: Number(reservationId),
-            tipo_servicio: "reserva",
+            tipo_servicio: serviceType,
             fecha_programada: asDate(scheduled),
-            fecha_fin_programada: asDate(fechaFin || fechaRegreso || scheduled),
+            fecha_fin_programada: asDate(fechaFin || scheduled),
             hora_inicio: start,
             hora_fin: finish,
             origen: origin,
@@ -390,6 +437,11 @@ const pool = {
             vehiculo_id: vehicleId,
             conductor_id: driverId,
             creado_por: createdBy,
+            duracion_estimada_minutos: duration,
+            origen_lat: originLat,
+            origen_lng: originLng,
+            destino_lat: destinationLat,
+            destino_lng: destinationLng,
           };
           state.operations.push(operation);
           return result([{ id: operation.id }]);
@@ -491,25 +543,79 @@ const pool = {
         }
         if (query.startsWith("select o.id, o.vehiculo_id, o.conductor_id")) {
           assert.equal(params.length, 8, "La consulta debe enviar solo los parámetros que utiliza");
-          const [operationId, startDateValue, endDateValue, startValue, endValue, activeStates, vehicleId, driverId] = params;
+          const [operationId, startDateValue, endDateValue, , , activeStates, vehicleId, driverId] = params;
           const startDate = asDate(startDateValue);
           const endDate = asDate(endDateValue);
-          const start = startValue ? asTime(startValue) : null;
-          const end = endValue ? asTime(endValue) : null;
-          const conflict = state.operations.find((operation) =>
+          const conflicts = state.operations.filter((operation) =>
             operation.id !== Number(operationId)
             && operation.fecha_programada <= endDate
             && asDate(operation.fecha_fin_programada || operation.fecha_programada) >= startDate
             && activeStates.includes(operation.estado)
             && (operation.vehiculo_id === Number(vehicleId) || operation.conductor_id === Number(driverId))
-            && (startDate !== endDate || operation.fecha_programada !== asDate(operation.fecha_fin_programada || operation.fecha_programada)
-              || intersects(start, end, operation.hora_inicio, operation.hora_fin))
           );
-          return result(conflict ? [{
+          return result(conflicts.map((conflict) => ({
             ...conflict,
+            fecha_inicio: conflict.fecha_programada,
+            fecha_fin: conflict.fecha_fin_programada || conflict.fecha_programada,
             placa: vehicleFor(conflict.vehiculo_id)?.placa,
             conductor_nombre: `Conductor ${state.drivers.find((driver) => driver.id === Number(driverId))?.usuario_id}`,
-          }] : []);
+          })));
+        }
+        if (query.startsWith("select id, tipo_servicio, estado, fecha_programada::text as fecha_programada")) {
+          const reservationId = Number(params[0]);
+          return result(state.operations
+            .filter((operation) => operation.reserva_id === reservationId
+              && ["reserva_ida", "reserva_regreso"].includes(operation.tipo_servicio)
+              && operation.estado !== "cancelada")
+            .sort((a, b) => a.fecha_programada.localeCompare(b.fecha_programada))
+            .map((operation) => ({ ...operation })));
+        }
+        if (query.startsWith("select id, estado from operaciones where reserva_id") && query.includes("estado = any")) {
+          return result(state.operations
+            .filter((operation) => operation.reserva_id === Number(params[0])
+              && ["reserva_ida", "reserva_regreso"].includes(operation.tipo_servicio)
+              && params[1].includes(operation.estado))
+            .map(({ id, estado }) => ({ id, estado })));
+        }
+        if (query.startsWith("select reserva_id from operaciones where id")) {
+          const operation = operationFor(params[0]);
+          return result(operation ? [{ reserva_id: operation.reserva_id }] : []);
+        }
+        if (query.startsWith("select id from reservas where id = $1 for update")) {
+          const reservation = reservationFor(params[0]);
+          return result(reservation ? [{ id: reservation.id }] : []);
+        }
+        if (query.startsWith("select r.id as reserva_id, r.vehiculo_id, v.placa, coalesce(r.fecha_salida::date")) {
+          const [operationId, startDateValue, endDateValue, , , , vehicleId, driverUserId, driverId] = params;
+          const operation = operationFor(operationId);
+          const startDate = asDate(startDateValue);
+          const endDate = asDate(endDateValue);
+          const rows = state.reservations
+            .filter((reservation) => {
+              const reservationDate = asDate(reservation.fecha_salida || reservation.fecha_servicio || reservation.fecha_reserva);
+              const reservationEndDate = asDate(reservation.fecha_fin || reservation.fecha_llegada || reservationDate);
+              const conductorOcupado = reservation.conductor_id === Number(driverUserId)
+                || reservation.conductor_id === Number(driverId);
+              return reservation.id !== operation?.reserva_id
+                && reservationDate <= endDate && reservationEndDate >= startDate
+                && !reservation.fecha_regreso
+                && !["cancelada", "finalizada"].includes(reservation.estado)
+                && (reservation.vehiculo_id === Number(vehicleId) || conductorOcupado)
+                && !state.operations.some((item) => item.reserva_id === reservation.id && item.estado !== "cancelada");
+            })
+            .map((reservation) => ({
+              reserva_id: reservation.id,
+              vehiculo_id: reservation.vehiculo_id,
+              placa: vehicleFor(reservation.vehiculo_id)?.placa,
+              fecha_inicio: asDate(reservation.fecha_salida || reservation.fecha_servicio || reservation.fecha_reserva),
+              hora_salida: reservation.fecha_salida ? asTime(reservation.fecha_salida) : null,
+              fecha_fin: reservation.fecha_fin || null,
+              hora_llegada: reservation.fecha_llegada ? asTime(reservation.fecha_llegada) : null,
+              fecha_regreso: null,
+              hora_regreso: null,
+              duracion_estimada_minutos: reservation.duracion_estimada_minutos || null,
+            }));
+          return result(rows);
         }
         if (query.startsWith("select r.id as reserva_id, r.vehiculo_id, v.placa")) {
           const [operationId, startDateValue, endDateValue, startValue, endValue, , vehicleId, driverUserId, driverId] = params;
@@ -537,8 +643,10 @@ const pool = {
           return result(conflict ? [{ reserva_id: conflict.id, vehiculo_id: conflict.vehiculo_id, placa: vehicleFor(conflict.vehiculo_id)?.placa }] : []);
         }
         if (query.startsWith("update operaciones set vehiculo_id")) {
-          const operation = operationFor(params[2]);
-          Object.assign(operation, { vehiculo_id: Number(params[0]), conductor_id: Number(params[1]), estado: "asignada" });
+          for (const id of params[2]) {
+            const operation = operationFor(id);
+            if (operation) Object.assign(operation, { vehiculo_id: Number(params[0]), conductor_id: Number(params[1]), estado: "asignada" });
+          }
           return result();
         }
         if (query.startsWith("update operaciones set subcontratacion_estado")) {
@@ -607,7 +715,7 @@ const pool = {
           decision.factores.decision_operador = { vehiculo_id: Number(vehicleId), motivo: reason || null, operacion_id: Number(operationId) };
           return result([{ id: decision.id }]);
         }
-        if (query.startsWith("update operaciones set estado = $1,")) {
+        if (query.startsWith("update operaciones set estado = $1,") && !query.includes("id = any")) {
           const operation = operationFor(params[1]);
           operation.estado = params[0];
           return result();
@@ -633,8 +741,25 @@ const pool = {
           return result();
         }
         if (query.startsWith("update operaciones set estado = 'programada'")) {
-          const operation = operationFor(params[0]);
-          Object.assign(operation, { estado: "programada", vehiculo_id: null, conductor_id: null });
+          for (const id of params[0]) {
+            const operation = operationFor(id);
+            if (operation) Object.assign(operation, { estado: "programada", vehiculo_id: null, conductor_id: null });
+          }
+          return result();
+        }
+        if (query.startsWith("select id, estado from operaciones where reserva_id = $1 and tipo_servicio")) {
+          const reservationId = Number(params[0]);
+          return result(state.operations
+            .filter((operation) => operation.reserva_id === reservationId
+              && ["reserva_ida", "reserva_regreso"].includes(operation.tipo_servicio)
+              && operation.estado === "cancelada")
+            .map(({ id, estado }) => ({ id, estado })));
+        }
+        if (query.startsWith("update operaciones set estado = $1, actualizado_en = current_timestamp where id = any")) {
+          for (const id of params[1]) {
+            const operation = operationFor(id);
+            if (operation) operation.estado = params[0];
+          }
           return result();
         }
 
@@ -719,6 +844,13 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     const operationId = created.body.data.id;
     assert.equal(created.body.data.reserva_id, 801);
     assert.equal(created.body.data.estado, "programada");
+    assert.deepEqual(created.body.operation_ids, [1001, 1002]);
+    assert.deepEqual(state.operations.map(({ tipo_servicio, fecha_programada, hora_inicio, fecha_fin_programada, hora_fin }) => ({
+      tipo_servicio, fecha_programada, hora_inicio, fecha_fin_programada, hora_fin,
+    })), [
+      { tipo_servicio: "reserva_ida", fecha_programada: "2026-10-21", hora_inicio: "09:00", fecha_fin_programada: "2026-10-21", hora_fin: "11:00" },
+      { tipo_servicio: "reserva_regreso", fecha_programada: "2026-10-23", hora_inicio: "09:00", fecha_fin_programada: "2026-10-23", hora_fin: "11:00" },
+    ]);
 
     const duplicate = await request("/api/admin/operaciones/reservas/801/despachar", { method: "POST", body: {} });
     assert.equal(duplicate.status, 409);
@@ -747,7 +879,7 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     assert.match(missingLicenseAssignment.body.error, /vigencia de licencia registrada/i);
     state.drivers.find((driver) => driver.usuario_id === 302).fecha_licencia_vencimiento = "2027-12-31";
 
-    state.maintenance.push({ id: 1, vehiculo_id: 702, tipo: "Preventivo", fecha_programada: "2026-10-23", estado: "programado" });
+    state.maintenance.push({ id: 1, vehiculo_id: 702, tipo: "Preventivo", fecha_programada: "2026-10-21", estado: "programado" });
     const maintenanceRecommendation = await request(`/api/admin/inteligencia/asignacion-recomendada?fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);
     assert.equal(maintenanceRecommendation.status, 200);
     assert.equal(maintenanceRecommendation.body.data.vehiculo, null);
@@ -776,8 +908,8 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
       id: 1,
       vehiculo_id: 702,
       conductor_usuario_id: 302,
-      fecha_inicio: "2026-10-22",
-      fecha_fin: "2026-10-22",
+      fecha_inicio: "2026-10-21",
+      fecha_fin: "2026-10-21",
       hora_inicio: "09:00",
       hora_fin: "11:00",
       motivo: "ocupado",
@@ -798,8 +930,8 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
       id: 2,
       vehiculo_id: 701,
       conductor_usuario_id: 302,
-      fecha_inicio: "2026-10-22",
-      fecha_fin: "2026-10-22",
+      fecha_inicio: "2026-10-23",
+      fecha_fin: "2026-10-23",
       hora_inicio: "09:00",
       hora_fin: "11:00",
       motivo: "viaje_externo",
@@ -849,6 +981,14 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     assert.equal(assigned.body.data.estado, "asignada");
     assert.equal(assigned.body.data.vehiculo_id, suggestedVehicleId);
     assert.equal(state.reservations[0].vehiculo_id, suggestedVehicleId);
+    assert.deepEqual(state.operations.filter((operation) => operation.reserva_id === 801).map((operation) => ({
+      vehiculo_id: operation.vehiculo_id,
+      conductor_id: operation.conductor_id,
+      estado: operation.estado,
+    })), [
+      { vehiculo_id: suggestedVehicleId, conductor_id: 502, estado: "asignada" },
+      { vehiculo_id: suggestedVehicleId, conductor_id: 502, estado: "asignada" },
+    ]);
     assert.equal(state.decisions[0].resultado, "aceptada");
     assert.deepEqual(assignmentNotifications, [[801, "conductor_asignado", 99, false]]);
 
@@ -867,11 +1007,11 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
       method: "PATCH",
       body: { vehiculo_id: 701, conductor_id: 301 },
     });
-    assert.equal(reassigned.status, 200, JSON.stringify(reassigned.body));
-    assert.equal(reassigned.body.data.vehiculo_id, 701);
-    assert.equal(state.reservations[0].vehiculo_id, 701);
-    assert.equal(assignmentNotifications.length, 2);
-    assert.deepEqual(assignmentNotifications[1], [801, "conductor_asignado", 99, true]);
+    assert.equal(reassigned.status, 409);
+    assert.match(reassigned.body.error, /deben conservar el mismo vehículo y conductor/i);
+    assert.equal(reassigned.body.data, undefined);
+    assert.equal(state.reservations[0].vehiculo_id, suggestedVehicleId);
+    assert.equal(assignmentNotifications.length, 1);
 
     const started = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "en_curso" } });
     assert.equal(started.status, 403);
@@ -909,7 +1049,7 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     const recommendation = await request(`/api/admin/inteligencia/asignacion-recomendada?fecha=2026-10-22&pasajeros=5&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);
     assert.equal(recommendation.status, 200);
     const alternativeVehicle = recommendation.body.data.alternativas[0];
-    assert.ok(alternativeVehicle);
+    assert.ok(alternativeVehicle, JSON.stringify(recommendation.body));
 
     const missingReason = await request(`/api/admin/operaciones/${operationId}/asignar`, {
       method: "PATCH",
@@ -1009,5 +1149,23 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     const completedExternally = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "completada" } });
     assert.equal(completedExternally.status, 403);
     assert.equal(state.reservations[1].estado, "confirmada");
+  });
+
+  await t.test("cancela y reabre juntos los tramos de una reserva de ida y regreso", async () => {
+    const created = await request("/api/admin/operaciones/reservas/804/despachar", { method: "POST", body: {} });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.operation_ids.length, 2);
+    const [outboundId, returnId] = created.body.operation_ids;
+
+    const cancelled = await request(`/api/admin/operaciones/${outboundId}/estado`, {
+      method: "PATCH",
+      body: { estado: "cancelada" },
+    });
+    assert.equal(cancelled.status, 200);
+    assert.deepEqual([operationFor(outboundId).estado, operationFor(returnId).estado], ["cancelada", "cancelada"]);
+
+    const reopened = await request(`/api/admin/operaciones/${outboundId}/reabrir`, { method: "PATCH", body: {} });
+    assert.equal(reopened.status, 200);
+    assert.deepEqual([operationFor(outboundId).estado, operationFor(returnId).estado], ["programada", "programada"]);
   });
 });

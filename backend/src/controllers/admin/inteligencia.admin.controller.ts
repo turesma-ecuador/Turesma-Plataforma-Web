@@ -557,7 +557,7 @@ const getAnaliticaInteligente = async (_req: any, res: any) => {
 };
 
 const recomendarAsignacion = async (req: any, res: any) => {
-  const fecha = typeof req.query.fecha === "string" ? req.query.fecha : new Date().toISOString().slice(0, 10);
+  let fecha = typeof req.query.fecha === "string" ? req.query.fecha : new Date().toISOString().slice(0, 10);
   let fechaFin = typeof req.query.fecha_fin === "string" ? req.query.fecha_fin : fecha;
   const pasajeros = Number(req.query.pasajeros || 1);
   const horaInicio = typeof req.query.hora_inicio === "string" ? req.query.hora_inicio : null;
@@ -594,24 +594,67 @@ const recomendarAsignacion = async (req: any, res: any) => {
   }
 
   try {
+    let schedulePeriods = [{
+      operationId,
+      startDate: fecha,
+      endDate: fechaFin,
+      startTime: horaInicio,
+      endTime: horaFin,
+    }];
     if (operationId !== null) {
       const period = await pool.query(
-        `SELECT COALESCE(o.fecha_fin_programada, r.fecha_fin, r.fecha_regreso, o.fecha_programada)::date::text AS fecha_fin
-         FROM operaciones o
-         LEFT JOIN reservas r ON r.id = o.reserva_id
-         WHERE o.id = $1`,
+        `SELECT o.id, o.reserva_id, o.tipo_servicio,
+                o.fecha_programada::date::text AS fecha_inicio,
+                COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada)::text AS fecha_fin,
+                to_char(o.hora_inicio, 'HH24:MI') AS hora_inicio,
+                COALESCE(to_char(o.eta_actualizada, 'HH24:MI'), to_char(o.hora_fin, 'HH24:MI')) AS hora_fin
+         FROM operaciones o WHERE o.id = $1`,
         [operationId]
       );
       if (!period.rowCount) {
         return res.status(404).json({ success: false, error: "Operación no encontrada" });
       }
+      fecha = period.rows[0].fecha_inicio || fecha;
       fechaFin = period.rows[0].fecha_fin || fechaFin;
       if (!isValidDate(fechaFin) || fechaFin < fecha) {
         return res.status(400).json({ success: false, error: "El rango de fechas de la operación no es válido" });
       }
+      schedulePeriods = [{
+        operationId,
+        startDate: fecha,
+        endDate: fechaFin,
+        startTime: period.rows[0].hora_inicio || horaInicio,
+        endTime: period.rows[0].hora_fin || horaFin,
+      }];
+      if (["reserva_ida", "reserva_regreso"].includes(period.rows[0].tipo_servicio) && period.rows[0].reserva_id) {
+        const linkedPeriods = await pool.query(
+          `SELECT id, fecha_programada::date::text AS fecha_inicio,
+                  COALESCE(eta_actualizada::date, fecha_fin_programada, fecha_programada)::text AS fecha_fin,
+                  to_char(hora_inicio, 'HH24:MI') AS hora_inicio,
+                  COALESCE(to_char(eta_actualizada, 'HH24:MI'), to_char(hora_fin, 'HH24:MI')) AS hora_fin
+           FROM operaciones
+           WHERE reserva_id = $1 AND tipo_servicio IN ('reserva_ida', 'reserva_regreso')
+             AND estado <> 'cancelada'
+           ORDER BY fecha_programada, id`,
+          [period.rows[0].reserva_id]
+        );
+        if (linkedPeriods.rowCount) {
+          const mappedPeriods = linkedPeriods.rows.map((leg: any) => ({
+            operationId: Number(leg.id),
+            startDate: leg.fecha_inicio,
+            endDate: leg.fecha_fin || leg.fecha_inicio,
+            startTime: leg.hora_inicio,
+            endTime: leg.hora_fin,
+          }));
+          schedulePeriods = [
+            ...mappedPeriods.filter((leg: any) => leg.operationId === operationId),
+            ...mappedPeriods.filter((leg: any) => leg.operationId !== operationId),
+          ];
+        }
+      }
     }
 
-    const evaluatedResult = await pool.query(`
+    const evaluatedSql = `
       WITH vehiculos_evaluados AS (
         SELECT v.id AS vehiculo_id, v.placa, v.modelo, v.tipo, v.capacidad,
                v.estado, v.activo, v.fecha_proximo_mantenimiento,
@@ -663,7 +706,7 @@ const recomendarAsignacion = async (req: any, res: any) => {
                      AND r.estado NOT IN ('cancelada', 'finalizada')
                      AND NOT EXISTS (
                        SELECT 1 FROM operaciones propia
-                       WHERE propia.id = $4::int AND propia.reserva_id = r.id
+                       WHERE propia.reserva_id = r.id AND propia.estado <> 'cancelada'
                      )
                      AND (
                        $1::date <> $2::date
@@ -684,14 +727,16 @@ const recomendarAsignacion = async (req: any, res: any) => {
                    LEFT JOIN conductores conductor_operacion ON conductor_operacion.id = o.conductor_id
                    WHERE (o.vehiculo_id = v.id OR conductor_operacion.usuario_id = u.id)
                      AND o.fecha_programada <= $2::date
-                     AND COALESCE(o.fecha_fin_programada, o.fecha_programada) >= $1::date
+                     AND COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada) >= $1::date
                      AND o.id <> COALESCE($4::int, -1)
                      AND o.estado IN ('programada', 'asignada', 'en_curso', 'incidencia')
                      AND (
                        $1::date <> $2::date
-                       OR COALESCE(o.fecha_fin_programada, o.fecha_programada) <> o.fecha_programada
-                       OR $5::time IS NULL OR $6::time IS NULL OR o.hora_inicio IS NULL OR o.hora_fin IS NULL
-                       OR (o.hora_inicio < $6::time AND $5::time < o.hora_fin)
+                       OR COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada) <> o.fecha_programada
+                       OR $5::time IS NULL OR $6::time IS NULL OR o.hora_inicio IS NULL OR COALESCE(o.eta_actualizada::time, o.hora_fin) IS NULL
+                       OR (o.fecha_programada + o.hora_inicio < ($2::date + $6::time + INTERVAL '60 minutes')
+                         AND ($1::date + $5::time - INTERVAL '60 minutes')
+                           < COALESCE(o.eta_actualizada, o.fecha_fin_programada + o.hora_fin, o.fecha_programada + o.hora_fin))
                      )
                    ORDER BY o.id
                    LIMIT 1
@@ -733,10 +778,32 @@ const recomendarAsignacion = async (req: any, res: any) => {
       )
       SELECT * FROM vehiculos_evaluados
       ORDER BY cardinality(bloqueos), placa
-    `, [fecha, fechaFin, pasajeros, operationId, horaInicio, horaFin]);
+    `;
+    const evaluatedPeriods = await Promise.all(schedulePeriods.map((period) =>
+      pool.query(evaluatedSql, [
+        period.startDate,
+        period.endDate,
+        pasajeros,
+        period.operationId,
+        period.startTime,
+        period.endTime,
+      ])
+    ));
+    const evaluatedResult = {
+      rows: evaluatedPeriods[0].rows.map((vehicle: any) => {
+        const linkedVehicles = evaluatedPeriods.slice(1)
+          .map((period) => period.rows.find((row: any) => Number(row.vehiculo_id) === Number(vehicle.vehiculo_id)))
+          .filter(Boolean);
+        return {
+          ...vehicle,
+          bloqueos: [...new Set([...(vehicle.bloqueos || []), ...linkedVehicles.flatMap((row: any) => row.bloqueos || [])])],
+          advertencias: [...new Set([...(vehicle.advertencias || []), ...linkedVehicles.flatMap((row: any) => row.advertencias || [])])],
+        };
+      }),
+    };
 
     if (soloDisponibles) {
-      const availableDrivers = await pool.query(
+      const availableDriversByPeriod = await Promise.all(schedulePeriods.map((period) => pool.query(
         `SELECT u.id, u.nombre, u.apellido, u.activo,
                 c.licencia, c.estado, c.fecha_licencia_vencimiento
          FROM conductores c
@@ -767,12 +834,14 @@ const recomendarAsignacion = async (req: any, res: any) => {
                AND o.id <> $1
                AND o.estado IN ('programada', 'asignada', 'en_curso', 'incidencia')
                AND o.fecha_programada <= $3::date
-               AND COALESCE(o.fecha_fin_programada, o.fecha_programada) >= $2::date
+               AND COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada) >= $2::date
                AND (
                  $2::date <> $3::date
-                 OR COALESCE(o.fecha_fin_programada, o.fecha_programada) <> o.fecha_programada
-                 OR $4::time IS NULL OR o.hora_inicio IS NULL OR $5::time IS NULL OR o.hora_fin IS NULL
-                 OR (o.hora_inicio < $5::time AND $4::time < o.hora_fin)
+                 OR COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada) <> o.fecha_programada
+                 OR $4::time IS NULL OR o.hora_inicio IS NULL OR $5::time IS NULL OR COALESCE(o.eta_actualizada::time, o.hora_fin) IS NULL
+                 OR (o.fecha_programada + o.hora_inicio < ($3::date + $5::time + INTERVAL '60 minutes')
+                   AND ($2::date + $4::time - INTERVAL '60 minutes')
+                     < COALESCE(o.eta_actualizada, o.fecha_fin_programada + o.hora_fin, o.fecha_programada + o.hora_fin))
                )
            )
            AND NOT EXISTS (
@@ -795,6 +864,10 @@ const recomendarAsignacion = async (req: any, res: any) => {
                    AND kcu.column_name = 'conductor_id'
                    AND ccu.table_name = 'conductores'
                ) THEN c.id ELSE u.id END
+               AND NOT EXISTS (
+                 SELECT 1 FROM operaciones propia
+                 WHERE propia.reserva_id = r.id AND propia.estado <> 'cancelada'
+               )
                AND (
                  $2::date <> $3::date
                  OR COALESCE(r.fecha_fin, r.fecha_regreso, r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date)
@@ -804,8 +877,15 @@ const recomendarAsignacion = async (req: any, res: any) => {
                )
            )
          ORDER BY u.nombre, u.apellido, u.id`,
-        [operationId, fecha, fechaFin, horaInicio, horaFin]
-      );
+        [period.operationId, period.startDate, period.endDate, period.startTime, period.endTime]
+      )));
+      const availableDrivers = {
+        rows: availableDriversByPeriod[0].rows.filter((driver: any) =>
+          availableDriversByPeriod.slice(1).every((period) =>
+            period.rows.some((available: any) => Number(available.id) === Number(driver.id))
+          )
+        ),
+      };
 
       return res.json({
         success: true,
@@ -868,7 +948,7 @@ const recomendarAsignacion = async (req: any, res: any) => {
               )
               AND NOT EXISTS (
                 SELECT 1 FROM operaciones propia
-                WHERE propia.id = $5 AND propia.reserva_id = ocupada.id
+                WHERE propia.reserva_id = ocupada.id AND propia.estado <> 'cancelada'
               )
           )
           AND NOT EXISTS (
@@ -876,16 +956,20 @@ const recomendarAsignacion = async (req: any, res: any) => {
             FROM operaciones o
             LEFT JOIN conductores conductor_operacion ON conductor_operacion.id = o.conductor_id
             WHERE o.fecha_programada <= COALESCE((SELECT fecha_fin_programada FROM operaciones WHERE id = $5::int), $6::date, $1::date)
-              AND COALESCE(o.fecha_fin_programada, o.fecha_programada) >= $1::date
+              AND COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada) >= $1::date
               AND o.id <> COALESCE($5::int, -1)
               AND o.estado IN ('programada', 'asignada', 'en_curso', 'incidencia')
               AND (o.vehiculo_id = v.id OR conductor_operacion.usuario_id = u.id)
               AND (
                 $1::date <> COALESCE((SELECT fecha_fin_programada FROM operaciones WHERE id = $5::int), $6::date, $1::date)
-                OR COALESCE(o.fecha_fin_programada, o.fecha_programada) <> o.fecha_programada
+                OR COALESCE(o.eta_actualizada::date, o.fecha_fin_programada, o.fecha_programada) <> o.fecha_programada
                 OR
-                $3::time IS NULL OR o.hora_inicio IS NULL OR $4::time IS NULL OR o.hora_fin IS NULL
-                OR (o.hora_inicio < $4::time AND $3::time < o.hora_fin)
+                $3::time IS NULL OR o.hora_inicio IS NULL OR $4::time IS NULL OR COALESCE(o.eta_actualizada::time, o.hora_fin) IS NULL
+                OR (o.fecha_programada + o.hora_inicio < (
+                      COALESCE((SELECT fecha_fin_programada FROM operaciones WHERE id = $5::int), $6::date, $1::date)
+                      + $4::time + INTERVAL '60 minutes')
+                  AND ($1::date + $3::time - INTERVAL '60 minutes')
+                    < COALESCE(o.eta_actualizada, o.fecha_fin_programada + o.hora_fin, o.fecha_programada + o.hora_fin))
               )
           )
           AND NOT EXISTS (

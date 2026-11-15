@@ -8,6 +8,7 @@ const {
   aceptarReservaConductor,
   rechazarReservaConductor,
   actualizarEstadoReservaConductor,
+  reportarIncidenciaReservaConductor,
   actualizarEstadoOperacionConductor,
   marcarRecogidoConductor,
   obtenerDisponibilidadConductor,
@@ -37,6 +38,7 @@ router.get("/:id/reservas", listarReservasConductor);
 router.patch("/:id/reservas/:reservaId/aceptar", aceptarReservaConductor);
 router.patch("/:id/reservas/:reservaId/rechazar", rechazarReservaConductor);
 router.patch("/:id/reservas/:reservaId/estado", actualizarEstadoReservaConductor);
+router.patch("/:id/reservas/:reservaId/incidencia", requireRole("conductor", "vehiculo"), reportarIncidenciaReservaConductor);
 router.patch("/:id/operaciones/:operationId/estado", actualizarEstadoOperacionConductor);
 router.patch("/:id/reservas/:reservaId/recoger", marcarRecogidoConductor);
 router.get("/:id/disponibilidad", obtenerDisponibilidadConductor);

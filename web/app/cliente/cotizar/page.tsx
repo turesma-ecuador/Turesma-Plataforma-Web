@@ -119,6 +119,22 @@ const siguienteFecha = (fecha: string) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
+const sumarMinutosHora = (hora: string, minutos: number) => {
+  const [hours, minutes] = hora.split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || !Number.isFinite(minutos)) return "";
+  const total = (hours * 60 + minutes + Math.round(minutos)) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+};
+
+const duracionEntreHoras = (inicio: string, fin: string) => {
+  const [startHour, startMinute] = inicio.split(":").map(Number);
+  const [endHour, endMinute] = fin.split(":").map(Number);
+  if (![startHour, startMinute, endHour, endMinute].every(Number.isFinite)) return 0;
+  let duration = endHour * 60 + endMinute - (startHour * 60 + startMinute);
+  if (duration < 0) duration += 24 * 60;
+  return duration;
+};
+
 export default function ClienteCotizarPage() {
   const { language } = useLocale();
   const { user, checkingSession } = useClienteGuard();
@@ -155,7 +171,7 @@ export default function ClienteCotizarPage() {
   );
 
   const [form, setForm] = useState({
-    fecha_servicio: "", fecha_fin: "", fecha_regreso: "", hora_regreso: "", num_personas: "1",
+    fecha_servicio: "", fecha_fin: "", fecha_regreso: "", hora_regreso: "", hora_llegada_estimada: "", num_personas: "1",
     num_viajes: "1", tipo_vehiculo: "van", hora_salida: "", notas: "", modalidad_servicio: "dia", duracion_horas: "2",
   });
   const [customRequest, setCustomRequest] = useState({
@@ -363,6 +379,14 @@ export default function ClienteCotizarPage() {
     return () => { cancelled = true; };
   }, [origin, destination]);
 
+  useEffect(() => {
+    if (!route || !form.hora_salida) return;
+    setForm(current => ({
+      ...current,
+      hora_llegada_estimada: sumarMinutosHora(current.hora_salida, route.duracionMin),
+    }));
+  }, [route, form.hora_salida]);
+
   useAutoRefresh(() => {
     loadVehiculos();
     loadCotizaciones(true);
@@ -377,6 +401,10 @@ export default function ClienteCotizarPage() {
       if (!form.fecha_servicio) return "Selecciona la fecha de inicio del servicio.";
       if (variosDias && !form.fecha_fin) return "Toca también el último día del viaje en el calendario.";
       if (!form.hora_salida) return "Indica la hora de salida que prefieres.";
+      if (!form.hora_llegada_estimada) return "Indica una hora estimada de llegada.";
+      if (duracionEntreHoras(form.hora_salida, form.hora_llegada_estimada) <= 0) {
+        return "La llegada estimada debe ser posterior a la salida.";
+      }
       if (regresoOtraFecha && (!form.fecha_regreso || !form.hora_regreso)) {
         return "Indica la fecha y hora para recoger al regreso.";
       }
@@ -455,6 +483,8 @@ export default function ClienteCotizarPage() {
           modalidad_servicio: variosDias ? "varios_dias" : form.modalidad_servicio,
           duracion_horas: form.modalidad_servicio === "horas" ? Number(form.duracion_horas) || 1 : null,
           hora_salida: form.hora_salida || null,
+          hora_llegada_estimada: form.hora_llegada_estimada || null,
+          duracion_estimada_minutos: duracionEntreHoras(form.hora_salida, form.hora_llegada_estimada),
           fecha_regreso: regresoOtraFecha ? form.fecha_regreso : null,
           hora_regreso: regresoOtraFecha ? form.hora_regreso : null,
         }),
@@ -467,7 +497,7 @@ export default function ClienteCotizarPage() {
         return;
       }
       setFormMsg("Solicitud de cotización enviada. Administración revisará tu destino y datos, definirá el precio y te avisará cuando puedas aceptarlo y pagar el anticipo desde Historial.");
-      setForm({ fecha_servicio: "", fecha_fin: "", fecha_regreso: "", hora_regreso: "", num_personas: "1", num_viajes: "1", tipo_vehiculo: categorias[0]?.tipo || "van", hora_salida: "", notas: "", modalidad_servicio: "dia", duracion_horas: "2" });
+      setForm({ fecha_servicio: "", fecha_fin: "", fecha_regreso: "", hora_regreso: "", hora_llegada_estimada: "", num_personas: "1", num_viajes: "1", tipo_vehiculo: categorias[0]?.tipo || "van", hora_salida: "", notas: "", modalidad_servicio: "dia", duracion_horas: "2" });
       setWizardStep(1);
       setVariosDias(false);
       setRegresoOtraFecha(false);
@@ -893,10 +923,22 @@ export default function ClienteCotizarPage() {
                   id="hora-salida"
                   type="time"
                   value={form.hora_salida}
-                  onChange={e => setForm(p => ({ ...p, hora_salida: e.target.value }))}
+                  onChange={e => setForm(p => ({ ...p, hora_salida: e.target.value, hora_llegada_estimada: "" }))}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-[#E31E24] sm:w-auto"
                 />
                 <p className="text-[11px] text-slate-500">Indica la hora en que deseas iniciar el viaje.</p>
+                <label htmlFor="hora-llegada-estimada" className="mt-3 flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
+                  <Clock size={14} className="text-emerald-600" /> Llegada estimada <span className="text-[#E31E24]">*</span>
+                </label>
+                <input
+                  id="hora-llegada-estimada"
+                  type="time"
+                  required
+                  value={form.hora_llegada_estimada}
+                  onChange={event => setForm(current => ({ ...current, hora_llegada_estimada: event.target.value }))}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-[#E31E24] sm:w-auto"
+                />
+                <p className="text-[11px] text-slate-500">Se calcula con la ruta estimada y puedes ajustarla. Si pasa de medianoche, se considera el día siguiente.</p>
               </div>
               <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
                 <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
@@ -1034,6 +1076,7 @@ export default function ClienteCotizarPage() {
                         ? new Date(`${form.fecha_servicio}T00:00:00`).toLocaleDateString(dateLocale)
                         : "Pendiente"}
                       {form.hora_salida ? ` · ${form.hora_salida}` : ""}
+                      {form.hora_llegada_estimada ? ` — llegada estimada ${form.hora_llegada_estimada}` : ""}
                       {variosDias && form.fecha_fin
                         ? ` — ${new Date(`${form.fecha_fin}T00:00:00`).toLocaleDateString(dateLocale)}`
                         : ""}

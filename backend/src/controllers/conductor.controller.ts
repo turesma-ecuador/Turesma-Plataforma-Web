@@ -2,7 +2,7 @@ export {};
 
 const pool = require("../config/db");
 const { syncReservaEstadosAutomaticos } = require("../config/reservaEstadoAuto");
-const { crearNotificacion } = require("../config/notificaciones");
+const { crearNotificacion, notificarAdmins } = require("../config/notificaciones");
 const { notificarClienteReserva } = require("../config/reservaMailer");
 
 const parsePositiveInt = (value) => {
@@ -701,12 +701,20 @@ const listarReservasConductor = async (req, res) => {
            v.placa AS vehiculo_placa,
            r.recogido,
            co.hora_salida,
-           co.origen_lat, co.origen_lng, co.destino_lat, co.destino_lng
+           co.origen_lat, co.origen_lng, co.destino_lat, co.destino_lng,
+           op.eta_actualizada, op.incidencia_detalle
          FROM reservas r
          INNER JOIN usuarios u ON u.id = r.usuario_id
          LEFT JOIN tours t ON t.id = r.tour_id
          LEFT JOIN vehiculos v ON v.id = r.vehiculo_id
          LEFT JOIN cotizaciones co ON co.reserva_id = r.id
+         LEFT JOIN LATERAL (
+           SELECT eta_actualizada, incidencia_detalle
+           FROM operaciones
+           WHERE reserva_id = r.id AND estado IN ('en_curso', 'incidencia')
+           ORDER BY CASE WHEN estado = 'incidencia' THEN 0 ELSE 1 END, id DESC
+           LIMIT 1
+         ) op ON true
          WHERE r.vehiculo_id = $1
            AND r.estado = 'confirmada'
            AND COALESCE(r.estado_operativo, '') <> 'cancelada'
@@ -1115,14 +1123,21 @@ const actualizarEstadoReservaConductor = async (req, res) => {
       ]
     );
     if (estado === "en_curso" || estado === "finalizada" || estado === "cancelada") {
-      const nextOperationState = estado === "en_curso" ? "en_curso" : estado === "finalizada" ? finalizaIda ? "asignada" : "completada" : "cancelada";
+      const returnTrip = Boolean(reserva.ida_finalizada && reserva.fecha_regreso);
+      const nextOperationState = estado === "en_curso" ? "en_curso" : estado === "finalizada" ? "completada" : "cancelada";
       const operations = await client.query(
         `UPDATE operaciones
          SET estado = $1, actualizado_en = CURRENT_TIMESTAMP
          WHERE reserva_id = $2 AND requerimiento_id IS NULL
-           AND estado IN ('programada', 'asignada', 'en_curso')
+           AND estado IN ('programada', 'asignada', 'en_curso', 'incidencia')
+           AND (
+             $1 = 'cancelada'
+             OR ($3 AND tipo_servicio = 'reserva_regreso')
+             OR (NOT $3 AND tipo_servicio IN ('reserva', 'reserva_ida'))
+             OR ($4 AND tipo_servicio = 'reserva_ida')
+           )
          RETURNING id, estado AS estado_nuevo`,
-        [nextOperationState, reservaId]
+        [nextOperationState, reservaId, returnTrip, finalizaIda]
       );
       for (const operation of operations.rows) {
         await client.query(
@@ -1163,6 +1178,102 @@ const actualizarEstadoReservaConductor = async (req, res) => {
         estado: estado === "en_curso" ? "en_curso" : finalizaIda ? "confirmada" : estado,
       },
     });
+};
+
+const reportarIncidenciaReservaConductor = async (req, res) => {
+  const conductorId = parsePositiveInt(req.params.id);
+  const reservaId = parsePositiveInt(req.params.reservaId);
+  const detalle = typeof req.body?.detalle === "string" ? req.body.detalle.trim() : "";
+  const etaValue = req.body?.nueva_eta;
+  const eta = typeof etaValue === "string" ? new Date(etaValue) : null;
+  if (!conductorId || !reservaId || detalle.length < 8 || detalle.length > 500
+    || !eta || !Number.isFinite(eta.getTime()) || eta.getTime() <= Date.now()) {
+    return res.status(400).json({ error: "Indica el motivo (8 a 500 caracteres) y una nueva hora estimada futura" });
+  }
+
+  const client = await pool.connect();
+  try {
+    const conductorReservaId = await resolveReservaConductorId(conductorId);
+    if (!conductorReservaId) {
+      return res.status(400).json({ error: "Conductor no configurado para reservas" });
+    }
+
+    await client.query("BEGIN");
+    const reservation = await client.query(
+      `SELECT id, conductor_id, estado, estado_operativo
+       FROM reservas WHERE id = $1 FOR UPDATE`,
+      [reservaId]
+    );
+    if (!reservation.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Reserva no encontrada" });
+    }
+    if (Number(reservation.rows[0].conductor_id) !== conductorReservaId) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "No puedes reportar una incidencia en una reserva que no te pertenece" });
+    }
+    if (reservation.rows[0].estado_operativo !== "en_curso") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Solo puedes reportar retrasos durante un viaje en curso" });
+    }
+
+    const driverProfile = await client.query(
+      "SELECT id FROM conductores WHERE usuario_id = $1 LIMIT 1",
+      [conductorId]
+    );
+    if (!driverProfile.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "No tienes un perfil de conductor para este reporte" });
+    }
+    const operation = await client.query(
+      `SELECT id, estado, eta_actualizada
+       FROM operaciones
+       WHERE reserva_id = $1 AND conductor_id = $2
+         AND tipo_servicio IN ('reserva', 'reserva_ida', 'reserva_regreso')
+         AND estado IN ('en_curso', 'incidencia')
+       ORDER BY CASE WHEN estado = 'en_curso' THEN 0 ELSE 1 END, id DESC
+       LIMIT 1 FOR UPDATE`,
+      [reservaId, driverProfile.rows[0].id]
+    );
+    if (!operation.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "No hay un tramo operativo en curso para registrar el retraso" });
+    }
+
+    await client.query(
+      `UPDATE operaciones
+       SET eta_actualizada = $1, incidencia_detalle = $2, estado = 'incidencia',
+           actualizado_en = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      [eta.toISOString(), detalle, operation.rows[0].id]
+    );
+    await client.query(
+      `INSERT INTO operacion_historial (operacion_id, usuario_id, accion, estado_anterior, estado_nuevo, detalle)
+       VALUES ($1, $2, 'retraso_reportado_conductor', $3, 'incidencia', $4::jsonb)`,
+      [
+        operation.rows[0].id,
+        conductorId,
+        operation.rows[0].estado,
+        JSON.stringify({ motivo: detalle, nueva_eta: eta.toISOString() }),
+      ]
+    );
+    await client.query("COMMIT");
+    await notificarAdmins(
+      conductorId,
+      `El conductor reportó un retraso en la reserva #${reservaId}. Nueva llegada estimada: ${eta.toLocaleString("es-EC")}.`,
+      "reserva",
+      reservaId
+    );
+    return res.status(200).json({ message: "Retraso reportado. Administración ya puede ver la nueva hora estimada." });
+  } catch (error) {
+    await client.query("ROLLBACK").catch((rollbackError) => {
+      console.error("Error revirtiendo reporte de retraso:", rollbackError);
+    });
+    console.error("Error registrando retraso del conductor:", error);
+    return res.status(500).json({ error: "No se pudo registrar el retraso" });
+  } finally {
+    client.release();
+  }
 };
 
 // El conductor marca que ya recogió al cliente: el viaje pasa a su segunda fase
@@ -1815,6 +1926,7 @@ module.exports = {
   aceptarReservaConductor,
   rechazarReservaConductor,
   actualizarEstadoReservaConductor,
+  reportarIncidenciaReservaConductor,
   actualizarEstadoOperacionConductor,
   marcarRecogidoConductor,
   obtenerDisponibilidadConductor,
