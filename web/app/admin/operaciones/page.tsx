@@ -229,6 +229,7 @@ export default function OperacionesPage() {
   const [assignmentResourcesLoading, setAssignmentResourcesLoading] = useState(false);
   const [partnerCompaniesLoading, setPartnerCompaniesLoading] = useState(false);
   const [assignmentResourcesError, setAssignmentResourcesError] = useState("");
+  const [assignmentError, setAssignmentError] = useState("");
   const [partnerCompaniesError, setPartnerCompaniesError] = useState("");
   const [loading, setLoading] = useState(true);
   const [focusedReservationId, setFocusedReservationId] = useState<number | null>(null);
@@ -290,7 +291,7 @@ export default function OperacionesPage() {
     && vehicles.some((vehicle) => normalizeVehicleType(vehicle.tipo) === normalizeVehicleType(requestedVehicleType))
   );
   const selectedVehicleIsSubstitution = Boolean(
-    requestedVehicleType
+    requestedVehicleType && selectedAvailableVehicle
     && normalizeVehicleType(selectedAvailableVehicle?.tipo) !== normalizeVehicleType(requestedVehicleType)
   );
 
@@ -423,13 +424,13 @@ export default function OperacionesPage() {
     event.preventDefault();
     if (!assignment) return;
     if (selectedVehicleIsSubstitution && !confirmVehicleSubstitution) {
-      setError("Confirma la sustitución de la categoría solicitada antes de asignar.");
+      setAssignmentError("Confirma la sustitución de la categoría solicitada antes de asignar.");
       return;
     }
     const selectedVehicle = Number(selectedVehicleId);
     const selectedDriver = Number(selectedDriverId);
     setSaving(true);
-    setError("");
+    setAssignmentError("");
     try {
       await request(`/api/admin/operaciones/${assignment.id}/asignar`, {
         method: "PATCH",
@@ -443,7 +444,7 @@ export default function OperacionesPage() {
       setAssignment(null);
       await load();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "No se pudo asignar la operación");
+      setAssignmentError(saveError instanceof Error ? saveError.message : "No se pudo asignar la operación");
     } finally {
       setSaving(false);
     }
@@ -511,6 +512,7 @@ export default function OperacionesPage() {
     setAssignment(operation);
     setAssignmentResourcesLoading(true);
     setAssignmentResourcesError("");
+    setAssignmentError("");
     setSelectedVehicleId("");
     setSelectedDriverId("");
     setConfirmVehicleSubstitution(false);
@@ -824,6 +826,12 @@ export default function OperacionesPage() {
                 </div>
               </div>
             )}
+            {assignmentError && (
+              <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-800">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" />
+                <p className="leading-relaxed">{assignmentError}</p>
+              </div>
+            )}
 
             <div className="space-y-4">
               <label className="block text-sm font-bold text-slate-700">
@@ -942,6 +950,7 @@ export default function OperacionesPage() {
                 Cancelar
               </button>
               <button
+                type="submit"
                 disabled={saving || assignmentResourcesLoading || Boolean(assignmentResourcesError)
                   || (selectedVehicleIsSubstitution && !confirmVehicleSubstitution)}
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
