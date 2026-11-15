@@ -497,9 +497,17 @@ export default function OperacionesPage() {
     setSelectedDriverId("");
     setError("");
     try {
+      const startDate = dateKey(operation.fecha_programada);
+      const endDate = dateKey(operation.fecha_fin_programada) || startDate;
+      if (!startDate || !endDate) {
+        throw new ApiResponseError(
+          "La operación no tiene un rango de fechas válido.",
+          "INVALID_ASSIGNMENT_DATE_RANGE",
+        );
+      }
       const query = new URLSearchParams({
-        fecha: operation.fecha_programada,
-        fecha_fin: operation.fecha_fin_programada || operation.fecha_programada,
+        fecha: startDate,
+        fecha_fin: endDate,
         pasajeros: String(operation.pasajeros),
         operacion_id: String(operation.id),
         solo_disponibles: "true",
