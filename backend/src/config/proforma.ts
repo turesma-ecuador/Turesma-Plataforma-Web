@@ -30,7 +30,7 @@ const EMPRESA = {
   direccion: 'La pradera segunda etapa, manzana "Q" villa 14.',
   telefonos: "0993570061, 0990861287",
   email: "turesmasa@hotmail.com",
-  banco: { nombre: "BANCO COMERCIAL DE MANABI", tipo: "de ahorros", numero: "304369002", titular: "TURISMO ESMERALDA S.A TURESMA", ruc: "1391763581001" },
+  banco: { nombre: "BANCO COMERCIAL DE MANABÍ", tipo: "de ahorros", numero: "304369002", titular: "TURISMO ESMERALDA S.A. TURESMA", ruc: "1391763581001" },
   gerente: "Ing. Kevin Delgado M.",
   cargoGerente: "Gerente Propietario",
 };

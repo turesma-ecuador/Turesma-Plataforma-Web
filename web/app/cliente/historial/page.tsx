@@ -21,13 +21,12 @@ const LiveTripMap = dynamic(
   { loading: () => <div className="h-64 animate-pulse rounded-2xl bg-slate-100" /> },
 );
 
-// Cuenta bancaria de la empresa para pagos por transferencia. Cámbiala aquí
-// por los datos reales — se muestra tal cual al cliente en el modal de pago.
 const CUENTA_EMPRESA = {
-  banco: "Banco Pichincha",
-  tipo: "Cuenta Corriente",
-  numero: "2100123456",
-  titular: "Turesma S.A.",
+  banco: "Banco Comercial de Manabí",
+  tipo: "Cuenta de Ahorros",
+  numero: "304369002",
+  titular: "TURISMO ESMERALDA S.A. TURESMA",
+  correo: "turesmasa@hotmail.com",
   ruc: "1391763581001",
 };
 
@@ -264,6 +263,7 @@ function PagoModal({ reserva, onClose, onSuccess }: { reserva: Reserva; onClose:
               <p><span className="text-slate-400">Banco:</span> <span className="font-bold text-slate-700">{CUENTA_EMPRESA.banco}</span></p>
               <p><span className="text-slate-400">{CUENTA_EMPRESA.tipo}:</span> <span className="font-bold text-slate-700">{CUENTA_EMPRESA.numero}</span></p>
               <p><span className="text-slate-400">Titular:</span> <span className="font-bold text-slate-700">{CUENTA_EMPRESA.titular}</span></p>
+              <p><span className="text-slate-400">Correo:</span> <a href={`mailto:${CUENTA_EMPRESA.correo}`} className="font-bold text-slate-700 hover:underline">{CUENTA_EMPRESA.correo}</a></p>
               <p><span className="text-slate-400">RUC:</span> <span className="font-bold text-slate-700">{CUENTA_EMPRESA.ruc}</span></p>
             </div>
           )}
