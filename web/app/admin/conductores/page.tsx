@@ -188,6 +188,10 @@ export default function AdminConductoresPage() {
       setErr("Debes seleccionar el tipo de licencia");
       return;
     }
+    if (!form.fecha_licencia_vencimiento) {
+      setErr("Debes registrar la fecha de vencimiento de la licencia");
+      return;
+    }
 
     const payload: Record<string, unknown> = {
       nombre: form.nombre,
@@ -474,6 +478,16 @@ export default function AdminConductoresPage() {
                     <option value="">Selecciona tipo</option>
                     {LIC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Vencimiento de licencia *</label>
+                  <input
+                    type="date"
+                    value={form.fecha_licencia_vencimiento}
+                    onChange={e => setForm(p => ({ ...p, fecha_licencia_vencimiento: e.target.value }))}
+                    className={INPUT_CLS}
+                    required
+                  />
                 </div>
 
                 <div className="space-y-1">
