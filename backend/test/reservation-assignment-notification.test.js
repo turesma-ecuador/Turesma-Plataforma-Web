@@ -88,6 +88,8 @@ test("notifica la asignación y sus cambios con los datos del vehículo", async 
   assert.equal(sentEmails.length, 1);
   assert.equal(sentEmails[0].to, "ana@example.invalid");
   assert.match(sentEmails[0].subject, /vehículo y conductor asignados/i);
+  assert.match(sentEmails[0].html, /src="cid:turesma-logo"/);
+  assert.equal(sentEmails[0].attachments[0].cid, "turesma-logo");
   assert.match(sentEmails[0].html, /src="https:\/\/api\.turesma\.example\/uploads\/vehiculos\/unit\.webp\?v=1&amp;x=2"/);
   assert.match(sentEmails[0].html, /ABC-1234 · Van &lt;ejecutiva&gt;/);
   assert.match(sentEmails[0].html, /Luis &amp; Marco/);
@@ -107,6 +109,7 @@ test("notifica la asignación y sus cambios con los datos del vehículo", async 
 
   assert.equal(sentEmails.length, 2);
   assert.match(sentEmails[1].subject, /actualizamos.*vehículo y conductor/i);
+  assert.equal(sentEmails[1].attachments[0].cid, "turesma-logo");
   assert.match(sentEmails[1].html, /XYZ-9876 · Bus ejecutivo/);
   assert.match(sentEmails[1].html, /replacement\.webp/);
   assert.match(inAppNotifications[1][2], /Actualizamos la asignación/);
@@ -120,9 +123,28 @@ test("notifica al cliente y al conductor al asignar una unidad personalizada", a
   assert.equal(sentEmails.length, 1);
   assert.equal(sentEmails[0].to, operation.cliente_email);
   assert.match(sentEmails[0].subject, /servicio personalizado asignada/i);
+  assert.match(sentEmails[0].html, /src="cid:turesma-logo"/);
+  assert.equal(sentEmails[0].attachments[0].cid, "turesma-logo");
   assert.match(sentEmails[0].html, /XYZ-9876 · Van/);
   assert.match(sentEmails[0].html, /custom\.webp/);
   assert.equal(inAppNotifications.length, 2);
   assert.equal(inAppNotifications[0][1], operation.usuario_id);
   assert.equal(inAppNotifications[1][1], operation.conductor_usuario_id);
+});
+
+test("adjunta el logo inline sin reemplazar la proforma de una reserva confirmada", async () => {
+  sentEmails.length = 0;
+  inAppNotifications.length = 0;
+  installMock("../dist/config/proforma", {
+    async getCotizacionIdDeReserva() { return 22609; },
+    async buildProformaData() { return { numero: "22609" }; },
+    async generarProformaPDF() { return Buffer.from("proforma-pdf"); },
+  });
+
+  await notificarClienteReserva(42, "confirmada", 99);
+
+  assert.equal(sentEmails.length, 1);
+  assert.match(sentEmails[0].html, /src="cid:turesma-logo"/);
+  assert.equal(sentEmails[0].attachments[0].cid, "turesma-logo");
+  assert.equal(sentEmails[0].attachments[1].filename, "Proforma-22609.pdf");
 });

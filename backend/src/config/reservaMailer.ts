@@ -3,7 +3,12 @@ export {};
 const pool = require("./db");
 const { enviarCorreo } = require("./mailer");
 const { crearNotificacion, notificarAdmins } = require("./notificaciones");
-const { escapeHtml, getWebBaseUrl } = require("./emailTemplate");
+const {
+  escapeHtml,
+  getWebBaseUrl,
+  getBrandedEmailLogoAttachment,
+  renderBrandedEmail,
+} = require("./emailTemplate");
 
 type TipoEvento = "confirmada" | "conductor_asignado" | "en_curso" | "finalizada" | "cancelada";
 
@@ -61,7 +66,6 @@ const getPublicImageUrl = (value: unknown) => {
 
 // Correo de contacto y pie estándar (mensaje automático) para todos los correos.
 const CONTACTO_EMAIL = "turesmasa@hotmail.com";
-const PIE_HTML = `<p style="margin:22px 0 0;color:#9ca3af;font-size:11px;text-align:center;line-height:1.5;">Este mensaje se envió de forma automática. Para más información comunícate al correo <a href="mailto:${CONTACTO_EMAIL}" style="color:#9ca3af;">${CONTACTO_EMAIL}</a>.</p>`;
 const PIE_TEXTO = `\n\n— Este mensaje se envió de forma automática. Para más información comunícate al correo ${CONTACTO_EMAIL}.`;
 
 // Plantilla de correo con la identidad de Turesma (rojo + datos del viaje).
@@ -87,33 +91,31 @@ const construirHtml = (tipo: TipoEvento, d: any, isReassignment = false) => {
       : "";
   const webUrl = getWebBaseUrl();
   const action = isAssignment
-    ? `<p style="margin:18px 0;text-align:center;">
-         <a href="${escapeHtml(`${webUrl}/cliente/historial`)}" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#E31E24;color:#ffffff;font-size:13px;font-weight:bold;text-decoration:none;">Ver reserva y contactar al conductor</a>
-       </p>`
-    : "";
-  return `
-  <div style="max-width:520px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#111827;">
-    <div style="background:#0b0f1a;padding:24px;border-radius:16px 16px 0 0;text-align:center;">
-      <span style="color:#E31E24;font-size:22px;font-weight:800;font-style:italic;letter-spacing:-1px;">TURESMA S.A</span>
-      <div style="color:#9ca3af;font-size:10px;letter-spacing:3px;margin-top:2px;">TRANSPORTE TURÍSTICO</div>
-    </div>
-    <div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 16px 16px;padding:28px;">
-      <h2 style="margin:0 0 8px;font-size:20px;">${escapeHtml(title)}</h2>
-      <p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.5;">Hola ${escapeHtml(String(d.cliente_nombre || "cliente"))}, ${body}</p>
-      <table style="width:100%;border-collapse:collapse;border-top:1px solid #f3f4f6;">
-        ${fila("Reserva", "#" + d.id)}
-        ${fila("Origen", d.origen)}
-        ${fila("Destino", d.destino)}
-        ${fila("Fecha", fmtFecha(d.fecha_reserva))}
-        ${fila("Vehículo", d.vehiculo_placa ? `${d.vehiculo_placa}${d.vehiculo_modelo ? " · " + d.vehiculo_modelo : ""}` : "")}
-        ${fila("Conductor", d.conductor_nombre)}
-        ${fila("Total", d.total != null ? "$" + Number(d.total).toFixed(2) : "")}
-      </table>
-      ${vehicleImage}
-      ${action}
-      ${PIE_HTML}
-    </div>
-  </div>`;
+    ? `${webUrl}/cliente/historial`
+    : undefined;
+  const bodyHtml = `
+    <p style="margin:0 0 18px;color:#374151;font-size:14px;line-height:1.6">Hola <strong>${escapeHtml(String(d.cliente_nombre || "cliente"))}</strong>, ${body}</p>
+    <table role="presentation" style="width:100%;border-collapse:collapse;border-top:1px solid #e2e8f0">
+      ${fila("Reserva", "#" + d.id)}
+      ${fila("Origen", d.origen)}
+      ${fila("Destino", d.destino)}
+      ${fila("Fecha", fmtFecha(d.fecha_reserva))}
+      ${fila("Vehículo", d.vehiculo_placa ? `${d.vehiculo_placa}${d.vehiculo_modelo ? " · " + d.vehiculo_modelo : ""}` : "")}
+      ${fila("Conductor", d.conductor_nombre)}
+      ${fila("Total", d.total != null ? "$" + Number(d.total).toFixed(2) : "")}
+    </table>
+    ${vehicleImage}
+  `;
+
+  return renderBrandedEmail({
+    preheader: `${title} · Reserva #${d.id}`,
+    eyebrow: isAssignment ? "INFORMACIÓN DE TU VIAJE" : "INFORMACIÓN DE TU RESERVA",
+    title,
+    bodyHtml,
+    actionLabel: isAssignment ? "Ver reserva y contactar al conductor" : undefined,
+    actionUrl: action,
+    contactEmail: CONTACTO_EMAIL,
+  });
 };
 
 // Notifica al CLIENTE de un cambio de estado de su reserva: crea la notificación
@@ -160,7 +162,7 @@ const notificarClienteReserva = async (
       const assignmentText = tipo === "conductor_asignado"
         ? `\nVehículo: ${[d.vehiculo_placa, d.vehiculo_modelo].filter(Boolean).join(" · ") || "Por confirmar"}\nConductor: ${d.conductor_nombre || "Por confirmar"}\nConsulta tu reserva y contacta al conductor: ${getWebBaseUrl()}/cliente/historial`
         : "";
-      let attachments: any[] | undefined;
+      const attachments: any[] = [getBrandedEmailLogoAttachment()];
       if (tipo === "confirmada") {
         try {
           const { getCotizacionIdDeReserva, buildProformaData, generarProformaPDF } = require("./proforma");
@@ -169,7 +171,7 @@ const notificarClienteReserva = async (
             const prof = await buildProformaData(cotId);
             if (prof) {
               const pdf = await generarProformaPDF(prof);
-              attachments = [{ filename: `Proforma-${prof.numero}.pdf`, content: pdf }];
+              attachments.push({ filename: `Proforma-${prof.numero}.pdf`, content: pdf });
             }
           }
         } catch (err: any) {
@@ -240,11 +242,33 @@ const notificarClienteOperacion = async (
       const image = imageUrl
         ? `<p style="text-align:center"><img src="${escapeHtml(imageUrl)}" alt="Vehículo asignado" style="max-width:100%;max-height:240px;border-radius:8px"></p>`
         : "";
+      const customerMessage = escapeHtml(message);
+      const safeOrigin = escapeHtml(String(operation.origen || "—"));
+      const safeDestination = escapeHtml(String(operation.destino || "—"));
+      const safeVehicle = escapeHtml(vehicleLabel || "Por confirmar");
+      const safeDriver = escapeHtml(String(operation.conductor_nombre || "Por confirmar"));
+      const safeDate = escapeHtml(fmtFecha(operation.fecha_programada));
       await enviarCorreo({
         to: operation.cliente_email,
         subject: event === "asignada" ? "Unidad de tu servicio personalizado asignada" : "Actualización de tu servicio personalizado",
-        html: `<div style="font-family:Arial,sans-serif;color:#111827;max-width:560px;margin:auto"><h2>Turesma · Actualización del servicio</h2><p>Hola ${escapeHtml(String(operation.cliente_nombre || "cliente"))},</p><p>${escapeHtml(message)}</p><p><b>Ruta:</b> ${escapeHtml(String(operation.origen))} → ${escapeHtml(String(operation.destino))}</p><p><b>Fecha:</b> ${escapeHtml(fmtFecha(operation.fecha_programada))}</p><p><b>Vehículo:</b> ${escapeHtml(vehicleLabel || "Por confirmar")}</p><p><b>Conductor:</b> ${escapeHtml(String(operation.conductor_nombre || "Por confirmar"))}</p>${image}<p><a href="${escapeHtml(`${getWebBaseUrl()}/cliente/historial`)}">Ver estado de la reserva</a></p>${PIE_HTML}</div>`,
+        html: renderBrandedEmail({
+          preheader: message,
+          eyebrow: "SERVICIO PERSONALIZADO",
+          title: event === "asignada" ? "Recursos asignados a tu servicio" : "Actualización de tu servicio",
+          bodyHtml: `<p style="margin:0 0 12px">Hola <strong>${escapeHtml(String(operation.cliente_nombre || "cliente"))}</strong>:</p>
+            <p style="margin:0 0 16px">${customerMessage}</p>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #e2e8f0">
+              <tr><td style="padding:8px 0;color:#64748b">Ruta</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safeOrigin} → ${safeDestination}</td></tr>
+              <tr><td style="padding:8px 0;color:#64748b">Fecha</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safeDate}</td></tr>
+              <tr><td style="padding:8px 0;color:#64748b">Vehículo</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safeVehicle}</td></tr>
+              <tr><td style="padding:8px 0;color:#64748b">Conductor</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safeDriver}</td></tr>
+            </table>${image}`,
+          actionLabel: "Ver estado de la reserva",
+          actionUrl: `${getWebBaseUrl()}/cliente/historial`,
+          contactEmail: CONTACTO_EMAIL,
+        }),
         text: `${message}\nRuta: ${operation.origen} → ${operation.destino}\nVehículo: ${vehicleLabel || "Por confirmar"}\nConductor: ${operation.conductor_nombre || "Por confirmar"}\n${getWebBaseUrl()}/cliente/historial${PIE_TEXTO}`,
+        attachments: [getBrandedEmailLogoAttachment()],
       });
     }
   } catch (error: any) {
@@ -272,26 +296,23 @@ const notificarReprogramacion = async (reservaId: number, senderId: number | nul
 
     // 1) Correo al cliente (confirmando su cambio)
     if (d.cliente_email) {
-      const html = `
-        <div style="max-width:520px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#111827;">
-          <div style="background:#0b0f1a;padding:24px;border-radius:16px 16px 0 0;text-align:center;">
-            <span style="color:#E31E24;font-size:22px;font-weight:800;font-style:italic;letter-spacing:-1px;">TURESMA S.A</span>
-            <div style="color:#9ca3af;font-size:10px;letter-spacing:3px;margin-top:2px;">TRANSPORTE TURÍSTICO</div>
-          </div>
-          <div style="border:1px solid #e5e7eb;border-top:none;border-radius:0 0 16px 16px;padding:28px;">
-            <h2 style="margin:0 0 12px;font-size:20px;">Cambio en tu reserva 🗓️</h2>
-            <p style="margin:0 0 12px;color:#374151;font-size:14px;line-height:1.6;">Hola ${d.cliente_nombre || "cliente"}, registramos el cambio en tu reserva <b>#${reservaId}</b> (${d.origen} → ${d.destino}).</p>
-            <p style="margin:0 0 12px;color:#374151;font-size:14px;line-height:1.6;">Tu nueva <b>fecha y hora de salida</b> es:</p>
-            <p style="margin:0 0 12px;font-size:18px;font-weight:800;color:#0b0f1a;">${cuando}</p>
-            <p style="margin:0;color:#374151;font-size:14px;line-height:1.6;">Ya avisamos al conductor y al equipo de Turesma. ¡Buen viaje! 🚐</p>
-            ${PIE_HTML}
-          </div>
-        </div>`;
+      const html = renderBrandedEmail({
+        preheader: `Cambio confirmado para la reserva #${reservaId}.`,
+        eyebrow: "ACTUALIZACIÓN DE TU RESERVA",
+        title: "Cambio en tu reserva",
+        bodyHtml: `
+          <p style="margin:0 0 12px">Hola <strong>${escapeHtml(String(d.cliente_nombre || "cliente"))}</strong>, registramos el cambio en tu reserva <strong>#${reservaId}</strong> (${escapeHtml(String(d.origen || "—"))} → ${escapeHtml(String(d.destino || "—"))}).</p>
+          <p style="margin:0 0 12px">Tu nueva <strong>fecha y hora de salida</strong> es:</p>
+          <p style="margin:0 0 12px;font-size:18px;font-weight:800;color:#0b0f1a">${escapeHtml(cuando)}</p>
+          <p style="margin:0">Ya avisamos al conductor y al equipo de Turesma. ¡Buen viaje!</p>`,
+        contactEmail: CONTACTO_EMAIL,
+      });
       await enviarCorreo({
         to: d.cliente_email,
         subject: "Cambiaste la fecha/hora de tu reserva — Turesma",
         html,
         text: `Cambiaste tu reserva #${reservaId}. Nueva salida: ${cuando}.` + PIE_TEXTO,
+        attachments: [getBrandedEmailLogoAttachment()],
       });
     }
 

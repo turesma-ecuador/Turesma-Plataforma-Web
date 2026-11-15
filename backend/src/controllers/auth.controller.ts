@@ -83,6 +83,7 @@ const sendResetPinEmail = async ({ to, pin, nombre }) => {
     text: `Hola ${nombre || "usuario"}:\n\nRecibimos una solicitud para restablecer la contraseña de tu cuenta de Turesma. Ingresa este PIN en la página de recuperación:\n\n${pin}\n\nEl PIN es válido durante ${ttlMinutes} minutos. No lo compartas con nadie. Si no solicitaste este cambio, ignora este mensaje; tu contraseña no cambiará.`,
     html: renderBrandedEmail({
       preheader: "Usa el código seguro para restablecer la contraseña de tu cuenta.",
+      eyebrow: "SEGURIDAD DE TU CUENTA",
       title: "Restablece tu contraseña",
       bodyHtml: `<p style="margin:0 0 14px">Hola <strong>${escapeHtml(nombre || "usuario")}</strong>:</p>
         <p style="margin:0 0 20px">Recibimos una solicitud para restablecer la contraseña de tu cuenta de Turesma. Ingresa el siguiente PIN en la página de recuperación:</p>

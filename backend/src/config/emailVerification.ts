@@ -31,6 +31,7 @@ const sendEmailVerification = async (email: string, nombre: string, token: strin
     text: `Hola ${nombre || "usuario"}:\n\nGracias por registrarte en Turesma. Para activar tu cuenta, confirma que esta dirección de correo te pertenece:\n\n${url}\n\nPor seguridad, el enlace es válido durante ${VERIFICATION_TTL_HOURS} horas. Si no solicitaste esta cuenta, puedes ignorar este mensaje.`,
     html: renderBrandedEmail({
       preheader: "Confirma tu correo para activar tu cuenta de Turesma.",
+      eyebrow: "SEGURIDAD DE TU CUENTA",
       title: "Confirma tu correo electrónico",
       bodyHtml: `<p style="margin:0 0 14px">Hola <strong>${safeName}</strong>:</p>
         <p style="margin:0">Gracias por registrarte en Turesma. Para activar tu cuenta y comenzar a usar nuestros servicios, confirma que esta dirección de correo te pertenece.</p>`,
