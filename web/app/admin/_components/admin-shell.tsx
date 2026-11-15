@@ -73,14 +73,14 @@ const menuGroups: MenuGroup[] = [
   },
   {
     id: "operaciones", label: "Operaciones", icon: Route, items: [
-      { href: "/admin/operaciones", label: "Despacho", icon: ClipboardList },
-      { href: "/admin/empresas-asociadas", label: "Empresas asociadas", icon: Building2, adminOnly: true },
-      { href: "/admin/calendario-flota", label: "Calendario de flota", icon: CalendarDays, adminOnly: true },
-      { href: "/admin/viajes", label: "Viajes publicados", icon: Ticket },
       { href: "/admin/cotizaciones", label: "Cotizaciones", icon: FileText },
       { href: "/admin/reservas", label: "Reservas", icon: Calendar },
       { href: "/admin/pagos", label: "Pagos", icon: CreditCard },
+      { href: "/admin/operaciones", label: "Despacho", icon: ClipboardList },
       { href: "/admin/ruta", label: "Seguimiento en vivo", icon: MapPin },
+      { href: "/admin/calendario-flota", label: "Calendario de flota", icon: CalendarDays, adminOnly: true },
+      { href: "/admin/empresas-asociadas", label: "Empresas asociadas", icon: Building2, adminOnly: true },
+      { href: "/admin/viajes", label: "Viajes publicados", icon: Ticket },
     ],
   },
   {
