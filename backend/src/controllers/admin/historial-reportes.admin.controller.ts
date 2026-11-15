@@ -401,6 +401,14 @@ const exportarReporteCSV = async (req, res) => {
         params.push(estado);
         filtros.push(`r.estado = $${params.length}`);
       }
+      const grupoEstado = String(req.query.grupo_estado || "").trim();
+      if (grupoEstado === "por_atender") {
+        filtros.push("COALESCE(r.estado, '') NOT IN ('en_curso', 'finalizada', 'cancelada')");
+      } else if (grupoEstado === "en_curso") {
+        filtros.push("r.estado = 'en_curso'");
+      } else if (grupoEstado === "atendidos") {
+        filtros.push("r.estado IN ('finalizada', 'cancelada')");
+      }
       const busqueda = String(req.query.busqueda || "").trim().slice(0, 100);
       if (busqueda) {
         params.push(busqueda);

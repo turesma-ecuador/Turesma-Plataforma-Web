@@ -27,6 +27,8 @@ type Pago = {
   reembolsos?: Array<{ id: number; monto: number; motivo: string; referencia_externa: string | null; estado: string; creado_en: string; completado_en?: string | null; procesado_por: string }>;
 };
 
+type PaymentView = "por_atender" | "atendidos" | "todos";
+
 const ESTADO_BADGE: Record<string, string> = {
   pendiente: "bg-amber-100 text-amber-700 border-amber-200",
   aprobado: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -46,7 +48,8 @@ export default function AdminPagosPage() {
   const isAdmin = normalizeRole(user?.rol) === "admin";
   const [pagos, setPagos] = useState<Pago[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filtro, setFiltro] = useState("pendiente");
+  const [vistaPagos, setVistaPagos] = useState<PaymentView>("por_atender");
+  const [filtro, setFiltro] = useState("todos");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [rechazarId, setRechazarId] = useState<number | null>(null);
@@ -67,6 +70,7 @@ export default function AdminPagosPage() {
     const id = Number(new URLSearchParams(window.location.search).get("id"));
     if (Number.isInteger(id) && id > 0) {
       setFocusedPaymentId(id);
+      setVistaPagos("todos");
       setFiltro("todos");
     }
     setPaymentLinkReady(true);
@@ -75,13 +79,13 @@ export default function AdminPagosPage() {
   const load = async (silencioso = false) => {
     if (!silencioso) setLoading(true);
     try {
-      const res = await fetch(`${API}/api/admin/pagos?estado=${filtro}`, { headers: getAuthHeaders() });
+      const res = await fetch(`${API}/api/admin/pagos?estado=todos`, { headers: getAuthHeaders() });
       if (res.ok) setPagos(await res.json());
     } catch { /* silencio */ }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { if (!checkingSession && paymentLinkReady) load(); }, [checkingSession, filtro, paymentLinkReady]);
+  useEffect(() => { if (!checkingSession && paymentLinkReady) load(); }, [checkingSession, paymentLinkReady]);
 
   useAutoRefresh(() => load(true), { enabled: !checkingSession, immediate: false });
 
@@ -211,7 +215,19 @@ export default function AdminPagosPage() {
     }
   };
 
-  const pendientes = pagos.filter(p => p.estado === "pendiente").length;
+  const requiereAtencion = (pago: Pago) =>
+    pago.estado === "pendiente" || (pago.reembolsos || []).some((reembolso) => reembolso.estado === "pendiente");
+  const paymentCounts = {
+    por_atender: pagos.filter(requiereAtencion).length,
+    atendidos: pagos.filter((pago) => !requiereAtencion(pago)).length,
+    todos: pagos.length,
+  };
+  const visiblePagos = pagos.filter((pago) => {
+    const matchesView = vistaPagos === "todos"
+      || (vistaPagos === "por_atender" && requiereAtencion(pago))
+      || (vistaPagos === "atendidos" && !requiereAtencion(pago));
+    return matchesView && (filtro === "todos" || pago.estado === filtro);
+  });
 
   if (checkingSession) return (
     <div className="flex h-64 items-center justify-center"><Loader2 className="animate-spin text-[#E31E24]" size={36} /></div>
@@ -233,24 +249,56 @@ export default function AdminPagosPage() {
 
       {/* FILTROS */}
       <div className="flex gap-2 flex-wrap bg-white p-3 sm:p-4 rounded-2xl border border-gray-100 shadow-sm">
-        {["pendiente", "aprobado", "rechazado", "todos"].map(e => (
-          <button key={e} onClick={() => setFiltro(e)} className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filtro === e ? "bg-emerald-500 text-white shadow-sm" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
-            {e}{e === "pendiente" && pendientes > 0 ? ` (${pendientes})` : ""}
-          </button>
-        ))}
+        <nav aria-label="Filtrar pagos" className="flex w-full flex-wrap gap-2 border-b border-slate-100 pb-3">
+          {([
+            ["por_atender", "Por atender"],
+            ["atendidos", "Atendidos"],
+            ["todos", "Todos"],
+          ] as const).map(([view, label]) => (
+            <button
+              key={view}
+              type="button"
+              onClick={() => { setVistaPagos(view); setFiltro("todos"); }}
+              aria-pressed={vistaPagos === view}
+              className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                vistaPagos === view ? "bg-emerald-500 text-white shadow-sm" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }`}
+            >
+              {label} <span className="ml-1 opacity-70">{paymentCounts[view]}</span>
+            </button>
+          ))}
+        </nav>
+        {vistaPagos === "todos" && (
+          <div className="flex flex-wrap gap-2">
+            {(["todos", "pendiente", "aprobado", "rechazado"] as const).map((estado) => (
+              <button
+                key={estado}
+                type="button"
+                onClick={() => setFiltro(estado)}
+                aria-pressed={filtro === estado}
+                className={`rounded-xl px-3 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all ${
+                  filtro === estado ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                }`}
+              >
+                {estado === "todos" ? "Todos los estados" : estado === "pendiente" ? "Pendiente de revisión" : estado === "aprobado" ? "Aprobado" : "Rechazado"}
+                {estado === "pendiente" ? ` (${pagos.filter((pago) => pago.estado === "pendiente").length})` : ""}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* LISTA */}
       {loading ? (
         <div className="flex items-center justify-center h-56"><Loader2 className="animate-spin text-emerald-500" size={36} /></div>
-      ) : pagos.length === 0 ? (
+      ) : visiblePagos.length === 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center shadow-sm">
           <CreditCard size={42} className="text-slate-200 mx-auto mb-3" />
-          <p className="font-black text-slate-300 uppercase italic text-sm">Sin comprobantes {filtro !== "todos" ? `en estado "${filtro}"` : ""}</p>
+          <p className="font-black text-slate-300 uppercase italic text-sm">{vistaPagos === "por_atender" ? "No hay pagos pendientes de atención" : vistaPagos === "atendidos" ? "Todavía no hay pagos atendidos" : `Sin comprobantes ${filtro !== "todos" ? `en estado "${filtro}"` : ""}`}</p>
         </div>
       ) : (
         <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-          {pagos.map(p => (
+          {visiblePagos.map(p => (
             <div key={p.id} id={`pago-${p.id}`} className={`w-full min-w-0 bg-white rounded-2xl border shadow-sm p-4 space-y-3 ${focusedPaymentId === p.id ? "border-emerald-400 ring-2 ring-emerald-100" : "border-slate-200"}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">

@@ -8,7 +8,8 @@ process.env.DB_NAME = process.env.DB_NAME || "turesma_db";
 process.env.DB_PASSWORD = process.env.DB_PASSWORD || "test";
 process.env.DB_PORT = process.env.DB_PORT || "5432";
 
-const { createExcelReport } = require("../dist/controllers/admin/historial-reportes.admin.controller");
+const pool = require("../dist/config/db");
+const { createExcelReport, exportarReporteCSV } = require("../dist/controllers/admin/historial-reportes.admin.controller");
 
 test("exporta un libro XLSX de reservas que ExcelJS puede volver a abrir", async () => {
   let responseBuffer;
@@ -52,4 +53,36 @@ test("exporta un libro XLSX de reservas que ExcelJS puede volver a abrir", async
   assert.equal(worksheet.getCell("A8").value, "N.º de reserva");
   assert.equal(worksheet.getCell("A9").value, 12);
   assert.equal(worksheet.getCell("F9").value, "Cliente de prueba");
+});
+
+test("exporta solo las reservas por atender cuando se filtra esa vista", async () => {
+  const originalQuery = pool.query;
+  let capturedQuery = "";
+  let responseBody = "";
+  pool.query = async (query) => {
+    capturedQuery = query;
+    return { rows: [] };
+  };
+  const response = {
+    setHeader() {},
+    status(code) {
+      assert.equal(code, 200);
+      return this;
+    },
+    send(body) {
+      responseBody = body;
+      return this;
+    },
+  };
+
+  try {
+    await exportarReporteCSV({
+      query: { tipo: "reservas", grupo_estado: "por_atender" },
+    }, response);
+  } finally {
+    pool.query = originalQuery;
+  }
+
+  assert.match(capturedQuery, /COALESCE\(r\.estado, ''\) NOT IN \('en_curso', 'finalizada', 'cancelada'\)/);
+  assert.match(responseBody, /N.º de reserva/);
 });

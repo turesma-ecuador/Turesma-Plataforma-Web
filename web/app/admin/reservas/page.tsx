@@ -70,6 +70,8 @@ type CambioDestinoAdmin = {
 };
 
 const ESTADOS = ["pendiente", "pendiente_pago", "confirmada", "en_curso", "finalizada", "cancelada"];
+type ReservationView = "por_atender" | "en_curso" | "atendidos" | "todas";
+
 const createEmptyForm = () => ({
   usuario_id: "",
   fecha_reserva: new Date().toISOString().slice(0, 10),
@@ -128,6 +130,7 @@ export default function AdminReservasPage() {
   const [exportandoExcel, setExportandoExcel] = useState(false);
   const [search, setSearch] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("todos");
+  const [vistaReservas, setVistaReservas] = useState<ReservationView>("por_atender");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
@@ -162,6 +165,7 @@ export default function AdminReservasPage() {
     if (Number.isInteger(reservationId) && reservationId > 0) {
       setFocusedReservationId(reservationId);
       setSearch(String(reservationId));
+      setVistaReservas("todas");
     }
   }, []);
 
@@ -243,8 +247,14 @@ export default function AdminReservasPage() {
       (r.vehiculo_placa || "").toLowerCase().includes(q) ||
       (r.destino || "").toLowerCase().includes(q) ||
       (r.origen || "").toLowerCase().includes(q);
+    const attended = ["finalizada", "cancelada"].includes(r.estado);
+    const inProgress = r.estado === "en_curso";
+    const matchView = vistaReservas === "todas"
+      || (vistaReservas === "atendidos" && attended)
+      || (vistaReservas === "en_curso" && inProgress)
+      || (vistaReservas === "por_atender" && !attended && !inProgress);
     const matchEstado = filtroEstado === "todos" || r.estado === filtroEstado;
-    return matchSearch && matchEstado;
+    return matchSearch && matchView && matchEstado;
   });
 
   const exportarExcel = async () => {
@@ -252,6 +262,7 @@ export default function AdminReservasPage() {
     setErr("");
     const query = new URLSearchParams({ tipo: "reservas", formato: "xlsx" });
     if (filtroEstado !== "todos") query.set("estado", filtroEstado);
+    if (vistaReservas !== "todas") query.set("grupo_estado", vistaReservas);
     if (search.trim()) query.set("busqueda", search.trim());
     const result = await descargarExcel(
       `/api/admin/reportes/exportar-csv?${query.toString()}`,
@@ -416,6 +427,19 @@ export default function AdminReservasPage() {
     en_curso: reservas.filter(r => r.estado === "en_curso").length,
     finalizadas: reservas.filter(r => r.estado === "finalizada").length,
   };
+  const reservationViewCounts = {
+    por_atender: reservas.filter((r) => !["finalizada", "cancelada", "en_curso"].includes(r.estado)).length,
+    en_curso: reservas.filter((r) => r.estado === "en_curso").length,
+    atendidos: reservas.filter((r) => ["finalizada", "cancelada"].includes(r.estado)).length,
+    todas: reservas.length,
+  };
+  const estadosDeVista = vistaReservas === "por_atender"
+    ? ESTADOS.filter((estado) => !["en_curso", "finalizada", "cancelada"].includes(estado))
+    : vistaReservas === "en_curso"
+      ? ["en_curso"]
+      : vistaReservas === "atendidos"
+        ? ["finalizada", "cancelada"]
+        : ESTADOS;
   const editingReservation = reservas.find((reserva) => reserva.id === editingId);
   const canSubmitReservation = Boolean(
     form.usuario_id
@@ -553,14 +577,34 @@ export default function AdminReservasPage() {
 
       {/* FILTROS */}
       <div className="flex flex-wrap gap-3 items-center bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
+        <nav aria-label="Filtrar reservas" className="flex w-full flex-wrap gap-2 border-b border-slate-100 pb-3">
+          {([
+            ["por_atender", "Por atender"],
+            ["en_curso", "En curso"],
+            ["atendidos", "Atendidos"],
+            ["todas", "Todas"],
+          ] as const).map(([view, label]) => (
+            <button
+              key={view}
+              type="button"
+              onClick={() => { setVistaReservas(view); setFiltroEstado("todos"); }}
+              aria-pressed={vistaReservas === view}
+              className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                vistaReservas === view ? "bg-[#E31E24] text-white shadow-sm" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }`}
+            >
+              {label} <span className="ml-1 opacity-70">{reservationViewCounts[view]}</span>
+            </button>
+          ))}
+        </nav>
         <div className="relative flex-1 min-w-[200px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por ID, cliente, vehículo, destino..." className="w-full pl-9 pr-4 py-2.5 rounded-xl border-2 border-slate-100 bg-slate-50 text-sm font-bold outline-none focus:border-[#E31E24] transition-all" />
         </div>
         <div className="flex gap-2 flex-wrap">
-          {["todos", ...ESTADOS].map(e => (
+          {["todos", ...estadosDeVista].map(e => (
             <button key={e} onClick={() => setFiltroEstado(e)} className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filtroEstado === e ? "bg-[#E31E24] text-white shadow-sm" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
-              {e === "todos" ? "Todos" : (ESTADO_LABEL[e] || e.replace("_", " "))}
+              {e === "todos" ? "Todos los estados" : (ESTADO_LABEL[e] || e.replace("_", " "))}
             </button>
           ))}
         </div>

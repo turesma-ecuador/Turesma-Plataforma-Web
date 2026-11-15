@@ -1391,9 +1391,15 @@ const historialOperacion = async (req: any, res: any) => {
   if (!Number.isInteger(operationId)) return res.status(400).json({ success: false, error: "ID inválido" });
   try {
     const result = await pool.query(
-      `SELECT h.*, u.nombre AS usuario_nombre, u.apellido AS usuario_apellido
-       FROM operacion_historial h LEFT JOIN usuarios u ON u.id = h.usuario_id
-       WHERE h.operacion_id = $1 ORDER BY h.creado_en DESC`,
+      `SELECT h.*, u.nombre AS usuario_nombre, u.apellido AS usuario_apellido,
+              v.placa AS vehiculo_placa, v.modelo AS vehiculo_modelo,
+              concat_ws(' ', cu.nombre, cu.apellido) AS conductor_asignado_nombre
+       FROM operacion_historial h
+       LEFT JOIN usuarios u ON u.id = h.usuario_id
+       LEFT JOIN vehiculos v ON v.id = NULLIF(h.detalle->>'vehiculo_id', '')::int
+       LEFT JOIN conductores c ON c.id = NULLIF(h.detalle->>'conductor_id', '')::int
+       LEFT JOIN usuarios cu ON cu.id = c.usuario_id
+       WHERE h.operacion_id = $1 ORDER BY h.creado_en ASC, h.id ASC`,
       [operationId]
     );
     return res.json({ success: true, data: result.rows });

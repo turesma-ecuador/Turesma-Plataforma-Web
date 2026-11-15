@@ -80,6 +80,8 @@ type Operation = {
   subcontratacion_costo?: string | number | null;
 };
 
+type DispatchView = "por_atender" | "en_curso" | "atendidos" | "todos";
+
 type ReservationReady = {
   id: number;
   fecha_reserva: string;
@@ -140,6 +142,10 @@ type OperationHistoryEntry = {
   creado_en: string;
   usuario_nombre: string | null;
   usuario_apellido: string | null;
+  usuario_id?: number | null;
+  vehiculo_placa?: string | null;
+  vehiculo_modelo?: string | null;
+  conductor_asignado_nombre?: string | null;
 };
 
 const stateLabels: Record<string, string> = {
@@ -201,6 +207,102 @@ const assignmentScheduleLabel = (operation: Operation) => {
     : `Salida ${startDate} ${startTime} · llegada ${endDate} ${endTime}`;
 };
 
+const operationHistoryActionLabels: Record<string, string> = {
+  creacion_desde_reserva: "Despacho creado desde una reserva",
+  creacion_requerimiento: "Unidad creada desde un requerimiento",
+  creacion: "Operación creada",
+  asignacion: "Vehículo y conductor asignados",
+  asignacion_tramo_reserva: "Asignación sincronizada con otro tramo",
+  cambio_estado: "Estado de la operación actualizado",
+  actualizacion_conductor: "Actualización reportada por el conductor",
+  retraso_reportado_conductor: "Retraso informado por el conductor",
+  cancelacion_reserva: "Operación cancelada por el cliente",
+  cancelacion_reserva_admin: "Operación cancelada por administración",
+  reapertura_despacho: "Despacho reabierto",
+  actualizar_subcontratacion: "Subcontratación actualizada",
+};
+
+const operationHistoryDetailLabels: Record<string, string> = {
+  reserva_id: "Reserva",
+  tramo: "Tramo",
+  requerimiento_id: "Requerimiento",
+  grupo_numero: "Grupo",
+  unidad_numero: "Unidad",
+  origen: "Origen",
+  destino: "Destino",
+  tipo_vehiculo_solicitado: "Categoría solicitada",
+  tipo_vehiculo_asignado: "Categoría asignada",
+  categoria_sustituida: "Categoría alternativa",
+  motivo: "Motivo",
+  nueva_eta: "Nueva llegada estimada",
+  estado_reserva: "Estado de la reserva",
+  ida_finalizada: "Tramo de ida",
+  empresa: "Proveedor",
+  vehiculo: "Vehículo del proveedor",
+  placa: "Placa",
+  conductor: "Conductor",
+  costo: "Costo acordado",
+  accion: "Acción",
+};
+
+const parseOperationHistoryDetail = (detail: OperationHistoryEntry["detalle"]) => {
+  if (!detail) return null;
+  if (typeof detail !== "string") return detail;
+  try {
+    const parsed: unknown = JSON.parse(detail);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch (error) {
+    if (error instanceof SyntaxError) return null;
+    throw error;
+  }
+};
+
+const operationHistoryDetailRows = (entry: OperationHistoryEntry) => {
+  const detail = parseOperationHistoryDetail(entry.detalle);
+  if (!detail) return [];
+
+  const rows = Object.entries(operationHistoryDetailLabels).flatMap(([key, label]) => {
+    const value = detail[key];
+    if (value === null || value === undefined || value === "") return [];
+
+    let displayValue: string;
+    if (key === "tramo") {
+      displayValue = ({
+        reserva: "Servicio",
+        reserva_ida: "Ida",
+        reserva_regreso: "Regreso",
+      } as Record<string, string>)[String(value)] || String(value);
+    } else if (key === "categoria_sustituida" || key === "ida_finalizada") {
+      displayValue = value ? "Sí" : "No";
+    } else if (key === "nueva_eta") {
+      const eta = new Date(String(value));
+      displayValue = Number.isNaN(eta.getTime()) ? String(value) : eta.toLocaleString("es-EC");
+    } else if (key === "estado_reserva") {
+      displayValue = stateLabels[String(value)] || String(value).replaceAll("_", " ");
+    } else if (key === "reserva_id" || key === "requerimiento_id") {
+      displayValue = `#${String(value)}`;
+    } else if (key === "costo" && Number.isFinite(Number(value))) {
+      displayValue = `$${Number(value).toFixed(2)}`;
+    } else {
+      displayValue = String(value);
+    }
+
+    return [{ label, value: displayValue }];
+  });
+
+  const vehicleLabel = [entry.vehiculo_placa, entry.vehiculo_modelo].filter(Boolean).join(" · ");
+  if (vehicleLabel) rows.push({ label: "Vehículo asignado", value: vehicleLabel });
+  if (entry.conductor_asignado_nombre) {
+    rows.push({ label: "Conductor asignado", value: entry.conductor_asignado_nombre });
+  }
+  return rows;
+};
+
+const operationHistoryStateLabel = (state: string | null) =>
+  state ? stateLabels[state] || state.replaceAll("_", " ") : "";
+
 const assignmentAvailabilityMessage = (error: unknown) => {
   if (!(error instanceof ApiResponseError)) {
     return "No fue posible consultar la disponibilidad en este momento. Intenta nuevamente.";
@@ -223,6 +325,7 @@ const assignmentAvailabilityMessage = (error: unknown) => {
 export default function OperacionesPage() {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [reservations, setReservations] = useState<ReservationReady[]>([]);
+  const [dispatchView, setDispatchView] = useState<DispatchView>("por_atender");
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [partnerCompanies, setPartnerCompanies] = useState<PartnerCompany[]>([]);
@@ -283,6 +386,20 @@ export default function OperacionesPage() {
         formatTime(b.hora_inicio) || ""
       )
       || a.id - b.id;
+  });
+  const isAttendedOperation = (operation: Operation) => ["completada", "cancelada"].includes(operation.estado);
+  const isInProgressOperation = (operation: Operation) => ["en_curso", "incidencia"].includes(operation.estado);
+  const dispatchCounts = {
+    por_atender: operations.filter((operation) => !isAttendedOperation(operation) && !isInProgressOperation(operation)).length + reservations.length,
+    en_curso: operations.filter(isInProgressOperation).length,
+    atendidos: operations.filter(isAttendedOperation).length,
+    todos: operations.length + reservations.length,
+  };
+  const visibleOperations = sortedOperations.filter((operation) => {
+    if (dispatchView === "todos") return true;
+    if (dispatchView === "atendidos") return isAttendedOperation(operation);
+    if (dispatchView === "en_curso") return isInProgressOperation(operation);
+    return !isAttendedOperation(operation) && !isInProgressOperation(operation);
   });
   const selectedAvailableVehicle = vehicles.find((vehicle) => String(vehicle.id) === selectedVehicleId);
   const requestedVehicleType = assignment?.tipo_vehiculo_solicitado?.trim() || "";
@@ -596,7 +713,28 @@ export default function OperacionesPage() {
         </div>
       )}
 
-      <section className="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
+      <nav aria-label="Filtrar despachos" className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        {([
+          ["por_atender", "Por atender"],
+          ["en_curso", "En curso"],
+          ["atendidos", "Atendidos"],
+          ["todos", "Todos"],
+        ] as const).map(([view, label]) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => setDispatchView(view)}
+            aria-pressed={dispatchView === view}
+            className={`rounded-xl px-4 py-2.5 text-xs font-black transition ${
+              dispatchView === view ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            {label} <span className="ml-1 opacity-70">{dispatchCounts[view]}</span>
+          </button>
+        ))}
+      </nav>
+
+      {(dispatchView === "por_atender" || dispatchView === "todos") && <section className="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/70 px-5 py-4">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">Flujo principal</p>
@@ -655,16 +793,16 @@ export default function OperacionesPage() {
             );})}
           </div>
         )}
-      </section>
+      </section>}
 
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <div className="flex items-center gap-3"><ClipboardList className="text-red-600" size={20} /><h2 className="font-black text-slate-900">Servicios programados</h2></div>
+          <div className="flex items-center gap-3"><ClipboardList className="text-red-600" size={20} /><h2 className="font-black text-slate-900">{dispatchView === "atendidos" ? "Despachos atendidos" : dispatchView === "en_curso" ? "Despachos en curso" : dispatchView === "todos" ? "Todos los despachos" : "Servicios por atender"}</h2></div>
           <button onClick={() => void load()} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Actualizar operaciones"><RefreshCw size={17} /></button>
         </div>
-        {loading ? <p className="p-8 text-center text-sm font-semibold text-slate-400">Cargando servicios...</p> : operations.length === 0 ? <div className="p-10 text-center"><p className="text-sm font-black text-slate-500">No hay servicios programados</p><p className="mt-1 text-xs text-slate-400">Las reservas confirmadas aparecerán aquí para asignar conductor y vehículo.</p></div> : (
+        {loading ? <p className="p-8 text-center text-sm font-semibold text-slate-400">Cargando servicios...</p> : visibleOperations.length === 0 ? <div className="p-10 text-center"><p className="text-sm font-black text-slate-500">{dispatchView === "atendidos" ? "No hay despachos atendidos" : dispatchView === "en_curso" ? "No hay despachos en curso" : "No hay servicios en esta vista"}</p><p className="mt-1 text-xs text-slate-400">{dispatchView === "por_atender" ? "Las reservas confirmadas aparecerán aquí para asignar conductor y vehículo." : "Prueba otra categoría para consultar otros despachos."}</p></div> : (
           <div className="space-y-3 p-3 sm:p-5">
-            {sortedOperations.map((operation) => {
+            {visibleOperations.map((operation) => {
               const startTime = formatTime(operation.hora_inicio);
               const endTime = formatTime(operation.hora_fin);
               const scheduledDate = dateKey(operation.fecha_programada);
@@ -1109,21 +1247,49 @@ export default function OperacionesPage() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4">
           <section className="max-h-[85dvh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
             <div className="flex items-start justify-between gap-3">
-              <div><p className="text-xs font-black uppercase tracking-widest text-violet-700">Auditoría del despacho</p><h2 className="mt-1 text-lg font-black text-slate-900">Operación #{historyOperation.id}</h2></div>
+              <div><p className="text-xs font-black uppercase tracking-widest text-violet-700">Seguimiento del despacho</p><h2 className="mt-1 text-lg font-black text-slate-900">Historial de la operación #{historyOperation.id}</h2></div>
               <button type="button" onClick={() => setHistoryOperation(null)} aria-label="Cerrar historial" className="rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button>
             </div>
             {historyLoading ? <p className="py-12 text-center text-sm font-bold text-slate-400">Cargando historial...</p>
               : historyError ? <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{historyError}</p>
-                : operationHistory.length === 0 ? <p className="mt-5 rounded-xl bg-slate-50 p-5 text-center text-sm text-slate-500">Aún no hay cambios registrados.</p>
-                  : <ol className="mt-5 space-y-3">{operationHistory.map((entry) => (
-                    <li key={entry.id} className="rounded-xl border border-slate-200 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div><p className="font-black capitalize text-slate-800">{entry.accion.replaceAll("_", " ")}</p><p className="mt-1 text-xs text-slate-500">{entry.estado_anterior || "—"} → {entry.estado_nuevo || "—"} · {entry.usuario_nombre || "Usuario eliminado"} {entry.usuario_apellido || ""}</p></div>
-                        <time className="text-xs font-semibold text-slate-400">{new Date(entry.creado_en).toLocaleString("es-EC")}</time>
-                      </div>
-                      {entry.detalle && <pre className="mt-3 whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-xs text-slate-600">{JSON.stringify(typeof entry.detalle === "string" ? JSON.parse(entry.detalle) : entry.detalle, null, 2)}</pre>}
-                    </li>
-                  ))}</ol>}
+                : operationHistory.length === 0 ? <p className="mt-5 rounded-xl bg-slate-50 p-5 text-center text-sm text-slate-500">Todavía no hay eventos registrados para esta operación.</p>
+                  : <ol className="mt-6 space-y-3">{operationHistory.map((entry) => {
+                    const previousState = operationHistoryStateLabel(entry.estado_anterior);
+                    const nextState = operationHistoryStateLabel(entry.estado_nuevo);
+                    const stateChange = previousState && nextState
+                      ? `${previousState} → ${nextState}`
+                      : nextState
+                        ? `Estado: ${nextState}`
+                        : previousState
+                          ? `Estado anterior: ${previousState}`
+                          : "";
+                    const actor = [entry.usuario_nombre, entry.usuario_apellido].filter(Boolean).join(" ")
+                      || (entry.usuario_id ? "Usuario no disponible" : "Sistema");
+                    const detailRows = operationHistoryDetailRows(entry);
+
+                    return (
+                      <li key={entry.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-black text-slate-800">{operationHistoryActionLabels[entry.accion] || "Actualización de la operación"}</p>
+                            {stateChange && <p className="mt-1 text-sm font-semibold text-slate-600">{stateChange}</p>}
+                          </div>
+                          <time className="text-xs font-semibold text-slate-400">{new Date(entry.creado_en).toLocaleString("es-EC")}</time>
+                        </div>
+                        {detailRows.length > 0 && (
+                          <dl className="mt-4 grid gap-x-5 gap-y-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-2">
+                            {detailRows.map(({ label, value }) => (
+                              <div key={label}>
+                                <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{label}</dt>
+                                <dd className="mt-0.5 break-words text-sm font-semibold text-slate-700">{value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        )}
+                        <p className="mt-3 text-xs text-slate-500">Registrado por <span className="font-semibold text-slate-700">{actor}</span></p>
+                      </li>
+                    );
+                  })}</ol>}
           </section>
         </div>
       )}
