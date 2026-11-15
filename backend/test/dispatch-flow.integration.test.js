@@ -595,7 +595,8 @@ const pool = {
           return result(reservation ? [{ id: reservation.id }] : []);
         }
         if (query.startsWith("select r.id as reserva_id, r.vehiculo_id, v.placa, coalesce(r.fecha_salida::date")) {
-          const [operationId, startDateValue, endDateValue, , , , vehicleId, driverUserId, driverId] = params;
+          assert.equal(params.length, 6, "La consulta de reservas sin preparar debe enviar solo parámetros usados");
+          const [operationId, startDateValue, endDateValue, vehicleId, driverUserId, driverId] = params;
           const operation = operationFor(operationId);
           const startDate = asDate(startDateValue);
           const endDate = asDate(endDateValue);
@@ -627,7 +628,8 @@ const pool = {
           return result(rows);
         }
         if (query.startsWith("select r.id as reserva_id, r.vehiculo_id, v.placa")) {
-          const [operationId, startDateValue, endDateValue, startValue, endValue, , vehicleId, driverUserId, driverId] = params;
+          assert.equal(params.length, 8, "La consulta de conflictos de reservas debe enviar solo parámetros usados");
+          const [operationId, startDateValue, endDateValue, startValue, endValue, vehicleId, driverUserId, driverId] = params;
           const operation = operationFor(operationId);
           const startDate = asDate(startDateValue);
           const endDate = asDate(endDateValue);

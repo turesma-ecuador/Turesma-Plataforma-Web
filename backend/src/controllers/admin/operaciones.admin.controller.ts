@@ -117,7 +117,7 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
        )
        AND r.estado NOT IN ('cancelada', 'finalizada')
        AND (
-         r.vehiculo_id = $7
+         r.vehiculo_id = $6
          OR r.conductor_id = CASE
            WHEN EXISTS (
              SELECT 1
@@ -129,7 +129,7 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
              WHERE tc.table_schema = 'public' AND tc.table_name = 'reservas'
                AND tc.constraint_type = 'FOREIGN KEY' AND kcu.column_name = 'conductor_id'
                AND ccu.table_name = 'conductores'
-           ) THEN $9 ELSE $8
+           ) THEN $8 ELSE $7
          END
        )
        AND (
@@ -140,7 +140,7 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
          OR (r.fecha_salida::time < $5::time AND $4::time < r.fecha_llegada::time)
        )
      LIMIT 1`,
-    [operationId, date, endDate, start, end, ACTIVE_STATES, vehicleId, driverUserId, driverId]
+    [operationId, date, endDate, start, end, vehicleId, driverUserId, driverId]
   );
 
   if (reservationConflict.rows[0]) return reservationConflict.rows[0];
@@ -158,7 +158,7 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
      LEFT JOIN vehiculos v ON v.id = r.vehiculo_id
      WHERE r.id <> COALESCE((SELECT reserva_id FROM operaciones WHERE id = $1), -1)
        AND r.estado NOT IN ('cancelada', 'finalizada')
-       AND (r.vehiculo_id = $7 OR r.conductor_id = CASE
+       AND (r.vehiculo_id = $4 OR r.conductor_id = CASE
          WHEN EXISTS (
            SELECT 1
            FROM information_schema.table_constraints tc
@@ -169,7 +169,7 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
            WHERE tc.table_schema = 'public' AND tc.table_name = 'reservas'
              AND tc.constraint_type = 'FOREIGN KEY' AND kcu.column_name = 'conductor_id'
              AND ccu.table_name = 'conductores'
-         ) THEN $9 ELSE $8
+         ) THEN $6 ELSE $5
        END)
        AND NOT EXISTS (
          SELECT 1 FROM operaciones o
@@ -182,7 +182,7 @@ const findScheduleConflict = async (client: any, operationId: number, date: stri
            AND COALESCE(r.fecha_fin, r.fecha_llegada::date, r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva::date) >= $2::date
          )
        )`,
-    [operationId, date, endDate, start, end, ACTIVE_STATES, vehicleId, driverUserId, driverId]
+    [operationId, date, endDate, vehicleId, driverUserId, driverId]
   );
 
   for (const row of unpreparedReservations.rows) {
