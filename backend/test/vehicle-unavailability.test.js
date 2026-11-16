@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const state = { notifications: [], sql: [], inserted: null };
+const state = { notifications: [], sql: [], inserted: null, listRows: [] };
 const result = (rows = []) => ({ rows, rowCount: rows.length });
 const normalized = (sql) => sql.replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -9,6 +9,12 @@ const pool = {
   async query(sql) {
     const query = normalized(sql);
     state.sql.push(query);
+    if (query.startsWith("select id as vehiculo_id from vehiculos")) return result([{ vehiculo_id: 701 }]);
+    if (query.startsWith("select b.id, b.vehiculo_id, b.tipo, b.urgente")) {
+      assert.match(query, /b\.fecha_inicio::text as fecha_inicio/);
+      assert.match(query, /b\.fecha_fin::text as fecha_fin/);
+      return result(state.listRows);
+    }
     throw new Error(`Unexpected pool query: ${query}`);
   },
   async connect() {
@@ -59,7 +65,10 @@ installMock("../dist/config/notificaciones", {
   async crearNotificacion() {},
 });
 
-const { createDriverVehicleUnavailability } = require("../dist/controllers/vehiculo-indisponibilidades.controller");
+const {
+  createDriverVehicleUnavailability,
+  listDriverVehicleUnavailability,
+} = require("../dist/controllers/vehiculo-indisponibilidades.controller");
 
 const response = () => ({
   statusCode: 200,
@@ -100,4 +109,18 @@ test("rechaza una urgencia preventiva antes de abrir la base de datos", async ()
 
   assert.equal(res.statusCode, 400);
   assert.equal(state.sql.length, 0);
+});
+
+test("devuelve fechas de indisponibilidad en formato de fecha sin conversión de zona horaria", async () => {
+  state.sql.length = 0;
+  state.listRows = [{
+    id: 31, vehiculo_id: 701, fecha_inicio: "2098-11-16", fecha_fin: "2098-11-16",
+  }];
+  const res = response();
+
+  await listDriverVehicleUnavailability({ params: { id: "301" } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body[0].fecha_inicio, "2098-11-16");
+  assert.equal(res.body[0].fecha_fin, "2098-11-16");
 });

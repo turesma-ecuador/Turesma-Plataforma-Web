@@ -124,7 +124,12 @@ const listDriverVehicleUnavailability = async (req: any, res: any) => {
     const vehicleIds = await getDriverVehicleIds(pool, userId);
     if (!vehicleIds.length) return res.json([]);
     const result = await pool.query(
-      `SELECT b.*, v.placa, v.modelo, u.nombre AS creado_por_nombre
+      `SELECT b.id, b.vehiculo_id, b.tipo, b.urgente,
+              b.fecha_inicio::text AS fecha_inicio, b.fecha_fin::text AS fecha_fin,
+              b.hora_inicio::text AS hora_inicio, b.hora_fin::text AS hora_fin,
+              b.motivo, b.estado, b.creado_por, b.rol_creador, b.cerrado_por,
+              b.cerrado_en, b.creado_en, b.actualizado_en,
+              v.placa, v.modelo, u.nombre AS creado_por_nombre
        FROM vehiculo_indisponibilidades b
        JOIN vehiculos v ON v.id = b.vehiculo_id
        JOIN usuarios u ON u.id = b.creado_por
@@ -255,7 +260,12 @@ const closeVehicleUnavailability = async (req: any, res: any) => {
 const listAdminVehicleUnavailability = async (_req: any, res: any) => {
   try {
     const result = await pool.query(
-      `SELECT b.*, v.placa, v.modelo, creador.nombre AS creado_por_nombre,
+      `SELECT b.id, b.vehiculo_id, b.tipo, b.urgente,
+              b.fecha_inicio::text AS fecha_inicio, b.fecha_fin::text AS fecha_fin,
+              b.hora_inicio::text AS hora_inicio, b.hora_fin::text AS hora_fin,
+              b.motivo, b.estado, b.creado_por, b.rol_creador, b.cerrado_por,
+              b.cerrado_en, b.creado_en, b.actualizado_en,
+              v.placa, v.modelo, creador.nombre AS creado_por_nombre,
               cerrador.nombre AS cerrado_por_nombre
        FROM vehiculo_indisponibilidades b
        JOIN vehiculos v ON v.id = b.vehiculo_id
