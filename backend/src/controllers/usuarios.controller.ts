@@ -677,6 +677,24 @@ const reprogramarMiReserva = async (req: any, res: any) => {
         await client.query("ROLLBACK");
         return res.status(409).json({ error: "El vehículo asignado tiene mantenimiento en el nuevo período" });
       }
+      const maintenanceAvailability = await client.query(
+        `SELECT id, tipo, motivo
+         FROM vehiculo_indisponibilidades
+         WHERE vehiculo_id = ANY($1::int[]) AND estado = 'activa'
+           AND fecha_inicio <= $3::date
+           AND COALESCE(fecha_fin, 'infinity'::date) >= $2::date
+           AND (
+             $2::date <> $3::date OR hora_inicio IS NULL OR $4::time IS NULL
+             OR hora_fin IS NULL OR $5::time IS NULL
+             OR (hora_inicio < $5::time AND $4::time < hora_fin)
+           )
+         LIMIT 1`,
+        [vehicleIds, fecha, newEnd, newStartTime, endTime]
+      );
+      if (maintenanceAvailability.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "El vehículo asignado tiene un bloqueo de disponibilidad por mantenimiento en el nuevo período" });
+      }
     }
     if (operationDriverIds.length || reservationDriverIds.length) {
       await client.query(
@@ -765,6 +783,12 @@ const reprogramarMiReserva = async (req: any, res: any) => {
              SELECT 1 FROM mantenimiento_vehiculos m
              WHERE m.vehiculo_id = v.id AND (m.estado = 'en_progreso'
                OR (m.estado = 'programado' AND m.fecha_programada BETWEEN $2::date AND $3::date))
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM vehiculo_indisponibilidades b
+             WHERE b.vehiculo_id = v.id AND b.estado = 'activa'
+               AND b.fecha_inicio <= $3::date
+               AND COALESCE(b.fecha_fin, 'infinity'::date) >= $2::date
            )
            AND NOT EXISTS (
              SELECT 1 FROM reservas r

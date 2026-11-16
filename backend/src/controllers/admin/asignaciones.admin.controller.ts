@@ -76,6 +76,18 @@ const crearAsignacion = async (req: any, res: any) => {
     if (vehiculo.rows[0].estado === "mantenimiento") {
       return res.status(409).json({ error: "El vehículo está en mantenimiento y no puede asignarse para operar" });
     }
+    const maintenanceBlock = await pool.query(
+      `SELECT id, motivo
+       FROM vehiculo_indisponibilidades
+       WHERE vehiculo_id = $1 AND estado = 'activa'
+         AND fecha_inicio <= CURRENT_DATE
+         AND COALESCE(fecha_fin, 'infinity'::date) >= CURRENT_DATE
+       LIMIT 1`,
+      [vehiculo_id]
+    );
+    if (maintenanceBlock.rowCount) {
+      return res.status(409).json({ error: "El vehículo está bloqueado por mantenimiento y no puede asignarse para operar" });
+    }
 
     // Verificar que conductor tenga licencia vigente
     const conductor = await pool.query(

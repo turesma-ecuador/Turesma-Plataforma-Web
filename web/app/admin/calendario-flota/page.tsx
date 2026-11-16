@@ -96,7 +96,7 @@ const formatDate = (value: string) => fromIsoDate(value).toLocaleDateString("es-
 });
 
 const eventName = (event: FleetEvent) => {
-  if (event.tipo === "mantenimiento") return "Mantenimiento";
+  if (event.tipo === "mantenimiento") return event.tipo_servicio?.startsWith("Urgente") ? "Bloqueo urgente" : "Mantenimiento";
   if (event.tipo === "externo") return event.tipo_servicio === "fuera_de_servicio" ? "Fuera de servicio" : "Viaje externo";
   if (event.tipo_servicio === "Regreso de reserva") return "Regreso";
   if (event.tipo === "reserva") return "Reserva";
@@ -120,6 +120,7 @@ const eventSummary = (event: FleetEvent) => {
 
 const eventStatusLabel = (event: FleetEvent) => {
   if (event.tipo === "mantenimiento") {
+    if (event.tipo_servicio?.startsWith("Urgente")) return "Urgencia activa · pendiente de liberar";
     return event.estado === "en_progreso" ? "Mantenimiento en curso" : "Mantenimiento programado";
   }
   if (event.tipo === "externo") return `Bloqueo externo${event.conductor_nombre ? ` · ${event.conductor_nombre}` : ""}`;

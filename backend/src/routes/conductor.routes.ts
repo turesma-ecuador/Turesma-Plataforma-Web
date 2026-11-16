@@ -26,6 +26,11 @@ const {
   listarClientesConductor,
   registrarViajeConductor,
 } = require("../controllers/conductor.controller");
+const {
+  listDriverVehicleUnavailability: listarIndisponibilidadesMantenimiento,
+  createDriverVehicleUnavailability: crearIndisponibilidadMantenimiento,
+  closeVehicleUnavailability: cerrarIndisponibilidadMantenimiento,
+} = require("../controllers/vehiculo-indisponibilidades.controller");
 
 const router = express.Router();
 
@@ -52,6 +57,9 @@ router.patch("/:id/estado", actualizarEstadoConductor);
 router.get("/:id/vehiculo", obtenerMiVehiculoConductor);
 router.get("/:id/mantenimiento", listarMantenimientoConductor);
 router.post("/:id/mantenimiento", crearMantenimientoConductor);
+router.get("/:id/indisponibilidades-mantenimiento", listarIndisponibilidadesMantenimiento);
+router.post("/:id/indisponibilidades-mantenimiento", requireRole("conductor", "vehiculo"), crearIndisponibilidadMantenimiento);
+router.patch("/:id/indisponibilidades-mantenimiento/:indisponibilidadId/cerrar", cerrarIndisponibilidadMantenimiento);
 router.post("/:id/ubicacion", compartirUbicacionConductor);
 router.get("/:id/clientes", listarClientesConductor);
 router.post("/:id/registrar-viaje", registrarViajeConductor);

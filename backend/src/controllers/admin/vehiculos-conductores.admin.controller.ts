@@ -388,6 +388,14 @@ const verVehiculosDisponibles = async (req, res) => {
          ) = true
          AND NOT EXISTS (
            SELECT 1
+           FROM vehiculo_indisponibilidades b
+           WHERE b.vehiculo_id = v.id
+             AND b.estado = 'activa'
+             AND b.fecha_inicio <= $1::date
+             AND COALESCE(b.fecha_fin, 'infinity'::date) >= $1::date
+         )
+         AND NOT EXISTS (
+           SELECT 1
            FROM reservas r
            WHERE r.vehiculo_id = v.id
              AND r.fecha_reserva = $1::date

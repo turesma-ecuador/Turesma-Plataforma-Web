@@ -74,6 +74,19 @@ const queryResults = [
       tipo_servicio: "Preventivo",
     }],
   },
+  {
+    match: "from vehiculo_indisponibilidades b",
+    rows: [{
+      id: "indisponibilidad-81",
+      vehiculo_id: 21,
+      fecha_inicio: "2026-10-18",
+      fecha_fin: "2026-10-20",
+      estado: "programado",
+      tipo_servicio: "Mantenimiento preventivo",
+      descripcion: "Cambio preventivo",
+      conductor_nombre: "Chofer de prueba",
+    }],
+  },
 ];
 
 const pool = {
@@ -146,7 +159,8 @@ test("el calendario de flota solo permite acceso administrativo y devuelve ocupa
     const response = await request("?desde=2026-10-01&hasta=2026-10-31", tokenForRole("admin"));
     assert.equal(response.status, 200);
     assert.equal(response.body.vehicles[0].placa, "TEST-021");
-    assert.deepEqual(response.body.events.map((event) => event.tipo), ["operacion", "reserva", "mantenimiento", "externo"]);
+    assert.deepEqual(response.body.events.map((event) => event.tipo), ["operacion", "reserva", "mantenimiento", "mantenimiento", "externo"]);
+    assert.equal(response.body.events[3].descripcion, "Cambio preventivo");
     assert.equal(response.body.unassignedReservations[0].id, 61);
   });
 });

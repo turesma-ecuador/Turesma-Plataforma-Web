@@ -820,6 +820,36 @@ const initDatabase = async () => {
     ON mantenimiento_vehiculos (vehiculo_id, fecha_programada DESC);
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vehiculo_indisponibilidades (
+      id SERIAL PRIMARY KEY,
+      vehiculo_id INT NOT NULL REFERENCES vehiculos(id) ON DELETE CASCADE,
+      tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('preventivo', 'correctivo', 'otro')),
+      urgente BOOLEAN NOT NULL DEFAULT false,
+      fecha_inicio DATE NOT NULL,
+      fecha_fin DATE,
+      hora_inicio TIME,
+      hora_fin TIME,
+      motivo VARCHAR(1000) NOT NULL,
+      estado VARCHAR(20) NOT NULL DEFAULT 'activa' CHECK (estado IN ('activa', 'cerrada')),
+      creado_por INT NOT NULL REFERENCES usuarios(id),
+      rol_creador VARCHAR(20) NOT NULL CHECK (rol_creador IN ('conductor', 'admin')),
+      cerrado_por INT REFERENCES usuarios(id),
+      cerrado_en TIMESTAMP,
+      creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CHECK (fecha_fin IS NULL OR fecha_fin >= fecha_inicio),
+      CHECK ((hora_inicio IS NULL AND hora_fin IS NULL) OR (hora_inicio IS NOT NULL AND hora_fin IS NOT NULL AND hora_fin > hora_inicio)),
+      CHECK (fecha_fin IS NOT NULL OR urgente = true)
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS vehiculo_indisponibilidades_activas_fecha_idx
+    ON vehiculo_indisponibilidades (vehiculo_id, fecha_inicio, fecha_fin)
+    WHERE estado = 'activa';
+  `);
+
   // ============ EXPANDIR TABLA CONDUCTORES CON MÉTRICAS ============
   await pool.query(`
     ALTER TABLE conductores

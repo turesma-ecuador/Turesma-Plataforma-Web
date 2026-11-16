@@ -666,6 +666,29 @@ const asignarOperacion = async (req: any, res: any) => {
       });
     }
 
+    const maintenanceAvailability = await client.query(
+      `SELECT id, tipo, urgente, fecha_inicio::text, fecha_fin::text, motivo
+       FROM vehiculo_indisponibilidades
+       WHERE vehiculo_id = $1 AND estado = 'activa'
+         AND fecha_inicio <= $3::date
+         AND COALESCE(fecha_fin, 'infinity'::date) >= $2::date
+         AND (
+           $2::date <> $3::date OR hora_inicio IS NULL OR $4::time IS NULL
+           OR hora_fin IS NULL OR $5::time IS NULL
+           OR (hora_inicio < $5::time AND $4::time < hora_fin)
+         )
+       ORDER BY fecha_inicio, id
+       LIMIT 1`,
+      [vehicleId, current.fecha_programada, endDate, current.hora_inicio, current.hora_fin]
+    );
+    if (maintenanceAvailability.rowCount) {
+      return reject(409, {
+        success: false,
+        error: "El vehículo tiene un bloqueo de disponibilidad por mantenimiento en el período solicitado",
+        indisponibilidad: maintenanceAvailability.rows[0],
+      });
+    }
+
     const externalBlock = await client.query(
       `SELECT id, fecha_inicio::text, fecha_fin::text, hora_inicio::text, hora_fin::text,
               motivo, cliente_empresa, origen, destino, notas
@@ -828,6 +851,29 @@ const asignarOperacion = async (req: any, res: any) => {
       );
       if (legMaintenance.rowCount) {
         return reject(409, { success: false, error: `El vehículo tiene mantenimiento previsto para el ${legMaintenance.rows[0].fecha_programada}`, mantenimiento: legMaintenance.rows[0] });
+      }
+
+      const legMaintenanceAvailability = await client.query(
+        `SELECT id, tipo, urgente, fecha_inicio::text, fecha_fin::text, motivo
+         FROM vehiculo_indisponibilidades
+         WHERE vehiculo_id = $1 AND estado = 'activa'
+           AND fecha_inicio <= $3::date
+           AND COALESCE(fecha_fin, 'infinity'::date) >= $2::date
+           AND (
+             $2::date <> $3::date OR hora_inicio IS NULL OR $4::time IS NULL
+             OR hora_fin IS NULL OR $5::time IS NULL
+             OR (hora_inicio < $5::time AND $4::time < hora_fin)
+           )
+         ORDER BY fecha_inicio, id
+         LIMIT 1`,
+        [vehicleId, legDate, legEndDate, legStart, legEnd]
+      );
+      if (legMaintenanceAvailability.rowCount) {
+        return reject(409, {
+          success: false,
+          error: "El vehículo tiene un bloqueo de mantenimiento que se cruza con el regreso",
+          indisponibilidad: legMaintenanceAvailability.rows[0],
+        });
       }
 
       const externalLegBlock = await client.query(

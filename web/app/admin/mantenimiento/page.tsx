@@ -44,6 +44,13 @@ type Vehiculo = {
   tipo?: string; estado?: string; conductor_nombre?: string | null;
   activo?: boolean; viajes_realizados?: number;
 };
+type BloqueoMantenimiento = {
+  id: number; vehiculo_id: number; placa: string; modelo?: string;
+  tipo: "preventivo" | "correctivo" | "otro"; urgente: boolean;
+  fecha_inicio: string; fecha_fin: string | null;
+  hora_inicio: string | null; hora_fin: string | null;
+  motivo: string; estado: "activa" | "cerrada"; creado_por_nombre?: string;
+};
 
 type GrupoFlota = "activos" | "inactivos" | "sin-vinculo";
 
@@ -74,6 +81,17 @@ export default function AdminHistorialMantenimientoPage() {
   const [grupoFlota, setGrupoFlota] = useState<GrupoFlota>("activos");
   const [proximos, setProximos] = useState<Proximo[]>([]);
   const [pendientes, setPendientes] = useState(0);
+  const [bloqueos, setBloqueos] = useState<BloqueoMantenimiento[]>([]);
+  const [bloqueoError, setBloqueoError] = useState("");
+  const [bloqueoMessage, setBloqueoMessage] = useState("");
+  const [bloqueoConflicts, setBloqueoConflicts] = useState<string[]>([]);
+  const [bloqueoSaving, setBloqueoSaving] = useState(false);
+  const [bloqueoForm, setBloqueoForm] = useState({
+    vehiculo_id: "", tipo: "preventivo", urgente: false,
+    fecha_inicio: new Date().toISOString().slice(0, 10),
+    fecha_fin: new Date().toISOString().slice(0, 10),
+    hora_inicio: "", hora_fin: "", motivo: "",
+  });
   // Acción sobre un próximo mantenimiento (marcar hecho / reprogramar)
   const [mantAccion, setMantAccion] = useState<{ vehiculoId: number; placa: string; modo: "completar" | "reprogramar" | "programar" } | null>(null);
   const [mantFecha, setMantFecha] = useState("");
@@ -84,11 +102,12 @@ export default function AdminHistorialMantenimientoPage() {
   const load = async (silencioso = false) => {
     if (!silencioso) setLoading(true);
     try {
-      const [mRes, vRes, pRes, rRes] = await Promise.all([
+      const [mRes, vRes, pRes, rRes, bRes] = await Promise.all([
         fetch(`${API_URL}/api/admin/mantenimiento`, { headers: getAuthHeaders() }),
         fetch(`${API_URL}/api/admin/vehiculos`, { headers: getAuthHeaders() }),
         fetch(`${API_URL}/api/admin/mantenimiento/proximo`, { headers: getAuthHeaders() }).catch(() => ({ ok: false })),
         fetch(`${API_URL}/api/admin/mantenimiento/resumen`, { headers: getAuthHeaders() }).catch(() => ({ ok: false })),
+        fetch(`${API_URL}/api/admin/mantenimiento/indisponibilidades`, { headers: getAuthHeaders() }),
       ]);
       if (mRes.ok) {
         const data = await mRes.json();
@@ -108,6 +127,14 @@ export default function AdminHistorialMantenimientoPage() {
       if (rRes.ok) {
         const r = await (rRes as Response).json();
         setPendientes(r.data?.pendientes || 0);
+      }
+      if (bRes.ok) {
+        const data = await bRes.json();
+        setBloqueos(Array.isArray(data) ? data : []);
+        setBloqueoError("");
+      } else {
+        const data = await bRes.json().catch(() => ({}));
+        setBloqueoError(data?.error || "No se pudieron cargar los bloqueos de mantenimiento");
       }
     } catch { /* silencio */ }
     finally { setLoading(false); }
@@ -333,6 +360,48 @@ export default function AdminHistorialMantenimientoPage() {
     finally { setMantSaving(false); }
   };
 
+  const crearBloqueo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBloqueoSaving(true); setBloqueoError(""); setBloqueoMessage(""); setBloqueoConflicts([]);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/mantenimiento/indisponibilidades`, {
+        method: "POST", headers: getAuthHeaders(),
+        body: JSON.stringify({
+          ...bloqueoForm,
+          vehiculo_id: Number(bloqueoForm.vehiculo_id),
+          fecha_fin: bloqueoForm.urgente ? null : bloqueoForm.fecha_fin,
+          hora_inicio: bloqueoForm.hora_inicio || null,
+          hora_fin: bloqueoForm.hora_fin || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo registrar el bloqueo");
+      setBloqueoMessage(data.message || "Bloqueo registrado");
+      setBloqueoConflicts((data.conflictos || []).map((conflict: { tipo?: string; id?: number; reserva_id?: number; fecha_inicio?: string }) =>
+        `${conflict.tipo === "operacion" ? "Operación" : "Reserva"} #${conflict.tipo === "operacion" ? conflict.id : conflict.reserva_id}${conflict.fecha_inicio ? ` · ${conflict.fecha_inicio}` : ""}`
+      ));
+      setBloqueoForm(p => ({ ...p, motivo: "", urgente: false }));
+      await load(true);
+    } catch (e) {
+      setBloqueoError(e instanceof Error ? e.message : "Error inesperado");
+    } finally { setBloqueoSaving(false); }
+  };
+
+  const cerrarBloqueo = async (id: number) => {
+    setBloqueoError(""); setBloqueoMessage("");
+    try {
+      const res = await fetch(`${API_URL}/api/admin/mantenimiento/indisponibilidades/${id}/cerrar`, {
+        method: "PATCH", headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo marcar el vehículo como operativo");
+      setBloqueoMessage(data.message || "Vehículo marcado como operativo");
+      await load(true);
+    } catch (e) {
+      setBloqueoError(e instanceof Error ? e.message : "Error inesperado");
+    }
+  };
+
   if (checkingSession) return (
     <div className="flex h-64 items-center justify-center">
       <Loader2 className="animate-spin text-[#E31E24]" size={36} />
@@ -399,6 +468,90 @@ export default function AdminHistorialMantenimientoPage() {
           </div>
         ))}
       </div>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
+        <div className="mb-4">
+          <h2 className="text-sm font-black uppercase tracking-wide text-slate-800">Indisponibilidad de vehículos</h2>
+          <p className="mt-1 text-xs text-slate-500">Los bloqueos impiden nuevas asignaciones. Los servicios ya confirmados no se cancelan y se deben coordinar.</p>
+        </div>
+        {bloqueoMessage && <p role="status" className="mb-3 rounded-xl bg-emerald-50 p-3 text-xs font-bold text-emerald-700">{bloqueoMessage}</p>}
+        {bloqueoError && <p role="alert" className="mb-3 rounded-xl bg-red-50 p-3 text-xs font-bold text-red-700">{bloqueoError}</p>}
+        {bloqueoConflicts.length > 0 && <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <p className="font-black">Servicios ya confirmados: coordina los conflictos; no se cancelaron automáticamente.</p>
+          <ul className="mt-1 list-inside list-disc">{bloqueoConflicts.map(conflict => <li key={conflict}>{conflict}</li>)}</ul>
+        </div>}
+        <form onSubmit={crearBloqueo} className="grid gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">Vehículo
+            <select required value={bloqueoForm.vehiculo_id} onChange={e => setBloqueoForm(p => ({ ...p, vehiculo_id: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700">
+              <option value="">Selecciona un vehículo</option>
+              {vehiculos.map(v => <option key={v.id} value={v.id}>{v.placa} · {v.modelo}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">Tipo
+            <select value={bloqueoForm.tipo} onChange={e => setBloqueoForm(p => ({ ...p, tipo: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700">
+              <option value="preventivo">Preventivo</option><option value="correctivo">Correctivo</option><option value="otro">Otro</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 self-end rounded-xl border border-red-100 bg-red-50 p-3 text-xs font-black text-red-700">
+            <input type="checkbox" checked={bloqueoForm.urgente} onChange={e => setBloqueoForm(p => ({ ...p, urgente: e.target.checked, tipo: e.target.checked ? "correctivo" : p.tipo }))} />
+            Urgencia: bloqueo inmediato hasta liberar
+          </label>
+          {!bloqueoForm.urgente && <>
+            <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">Desde
+              <input required type="date" min={new Date().toISOString().slice(0, 10)} value={bloqueoForm.fecha_inicio} onChange={e => setBloqueoForm(p => ({ ...p, fecha_inicio: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700" />
+            </label>
+            <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">Hasta
+              <input required type="date" min={bloqueoForm.fecha_inicio} value={bloqueoForm.fecha_fin} onChange={e => setBloqueoForm(p => ({ ...p, fecha_fin: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700" />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">Hora inicio
+                <input type="time" value={bloqueoForm.hora_inicio} onChange={e => setBloqueoForm(p => ({ ...p, hora_inicio: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700" />
+              </label>
+              <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">Hora fin
+                <input type="time" value={bloqueoForm.hora_fin} onChange={e => setBloqueoForm(p => ({ ...p, hora_fin: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700" />
+              </label>
+            </div>
+          </>}
+          <label className="space-y-1 text-[10px] font-black uppercase text-slate-500 sm:col-span-2 lg:col-span-3">Motivo
+            <textarea required maxLength={1000} rows={2} value={bloqueoForm.motivo} onChange={e => setBloqueoForm(p => ({ ...p, motivo: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700" />
+          </label>
+          <button disabled={bloqueoSaving} className="justify-self-start rounded-xl bg-[#E31E24] px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-60">
+            {bloqueoSaving ? "Guardando..." : "Bloquear vehículo"}
+          </button>
+        </form>
+        <div className="mt-4 space-y-2">
+          {bloqueos.filter(b => b.estado === "activa").length === 0 ? (
+            <p className="text-xs text-slate-400">No hay vehículos bloqueados por mantenimiento.</p>
+          ) : bloqueos.filter(b => b.estado === "activa").map(b => (
+            <div key={b.id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <div>
+                <p className="text-xs font-black text-slate-800">{b.placa} · {b.urgente ? "Urgencia correctiva" : `Mantenimiento ${b.tipo}`}</p>
+                <p className="mt-1 text-xs text-slate-600">{b.motivo}</p>
+                <p className="mt-1 text-[10px] font-bold text-slate-500">
+                  {new Date(`${b.fecha_inicio}T00:00:00`).toLocaleDateString("es-EC")}
+                  {b.fecha_fin ? ` – ${new Date(`${b.fecha_fin}T00:00:00`).toLocaleDateString("es-EC")}` : " – hasta que se marque operativo"}
+                  {` · Reportó: ${b.creado_por_nombre || "Administración"}`}
+                </p>
+              </div>
+              <button type="button" onClick={() => cerrarBloqueo(b.id)} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-emerald-700">Marcar operativo</button>
+            </div>
+          ))}
+          {bloqueos.some(b => b.estado === "cerrada") && (
+            <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <summary className="cursor-pointer text-xs font-black text-slate-600">Avisos cerrados recientes</summary>
+              <ul className="mt-3 space-y-2">
+                {bloqueos.filter(b => b.estado === "cerrada").slice(0, 5).map(b => (
+                  <li key={b.id} className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
+                    <p className="font-black text-slate-700">{b.placa} · {b.tipo} · Cerrado</p>
+                    <p className="mt-1 text-slate-500">{b.motivo}</p>
+                    <p className="mt-1 text-[10px] font-bold text-slate-400">{b.creado_por_nombre || "Usuario"} · {new Date(`${b.fecha_inicio}T00:00:00`).toLocaleDateString("es-EC")}</p>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      </section>
 
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 sm:p-4 flex items-center gap-3">
         <DollarSign size={16} className="text-blue-500 flex-shrink-0" />

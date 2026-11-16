@@ -59,6 +59,11 @@ const {
   reprogramarMantenimiento,
 } = require("../controllers/admin/mantenimiento.admin.controller");
 const {
+  listAdminVehicleUnavailability,
+  createAdminVehicleUnavailability,
+  closeVehicleUnavailability,
+} = require("../controllers/vehiculo-indisponibilidades.controller");
+const {
   getRutasAnalisis,
   getRutasResumen,
   createRuta,
@@ -298,6 +303,9 @@ router.get("/mantenimiento/proximo", getMantenimientoProximo);
 router.get("/mantenimiento/resumen", getMantenimientoResumen);
 router.patch("/mantenimiento/:vehiculoId/completar", completarMantenimientoProgramado);
 router.patch("/mantenimiento/:vehiculoId/reprogramar", reprogramarMantenimiento);
+router.get("/mantenimiento/indisponibilidades", listAdminVehicleUnavailability);
+router.post("/mantenimiento/indisponibilidades", requireRole("admin"), createAdminVehicleUnavailability);
+router.patch("/mantenimiento/indisponibilidades/:indisponibilidadId/cerrar", requireRole("admin"), closeVehicleUnavailability);
 
 // ============ RUTAS DE ANÁLISIS DE RUTAS ============
 router.get("/rutas-analisis", getRutasAnalisis);

@@ -96,6 +96,7 @@ const state = {
   ],
   operations: [],
   maintenance: [],
+  maintenanceBlocks: [],
   availability: [],
   externalBlocks: [],
   decisions: [],
@@ -194,6 +195,15 @@ const pool = {
         if (maintenance) blockers.push(maintenance.estado === "en_progreso"
           ? "Mantenimiento en curso"
           : `Mantenimiento programado el ${maintenance.fecha_programada}`);
+        const maintenanceBlock = state.maintenanceBlocks.find((block) =>
+          block.vehiculo_id === vehicle.id
+          && block.estado === "activa"
+          && block.fecha_inicio <= endDate
+          && (block.fecha_fin === null || block.fecha_fin >= startDate)
+          && (startDate !== endDate || !block.hora_inicio || !startTime || !block.hora_fin || !endTime
+            || intersects(asTime(startTime), asTime(endTime), block.hora_inicio, block.hora_fin))
+        );
+        if (maintenanceBlock) blockers.push(`No disponible por mantenimiento ${maintenanceBlock.tipo}`);
         const externalBlock = state.externalBlocks.find((block) =>
           block.vehiculo_id === vehicle.id
           && block.estado === "activo"
@@ -503,6 +513,20 @@ const pool = {
                 && item.fecha_programada <= endDate))
           );
           return result(maintenance ? [{ ...maintenance }] : []);
+        }
+        if (query.startsWith("select id, tipo, urgente, fecha_inicio::text, fecha_fin::text, motivo from vehiculo_indisponibilidades")) {
+          const [vehicleId, startValue, endValue, startTime, endTime] = params;
+          const startDate = asDate(startValue);
+          const endDate = asDate(endValue);
+          const block = state.maintenanceBlocks.find((entry) =>
+            entry.vehiculo_id === Number(vehicleId)
+            && entry.estado === "activa"
+            && entry.fecha_inicio <= endDate
+            && (entry.fecha_fin === null || entry.fecha_fin >= startDate)
+            && (startDate !== endDate || !entry.hora_inicio || !startTime || !entry.hora_fin || !endTime
+              || intersects(asTime(startTime), asTime(endTime), entry.hora_inicio, entry.hora_fin))
+          );
+          return result(block ? [{ ...block }] : []);
         }
         if (query.startsWith("select id, fecha_inicio::text, fecha_fin::text, hora_inicio::text, hora_fin::text, motivo, cliente_empresa")) {
           const [vehicleId, startValue, endValue, startTime, endTime] = params;
@@ -904,6 +928,28 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     assert.equal(maintenanceAssignment.status, 409);
     assert.match(maintenanceAssignment.body.error, /mantenimiento programado/i);
     state.maintenance.length = 0;
+
+    state.maintenanceBlocks.push({
+      id: 1,
+      vehiculo_id: 702,
+      tipo: "correctivo",
+      urgente: true,
+      fecha_inicio: "2026-10-21",
+      fecha_fin: null,
+      motivo: "Falla mecánica",
+      estado: "activa",
+    });
+    const maintenanceBlockRecommendation = await request(`/api/admin/inteligencia/asignacion-recomendada?fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);
+    assert.equal(maintenanceBlockRecommendation.status, 200);
+    assert.equal(maintenanceBlockRecommendation.body.data.vehiculo, null);
+    assert.match(maintenanceBlockRecommendation.body.data.excluidos.find((vehicle) => vehicle.vehiculo_id === 702).bloqueos[0], /no disponible por mantenimiento/i);
+    const maintenanceAvailabilityAssignment = await request(`/api/admin/operaciones/${operationId}/asignar`, {
+      method: "PATCH",
+      body: { vehiculo_id: 702, conductor_id: 302 },
+    });
+    assert.equal(maintenanceAvailabilityAssignment.status, 409);
+    assert.match(maintenanceAvailabilityAssignment.body.error, /bloqueo de disponibilidad por mantenimiento/i);
+    state.maintenanceBlocks.length = 0;
 
     state.availability.push({ vehiculo_id: 702, fecha: "2026-10-21", disponible: false });
     const manualBlockRecommendation = await request(`/api/admin/inteligencia/asignacion-recomendada?fecha=2026-10-21&fecha_fin=2026-10-23&pasajeros=8&hora_inicio=09%3A00&hora_fin=11%3A00&operacion_id=${operationId}`);

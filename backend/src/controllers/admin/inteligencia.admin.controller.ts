@@ -768,6 +768,24 @@ const recomendarAsignacion = async (req: any, res: any) => {
                      )
                    ORDER BY d.fecha_inicio, d.hora_inicio NULLS LAST, d.id
                    LIMIT 1
+                 ),
+                 (
+                   SELECT 'No disponible por mantenimiento ' || b.tipo
+                     || CASE WHEN b.urgente THEN ' urgente' ELSE '' END
+                     || ' (' || to_char(b.fecha_inicio, 'DD/MM/YYYY') || ')'
+                   FROM vehiculo_indisponibilidades b
+                   WHERE b.vehiculo_id = v.id
+                     AND b.estado = 'activa'
+                     AND b.fecha_inicio <= $2::date
+                     AND COALESCE(b.fecha_fin, 'infinity'::date) >= $1::date
+                     AND (
+                       $1::date <> $2::date
+                       OR b.hora_inicio IS NULL OR $5::time IS NULL
+                       OR b.hora_fin IS NULL OR $6::time IS NULL
+                       OR (b.hora_inicio < $6::time AND $5::time < b.hora_fin)
+                     )
+                   ORDER BY b.fecha_inicio, b.id
+                   LIMIT 1
                  )
                ], NULL) AS bloqueos,
                ARRAY_REMOVE(ARRAY[
@@ -1000,6 +1018,26 @@ const recomendarAsignacion = async (req: any, res: any) => {
                         (SELECT fecha_fin_programada FROM operaciones WHERE id = $5::int),
                         $6::date
                       ))
+              )
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM vehiculo_indisponibilidades b
+            WHERE b.vehiculo_id = v.id
+              AND b.estado = 'activa'
+              AND b.fecha_inicio <= COALESCE(
+                (SELECT fecha_fin_programada FROM operaciones WHERE id = $5::int),
+                $6::date, $1::date
+              )
+              AND COALESCE(b.fecha_fin, 'infinity'::date) >= $1::date
+              AND (
+                $1::date <> COALESCE(
+                  (SELECT fecha_fin_programada FROM operaciones WHERE id = $5::int),
+                  $6::date, $1::date
+                )
+                OR b.hora_inicio IS NULL OR $3::time IS NULL
+                OR b.hora_fin IS NULL OR $4::time IS NULL
+                OR (b.hora_inicio < $4::time AND $3::time < b.hora_fin)
               )
           )
         GROUP BY v.id, u.id, u.nombre, c.rating_promedio

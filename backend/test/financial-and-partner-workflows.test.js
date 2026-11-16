@@ -50,6 +50,7 @@ const pool = {
         if (query.startsWith("select id, placa, case when activo")) return result([]);
         if (query.startsWith("select dia.fecha::date::text as fecha")) return result([]);
         if (query.startsWith("select id from mantenimiento_vehiculos")) return result([]);
+        if (query.startsWith("select id, tipo, motivo from vehiculo_indisponibilidades")) return result([]);
         if (query.startsWith("select c.id from conductores c")) return result([]);
         if (query.startsWith("select id from operaciones where reserva_id is distinct from")) {
           return result(state.hasOperationConflict ? [{ id: 700 }] : []);

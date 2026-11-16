@@ -20,7 +20,7 @@ const getCalendarioFlota = async (req: any, res: any) => {
   }
 
   try {
-    const [vehicles, operations, reservations, maintenance, externalAvailability, unassignedReservations] = await Promise.all([
+    const [vehicles, operations, reservations, maintenance, maintenanceBlocks, externalAvailability, unassignedReservations] = await Promise.all([
       pool.query(
         `SELECT id, placa, tipo, modelo, estado
          FROM vehiculos
@@ -94,6 +94,24 @@ const getCalendarioFlota = async (req: any, res: any) => {
         [desde, hasta]
       ),
       pool.query(
+        `SELECT 'indisponibilidad-' || b.id AS id, b.vehiculo_id,
+                GREATEST(b.fecha_inicio, $1::date)::text AS fecha_inicio,
+                LEAST(COALESCE(b.fecha_fin, $2::date), $2::date)::text AS fecha_fin,
+                CASE WHEN b.urgente THEN 'en_progreso' ELSE 'programado' END AS estado,
+                CASE WHEN b.urgente THEN 'Urgente · ' ELSE '' END || 'Mantenimiento ' || b.tipo AS tipo_servicio,
+                b.hora_inicio::text AS hora_inicio, b.hora_fin::text AS hora_fin,
+                NULL::text AS origen, NULL::text AS destino,
+                b.motivo AS descripcion, u.nombre AS conductor_nombre,
+                NULL::text AS cliente_empresa, b.motivo AS notas
+         FROM vehiculo_indisponibilidades b
+         JOIN usuarios u ON u.id = b.creado_por
+         WHERE b.estado = 'activa'
+           AND b.fecha_inicio <= $2::date
+           AND COALESCE(b.fecha_fin, 'infinity'::date) >= $1::date
+         ORDER BY b.fecha_inicio, b.id`,
+        [desde, hasta]
+      ),
+      pool.query(
         `SELECT d.id, d.vehiculo_id, d.fecha_inicio::text, d.fecha_fin::text,
                 d.estado, d.motivo AS tipo_servicio, d.hora_inicio::text,
                 d.hora_fin::text, d.cliente_empresa, d.origen, d.destino, d.notas,
@@ -145,6 +163,7 @@ const getCalendarioFlota = async (req: any, res: any) => {
         ...operations.rows.map((event: Record<string, unknown>) => ({ ...event, tipo: "operacion" })),
         ...reservations.rows.map((event: Record<string, unknown>) => ({ ...event, tipo: "reserva" })),
         ...maintenance.rows.map((event: Record<string, unknown>) => ({ ...event, tipo: "mantenimiento" })),
+        ...maintenanceBlocks.rows.map((event: Record<string, unknown>) => ({ ...event, tipo: "mantenimiento" })),
         ...externalAvailability.rows.map((event: Record<string, unknown>) => ({ ...event, tipo: "externo" })),
       ],
       unassignedReservations: unassignedReservations.rows,

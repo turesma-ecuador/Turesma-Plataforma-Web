@@ -22,6 +22,12 @@ type Mant = {
   costo?: number | null; estado: string; tecnico?: string | null; observaciones?: string | null;
   kilometraje?: number | null; conductor_usuario_id?: number | null;
 };
+type Indisponibilidad = {
+  id: number; vehiculo_id: number; tipo: "preventivo" | "correctivo" | "otro";
+  urgente: boolean; fecha_inicio: string; fecha_fin: string | null;
+  hora_inicio: string | null; hora_fin: string | null; motivo: string;
+  estado: "activa" | "cerrada"; creado_por_nombre?: string;
+};
 type Proximo = {
   fecha_proximo_mantenimiento: string | null;
   proximo_km_mantenimiento: number | null;
@@ -50,6 +56,17 @@ export default function ConductorMantenimientoPage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [showProgramar, setShowProgramar] = useState(false);
+  const [indisponibilidades, setIndisponibilidades] = useState<Indisponibilidad[]>([]);
+  const [showAviso, setShowAviso] = useState(false);
+  const [avisoSaving, setAvisoSaving] = useState(false);
+  const [avisoError, setAvisoError] = useState("");
+  const [avisoConflicts, setAvisoConflicts] = useState<string[]>([]);
+  const [avisoForm, setAvisoForm] = useState({
+    tipo: "preventivo", urgente: false,
+    fecha_inicio: new Date().toISOString().slice(0, 10),
+    fecha_fin: new Date().toISOString().slice(0, 10),
+    hora_inicio: "", hora_fin: "", motivo: "",
+  });
 
   const [form, setForm] = useState({
     tipo: "preventivo", descripcion: "",
@@ -65,16 +82,73 @@ export default function ConductorMantenimientoPage() {
     if (!userId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/conductor/${userId}/mantenimiento`, { headers: getAuthHeaders() });
-      if (handleUnauthorized(res.status)) return;
+      const [res, availabilityRes] = await Promise.all([
+        fetch(`${API}/api/conductor/${userId}/mantenimiento`, { headers: getAuthHeaders() }),
+        fetch(`${API}/api/conductor/${userId}/indisponibilidades-mantenimiento`, { headers: getAuthHeaders() }),
+      ]);
+      if (handleUnauthorized(res.status) || handleUnauthorized(availabilityRes.status)) return;
       if (res.ok) {
         const data = await res.json();
         setVehiculo(data.vehiculo || null);
         setItems(Array.isArray(data.mantenimientos) ? data.mantenimientos : []);
         setProximo(data.proximo || null);
       }
+      if (availabilityRes.ok) {
+        const data = await availabilityRes.json();
+        setIndisponibilidades(Array.isArray(data) ? data : []);
+        setAvisoError("");
+      } else {
+        const data = await availabilityRes.json().catch(() => ({}));
+        setAvisoError(data?.error || "No se pudieron cargar los avisos de disponibilidad");
+      }
     } catch { /* silencio */ }
     finally { setLoading(false); }
+  };
+
+  const submitAviso = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!vehiculo) return;
+    setAvisoSaving(true); setAvisoError(""); setAvisoConflicts([]); setMsg("");
+    try {
+      const res = await fetch(`${API}/api/conductor/${userId}/indisponibilidades-mantenimiento`, {
+        method: "POST", headers: getAuthHeaders(),
+        body: JSON.stringify({
+          vehiculo_id: vehiculo.id,
+          ...avisoForm,
+          fecha_fin: avisoForm.urgente ? null : avisoForm.fecha_fin,
+          hora_inicio: avisoForm.hora_inicio || null,
+          hora_fin: avisoForm.hora_fin || null,
+        }),
+      });
+      if (handleUnauthorized(res.status)) return;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo registrar el aviso");
+      setMsg(data.message || "Aviso registrado y vehículo bloqueado para nuevas asignaciones");
+      setAvisoConflicts((data.conflictos || []).map((conflict: { tipo?: string; id?: number; reserva_id?: number; fecha_inicio?: string }) =>
+        `${conflict.tipo === "operacion" ? "Operación" : "Reserva"} #${conflict.tipo === "operacion" ? conflict.id : conflict.reserva_id}${conflict.fecha_inicio ? ` · ${conflict.fecha_inicio}` : ""}`
+      ));
+      setShowAviso(false);
+      setAvisoForm(p => ({ ...p, motivo: "", urgente: false }));
+      await load();
+    } catch (e) {
+      setAvisoError(e instanceof Error ? e.message : "Error inesperado");
+    } finally { setAvisoSaving(false); }
+  };
+
+  const closeAviso = async (id: number) => {
+    setAvisoError(""); setMsg("");
+    try {
+      const res = await fetch(`${API}/api/conductor/${userId}/indisponibilidades-mantenimiento/${id}/cerrar`, {
+        method: "PATCH", headers: getAuthHeaders(),
+      });
+      if (handleUnauthorized(res.status)) return;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo cerrar el aviso");
+      setMsg(data.message || "Vehículo marcado como operativo");
+      await load();
+    } catch (e) {
+      setAvisoError(e instanceof Error ? e.message : "Error inesperado");
+    }
   };
 
   useEffect(() => { load();   }, [userId]);
@@ -198,6 +272,82 @@ export default function ConductorMantenimientoPage() {
               <p className="text-xs font-bold text-slate-400">No hay un próximo servicio programado. Al registrar un mantenimiento puedes indicar cuándo o a qué kilometraje toca el siguiente.</p>
             </div>
           )}
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-wide text-slate-800">Disponibilidad por mantenimiento</h2>
+                <p className="mt-1 text-xs text-slate-500">Los avisos bloquean nuevas asignaciones. Los viajes ya confirmados requieren coordinación. Al finalizar, marca el vehículo operativo y registra el trabajo realizado en el historial.</p>
+              </div>
+              <button type="button" onClick={() => { setShowAviso(v => !v); setAvisoError(""); }}
+                className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-black">
+                <Plus size={14} /> Avisar mantenimiento
+              </button>
+            </div>
+            {avisoError && <p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-xs font-bold text-red-700">{avisoError}</p>}
+            {avisoConflicts.length > 0 && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <p className="font-black">Servicios ya confirmados: coordina estos conflictos; no se cancelaron automáticamente.</p>
+              <ul className="mt-1 list-inside list-disc">{avisoConflicts.map(conflict => <li key={conflict}>{conflict}</li>)}</ul>
+            </div>}
+            {showAviso && (
+              <form onSubmit={submitAviso} className="mt-4 grid gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4 sm:grid-cols-2">
+                <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">
+                  Tipo
+                  <select value={avisoForm.tipo} onChange={e => setAvisoForm(p => ({ ...p, tipo: e.target.value }))} className={INPUT}>
+                    <option value="preventivo">Preventivo</option>
+                    <option value="correctivo">Correctivo</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 self-end rounded-xl border border-red-100 bg-red-50 p-3 text-xs font-black text-red-700">
+                  <input type="checkbox" checked={avisoForm.urgente} onChange={e => setAvisoForm(p => ({ ...p, urgente: e.target.checked, tipo: e.target.checked ? "correctivo" : p.tipo }))} />
+                  Urgencia: bloquear desde ahora hasta volver a operar
+                </label>
+                {!avisoForm.urgente && <>
+                  <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">Desde
+                    <input type="date" required min={new Date().toISOString().slice(0, 10)} value={avisoForm.fecha_inicio} onChange={e => setAvisoForm(p => ({ ...p, fecha_inicio: e.target.value }))} className={INPUT} />
+                  </label>
+                  <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">Hasta
+                    <input type="date" required min={avisoForm.fecha_inicio} value={avisoForm.fecha_fin} onChange={e => setAvisoForm(p => ({ ...p, fecha_fin: e.target.value }))} className={INPUT} />
+                  </label>
+                  <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">Hora de inicio (opcional)
+                    <input type="time" value={avisoForm.hora_inicio} onChange={e => setAvisoForm(p => ({ ...p, hora_inicio: e.target.value }))} className={INPUT} />
+                  </label>
+                  <label className="space-y-1 text-[10px] font-black uppercase text-slate-500">Hora de fin (opcional)
+                    <input type="time" value={avisoForm.hora_fin} onChange={e => setAvisoForm(p => ({ ...p, hora_fin: e.target.value }))} className={INPUT} />
+                  </label>
+                </>}
+                <label className="space-y-1 text-[10px] font-black uppercase text-slate-500 sm:col-span-2">Motivo
+                  <textarea required maxLength={1000} value={avisoForm.motivo} onChange={e => setAvisoForm(p => ({ ...p, motivo: e.target.value }))} rows={2} className={INPUT + " resize-none"} placeholder="Describe el trabajo o la falla" />
+                </label>
+                <div className="flex gap-2 sm:col-span-2">
+                  <button disabled={avisoSaving} className="rounded-xl bg-[#E31E24] px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-60">
+                    {avisoSaving ? "Guardando..." : "Registrar aviso"}
+                  </button>
+                  <button type="button" onClick={() => setShowAviso(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500">Cancelar</button>
+                </div>
+              </form>
+            )}
+            {indisponibilidades.length > 0 ? (
+              <ul className="mt-4 space-y-2">
+                {indisponibilidades.map(item => (
+                  <li key={item.id} className={`flex flex-wrap items-start justify-between gap-3 rounded-xl border p-3 ${item.estado === "activa" ? "border-amber-200 bg-amber-50" : "border-slate-100 bg-slate-50"}`}>
+                    <div className="min-w-0">
+                      <p className="text-xs font-black uppercase text-slate-800">
+                        {item.urgente ? "Urgencia correctiva" : `Mantenimiento ${item.tipo}`} · {item.estado === "activa" ? "No disponible" : "Cerrado"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600">{item.motivo}</p>
+                      <p className="mt-1 text-[10px] font-bold text-slate-500">
+                        {new Date(`${item.fecha_inicio}T00:00:00`).toLocaleDateString("es-EC")}
+                        {item.fecha_fin ? ` – ${new Date(`${item.fecha_fin}T00:00:00`).toLocaleDateString("es-EC")}` : " – hasta volver a estar operativo"}
+                        {item.hora_inicio ? ` · ${item.hora_inicio.slice(0, 5)}–${item.hora_fin?.slice(0, 5)}` : ""}
+                      </p>
+                    </div>
+                    {item.estado === "activa" && <button type="button" onClick={() => closeAviso(item.id)} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-emerald-700">Volví a operar</button>}
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mt-4 text-xs text-slate-400">Todavía no hay avisos de indisponibilidad.</p>}
+          </section>
 
           {/* LISTA */}
           {items.length === 0 ? (
