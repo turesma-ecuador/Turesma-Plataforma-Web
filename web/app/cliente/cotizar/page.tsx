@@ -189,6 +189,7 @@ export default function ClienteCotizarPage() {
   // false = servicio de un solo día · true = reserva de varios días (rango)
   const [variosDias, setVariosDias] = useState(false);
   const [regresoOtraFecha, setRegresoOtraFecha] = useState(false);
+  const [fechaCalendarioActiva, setFechaCalendarioActiva] = useState<"salida" | "regreso">("salida");
   const [origin, setOrigin] = useState<Punto | null>(null);
   const [destination, setDestination] = useState<Punto | null>(null);
   const [locatingOrigin, setLocatingOrigin] = useState(false);
@@ -866,7 +867,7 @@ export default function ClienteCotizarPage() {
                 {variosDias
                   ? "Selecciona la fecha de salida y luego el último día del servicio. La disponibilidad se confirma al revisar tu solicitud."
                   : regresoOtraFecha
-                    ? "Elige la fecha del viaje. Después seleccionarás la fecha de recogida de regreso."
+                    ? "Elige la salida y el regreso en el mismo calendario."
                     : "Elige la fecha de salida que prefieres. La disponibilidad final se confirma después de revisar tu solicitud."}
               </p>
 
@@ -889,58 +890,7 @@ export default function ClienteCotizarPage() {
                 </button>
               </div>
 
-              <VehiculoCalendario
-                localized
-                vehiculoId={null}
-                value={form.fecha_servicio}
-                onSelect={(f) => setForm(p => ({
-                  ...p,
-                  fecha_servicio: f,
-                  ...(p.fecha_regreso && p.fecha_regreso <= f ? { fecha_regreso: "", hora_regreso: "" } : {}),
-                }))}
-                range={variosDias}
-                endValue={form.fecha_fin}
-                onSelectEnd={(f) => setForm(p => ({ ...p, fecha_fin: f }))}
-                maxDays={MAX_DIAS}
-                allowUnassigned
-              />
-
-              {/* Resumen del rango elegido */}
-              {form.fecha_servicio && (
-                <div className="flex items-center justify-center gap-2 text-[11px] font-bold text-slate-500 bg-emerald-50 border border-emerald-200 rounded-xl py-2 px-3">
-                  <Calendar size={13} className="text-emerald-600" />
-                  {variosDias && form.fecha_fin
-                    ? <span>Del <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> al <b className="text-slate-700">{new Date(form.fecha_fin + "T00:00").toLocaleDateString(dateLocale)}</b> · {diasEntre(form.fecha_servicio, form.fecha_fin)} días</span>
-                    : <span><b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b>{variosDias ? " — elige el último día" : " · 1 día"}</span>}
-                </div>
-              )}
-              </div>
               <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
-                <label htmlFor="hora-salida" className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
-                  <Clock size={14} className="text-[#E31E24]" /> Hora de salida <span className="text-[#E31E24]">*</span>
-                </label>
-                <input
-                  id="hora-salida"
-                  type="time"
-                  value={form.hora_salida}
-                  onChange={e => setForm(p => ({ ...p, hora_salida: e.target.value, hora_llegada_estimada: "" }))}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-[#E31E24] sm:w-auto"
-                />
-                <p className="text-[11px] text-slate-500">Indica la hora en que deseas iniciar el viaje.</p>
-                <label htmlFor="hora-llegada-estimada" className="mt-3 flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
-                  <Clock size={14} className="text-emerald-600" /> Llegada estimada <span className="text-[#E31E24]">*</span>
-                </label>
-                <input
-                  id="hora-llegada-estimada"
-                  type="time"
-                  required
-                  value={form.hora_llegada_estimada}
-                  onChange={event => setForm(current => ({ ...current, hora_llegada_estimada: event.target.value }))}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-[#E31E24] sm:w-auto"
-                />
-                <p className="text-[11px] text-slate-500">Se calcula con la ruta estimada y puedes ajustarla. Si pasa de medianoche, se considera el día siguiente.</p>
-              </div>
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
                 <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
                   <input
                     type="checkbox"
@@ -948,6 +898,7 @@ export default function ClienteCotizarPage() {
                     onChange={(event) => {
                       const enabled = event.target.checked;
                       setRegresoOtraFecha(enabled);
+                      setFechaCalendarioActiva(enabled && form.fecha_servicio ? "regreso" : "salida");
                       if (enabled) {
                         setVariosDias(false);
                         setForm(current => ({ ...current, fecha_fin: "" }));
@@ -960,39 +911,128 @@ export default function ClienteCotizarPage() {
                   Regreso en otra fecha
                 </label>
                 {regresoOtraFecha && (
-                  <>
-                    <p className="text-xs leading-relaxed text-slate-500">
-                      Te llevamos al destino y regresamos a recogerte en la fecha acordada para volver al punto de salida.
-                    </p>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2 sm:col-span-2">
-                        <p className="text-xs font-black uppercase tracking-wide text-slate-600">Fecha de recogida <span className="text-[#E31E24]">*</span></p>
-                        <VehiculoCalendario
-                          localized
-                          vehiculoId={null}
-                          value={form.fecha_regreso}
-                          onSelect={(fecha) => setForm(current => ({ ...current, fecha_regreso: fecha }))}
-                          minDate={form.fecha_servicio ? siguienteFecha(form.fecha_servicio) : ""}
-                          selectionLabel="Fecha de recogida"
-                          allowUnassigned
-                        />
-                      </div>
-                      <label htmlFor="hora-regreso" className="space-y-1 text-xs font-black uppercase tracking-wide text-slate-600">
-                        Hora de recogida <span className="text-[#E31E24]">*</span>
-                        <input
-                          id="hora-regreso"
-                          type="time"
-                          required
-                          value={form.hora_regreso}
-                          onChange={event => setForm(current => ({ ...current, hora_regreso: event.target.value }))}
-                          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold normal-case text-slate-700 outline-none focus:border-[#E31E24]"
-                        />
-                      </label>
-                    </div>
-                    <p className="text-[11px] font-medium text-slate-500">El regreso será desde el destino hasta el punto de salida original. No se cobrará como espera de varios días.</p>
-                  </>
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    Te llevamos al destino y regresamos a recogerte en la fecha acordada para volver al punto de salida.
+                  </p>
                 )}
               </div>
+
+              {regresoOtraFecha && (
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label={language === "en" ? "Trip dates" : "Fechas del viaje"}>
+                  {(["salida", "regreso"] as const).map((target) => {
+                    const fecha = target === "salida" ? form.fecha_servicio : form.fecha_regreso;
+                    const label = target === "salida" ? "Salida del viaje" : "Recogida de regreso";
+                    return (
+                      <button
+                        key={target}
+                        type="button"
+                        disabled={target === "regreso" && !form.fecha_servicio}
+                        aria-pressed={fechaCalendarioActiva === target}
+                        onClick={() => setFechaCalendarioActiva(target)}
+                        className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
+                          fechaCalendarioActiva === target
+                            ? "border-[#E31E24] bg-red-50 text-[#E31E24]"
+                            : "border-slate-200 bg-white text-slate-600"
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                      >
+                        <span className="block font-black">{label}</span>
+                        <span className="mt-1 block font-semibold">
+                          {fecha ? new Date(`${fecha}T00:00`).toLocaleDateString(dateLocale) : "Selecciona una fecha."}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <VehiculoCalendario
+                localized
+                vehiculoId={null}
+                value={regresoOtraFecha && fechaCalendarioActiva === "regreso" ? form.fecha_regreso : form.fecha_servicio}
+                onSelect={(f) => {
+                  if (regresoOtraFecha && fechaCalendarioActiva === "regreso") {
+                    setForm(p => ({ ...p, fecha_regreso: f }));
+                    return;
+                  }
+                  setForm(p => ({
+                    ...p,
+                    fecha_servicio: f,
+                    ...(p.fecha_regreso && p.fecha_regreso <= f ? { fecha_regreso: "", hora_regreso: "" } : {}),
+                  }));
+                  if (regresoOtraFecha && (!form.fecha_servicio || form.fecha_regreso && form.fecha_regreso <= f)) {
+                    setFechaCalendarioActiva("regreso");
+                  }
+                }}
+                range={variosDias}
+                endValue={form.fecha_fin}
+                onSelectEnd={(f) => setForm(p => ({ ...p, fecha_fin: f }))}
+                maxDays={MAX_DIAS}
+                allowUnassigned
+                minDate={regresoOtraFecha && fechaCalendarioActiva === "regreso" && form.fecha_servicio ? siguienteFecha(form.fecha_servicio) : ""}
+                selectionLabel={regresoOtraFecha ? fechaCalendarioActiva === "salida" ? "Fecha de salida" : "Fecha de recogida" : ""}
+                secondaryValue={regresoOtraFecha ? fechaCalendarioActiva === "salida" ? form.fecha_regreso : form.fecha_servicio : ""}
+                secondaryLabel={regresoOtraFecha ? fechaCalendarioActiva === "salida" ? "Regreso" : "Salida del viaje" : ""}
+              />
+
+              {/* Resumen del rango elegido */}
+              {form.fecha_servicio && (
+                <div className="flex items-center justify-center gap-2 text-[11px] font-bold text-slate-500 bg-emerald-50 border border-emerald-200 rounded-xl py-2 px-3">
+                  <Calendar size={13} className="text-emerald-600" />
+                  {regresoOtraFecha && form.fecha_regreso
+                    ? <span>Fecha de salida: <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> · Fecha de regreso: <b className="text-slate-700">{new Date(form.fecha_regreso + "T00:00").toLocaleDateString(dateLocale)}</b></span>
+                    : variosDias && form.fecha_fin
+                    ? <span>Del <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> al <b className="text-slate-700">{new Date(form.fecha_fin + "T00:00").toLocaleDateString(dateLocale)}</b> · {diasEntre(form.fecha_servicio, form.fecha_fin)} días</span>
+                    : regresoOtraFecha
+                      ? <span>Fecha de salida: <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> · Fecha de regreso: <b className="text-slate-700">Pendiente</b></span>
+                      : <span><b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b>{variosDias ? " — elige el último día" : " · 1 día"}</span>}
+                </div>
+              )}
+              </div>
+              <div className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label htmlFor="hora-salida" className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
+                    <Clock size={14} className="text-[#E31E24]" /> Hora de salida <span className="text-[#E31E24]">*</span>
+                  </label>
+                  <input
+                    id="hora-salida"
+                    type="time"
+                    value={form.hora_salida}
+                    onChange={e => setForm(p => ({ ...p, hora_salida: e.target.value, hora_llegada_estimada: "" }))}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-[#E31E24]"
+                  />
+                  <p className="text-[11px] text-slate-500">Indica la hora en que deseas iniciar el viaje.</p>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="hora-llegada-estimada" className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
+                    <Clock size={14} className="text-emerald-600" /> Llegada estimada <span className="text-[#E31E24]">*</span>
+                  </label>
+                  <input
+                    id="hora-llegada-estimada"
+                    type="time"
+                    required
+                    value={form.hora_llegada_estimada}
+                    onChange={event => setForm(current => ({ ...current, hora_llegada_estimada: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-[#E31E24]"
+                  />
+                  <p className="text-[11px] text-slate-500">Se calcula con la ruta estimada y puedes ajustarla. Si pasa de medianoche, se considera el día siguiente.</p>
+                </div>
+              </div>
+              {regresoOtraFecha && (
+                <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
+                  <label htmlFor="hora-regreso" className="space-y-1 text-xs font-black uppercase tracking-wide text-slate-600">
+                    Hora de recogida <span className="text-[#E31E24]">*</span>
+                    <input
+                      id="hora-regreso"
+                      type="time"
+                      required
+                      value={form.hora_regreso}
+                      onChange={event => setForm(current => ({ ...current, hora_regreso: event.target.value }))}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold normal-case text-slate-700 outline-none focus:border-[#E31E24]"
+                    />
+                  </label>
+                  <p className="text-[11px] font-medium text-slate-500">El regreso será desde el destino hasta el punto de salida original. No se cobrará como espera de varios días.</p>
+                </div>
+              )}
               <div className="bg-slate-50 rounded-2xl p-3 flex items-center justify-between">
                 <span className="text-xs font-black uppercase text-slate-500 flex items-center gap-1.5"><Users size={14} /> Personas</span>
                 <div className="flex items-center gap-3">

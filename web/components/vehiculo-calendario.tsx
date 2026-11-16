@@ -21,7 +21,7 @@ const addDaysIso = (isoDate: string, n: number) => {
 
 // Permite elegir fechas y, cuando hay una unidad concreta, muestra sus días no disponibles.
 export function VehiculoCalendario({
-  vehiculoId, value, onSelect, range = false, endValue = "", onSelectEnd, maxDays = 0, allowUnassigned = false, localized = false, minDate = "", selectionLabel = "",
+  vehiculoId, value, onSelect, range = false, endValue = "", onSelectEnd, maxDays = 0, allowUnassigned = false, localized = false, minDate = "", selectionLabel = "", secondaryValue = "", secondaryLabel = "",
 }: {
   vehiculoId: number | null;
   value: string;
@@ -34,6 +34,8 @@ export function VehiculoCalendario({
   localized?: boolean;
   minDate?: string;
   selectionLabel?: string;
+  secondaryValue?: string;
+  secondaryLabel?: string;
 }) {
   const [dispo, setDispo] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
@@ -163,16 +165,19 @@ export function VehiculoCalendario({
                 const reservado = dispo[date] === false && !past;
                 const isStart = value === date;
                 const isEnd = !!endValue && endValue === date;
+                const isSecondary = !!secondaryValue && secondaryValue === date;
                 const inRange = range && !!value && !!endValue && date > value && date < endValue;
-                const selected = isStart || isEnd;
+                const selected = isStart || isEnd || isSecondary;
                 const today = date === hoy;
-                const marker = selectionLabel
-                  ? selectionLabel.replace(/^Fecha de /, "")
+                const marker = isSecondary && secondaryLabel
+                  ? secondaryLabel
+                  : selectionLabel
+                  ? selectionLabel === "Fecha de salida" ? "Salida del viaje" : selectionLabel.replace(/^Fecha de /, "")
                   : range
                     ? isStart ? "Salida" : isEnd ? "Fin" : ""
                     : "";
                 const accessibleMarker = localized && language === "en"
-                  ? marker === "recogida" ? "return pickup" : marker === "Salida" ? "departure" : marker === "Fin" ? "last day" : "selected"
+                  ? marker === "recogida" || marker === "Regreso" ? "return pickup" : marker === "Salida" || marker === "Salida del viaje" ? "departure" : marker === "Fin" ? "last day" : "selected"
                   : marker || "seleccionada";
                 const dateLabel = new Date(`${date}T00:00:00`).toLocaleDateString(
                   localized && language === "en" ? "en-US" : "es-EC",
@@ -188,6 +193,7 @@ export function VehiculoCalendario({
                     aria-pressed={selected}
                     title={reservado ? "No disponible" : dateLabel}
                     className={`flex h-12 min-w-0 flex-col items-center justify-center rounded-xl border text-xs font-bold transition-colors sm:h-14 ${
+                      isSecondary ? "border-emerald-600 bg-emerald-600 text-white shadow-sm" :
                       selected ? "border-[#E31E24] bg-[#E31E24] text-white shadow-sm" :
                       inRange ? "border-red-100 bg-red-50 text-red-800" :
                       reservado ? "cursor-not-allowed border-red-100 bg-red-50 text-red-400 line-through" :

@@ -288,6 +288,12 @@ const translations: Record<string, string> = {
   "2. Fecha del servicio": "2. Service date",
   "Regreso en otra fecha": "Return on another date",
   "Te llevamos al destino y regresamos a recogerte en la fecha acordada para volver al punto de salida.": "We'll take you to your destination and return to pick you up on the agreed date to take you back to your departure point.",
+  "Elige la salida y el regreso en el mismo calendario.": "Choose the departure and return dates in the same calendar.",
+  "Salida del viaje": "Departure date",
+  "Fecha de salida": "Departure date",
+  "Fecha de salida:": "Departure date:",
+  "Fecha de regreso": "Return date",
+  "Fecha de regreso:": "Return date:",
   "Fecha de recogida": "Pickup date",
   "Hora de recogida": "Pickup time",
   "El regreso será desde el destino hasta el punto de salida original. No se cobrará como espera de varios días.": "The return will be from your destination to your original departure point. This will not be charged as a multi-day wait.",
@@ -521,6 +527,7 @@ const translations: Record<string, string> = {
   "Rango listo · elige otra fecha para empezar de nuevo": "Date range ready · choose another date to start over",
   "Elige el día de tu viaje": "Choose your trip date",
   "Selecciona fecha de recogida": "Select the return pickup date",
+  "Selecciona fecha de salida": "Select the departure date",
   "El rango incluye fechas no disponibles. Elige otro rango.": "The range includes unavailable dates. Choose another range.",
   "Tu elección": "Your selection",
   "Días pasados": "Past dates",
@@ -734,7 +741,7 @@ const translate = (value: string, language: Language) => {
   const tripCount = content.match(/^(\d+) viajes?$/);
   const hourlyService = content.match(/^Por horas · (\d+) h$/);
   const maximumDays = content.match(/^Máximo (\d+) días seguidos por reserva\.$/);
-  const calendarSelection = content.match(/^(Fecha de recogida|Fecha seleccionada): (.+)$/);
+  const calendarSelection = content.match(/^(Fecha de recogida|Fecha de salida|Fecha seleccionada): (.+)$/);
   const calendarMaxDays = content.match(/^· máximo (\d+) días$/);
   const capacity = content.match(/^Hasta (\d+) pasajeros$/);
   const selectedCapacity = content.match(/^La categoría seleccionada admite hasta (\d+) pasajeros\. Elige otra categoría\.$/);
@@ -755,7 +762,7 @@ const translate = (value: string, language: Language) => {
     ?? (tripCount ? `${tripCount[1]} trip${tripCount[1] === "1" ? "" : "s"}` : undefined)
     ?? (hourlyService ? `By the hour · ${hourlyService[1]} hr` : undefined)
     ?? (maximumDays ? `Maximum ${maximumDays[1]} consecutive days per booking.` : undefined)
-    ?? (calendarSelection ? `${calendarSelection[1] === "Fecha de recogida" ? "Pickup date" : "Selected date"}: ${calendarSelection[2]}` : undefined)
+    ?? (calendarSelection ? `${calendarSelection[1] === "Fecha de recogida" ? "Pickup date" : calendarSelection[1] === "Fecha de salida" ? "Departure date" : "Selected date"}: ${calendarSelection[2]}` : undefined)
     ?? (calendarMaxDays ? `· maximum ${calendarMaxDays[1]} days` : undefined)
     ?? (capacity ? `Up to ${capacity[1]} passengers` : undefined)
     ?? (selectedCapacity ? `The selected category accommodates up to ${selectedCapacity[1]} passengers. Choose another category.` : undefined)
