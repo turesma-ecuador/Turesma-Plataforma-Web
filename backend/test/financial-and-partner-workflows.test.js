@@ -7,6 +7,7 @@ const state = {
   operation: null,
   partnerVehicleCapacity: 8,
   hasOperationConflict: false,
+  hasAvailabilityBlock: false,
   hasFleetOption: true,
   history: [],
   updates: [],
@@ -50,7 +51,9 @@ const pool = {
         if (query.startsWith("select id, placa, case when activo")) return result([]);
         if (query.startsWith("select dia.fecha::date::text as fecha")) return result([]);
         if (query.startsWith("select id from mantenimiento_vehiculos")) return result([]);
-        if (query.startsWith("select id, tipo, motivo from vehiculo_indisponibilidades")) return result([]);
+        if (query.startsWith("select id, tipo, motivo from vehiculo_indisponibilidades")) {
+          return result(state.hasAvailabilityBlock ? [{ id: 82, tipo: "correctivo", motivo: "Reparación" }] : []);
+        }
         if (query.startsWith("select c.id from conductores c")) return result([]);
         if (query.startsWith("select id from operaciones where reserva_id is distinct from")) {
           return result(state.hasOperationConflict ? [{ id: 700 }] : []);
@@ -244,6 +247,7 @@ test("reprograma en una fecha disponible y rechaza conflictos sin cambiar la res
   state.history = [];
   state.updates = [];
   state.hasOperationConflict = true;
+  state.hasAvailabilityBlock = false;
   state.reservation = {
     id: 501,
     estado: "confirmada",
@@ -273,6 +277,14 @@ test("reprograma en una fecha disponible y rechaza conflictos sin cambiar la res
   assert.equal(state.updates.length, 0);
 
   state.hasOperationConflict = false;
+  state.hasAvailabilityBlock = true;
+  const maintenanceResponse = response();
+  await reprogramarMiReserva(makeRequest(), maintenanceResponse);
+  assert.equal(maintenanceResponse.statusCode, 409);
+  assert.match(maintenanceResponse.body.error, /bloqueo de disponibilidad por mantenimiento/i);
+  assert.equal(state.updates.length, 0);
+
+  state.hasAvailabilityBlock = false;
   const availableResponse = response();
   await reprogramarMiReserva(makeRequest(), availableResponse);
   assert.equal(availableResponse.statusCode, 200);
