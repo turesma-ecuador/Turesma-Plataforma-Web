@@ -48,7 +48,10 @@ const PLANTILLAS: Record<TipoEvento, { inApp: string; asunto: string; titulo: st
 
 const fmtFecha = (f: any) => {
   if (!f) return "—";
-  try { return new Date(f).toLocaleDateString("es-EC", { day: "2-digit", month: "long", year: "numeric" }); }
+  try {
+    const value = typeof f === "string" && /^\d{4}-\d{2}-\d{2}$/.test(f) ? `${f}T12:00:00` : f;
+    return new Date(value).toLocaleDateString("es-EC", { day: "2-digit", month: "long", year: "numeric" });
+  }
   catch { return String(f); }
 };
 
@@ -226,17 +229,6 @@ const notificarClienteOperacion = async (
         : `La ${unitLabel} de tu reserva #${operation.reserva_id} fue completada.`;
 
     await crearNotificacion(senderId, operation.usuario_id, message, operation.reserva_id, "reserva", operation.reserva_id);
-    if (operation.conductor_usuario_id) {
-      await crearNotificacion(
-        senderId,
-        operation.conductor_usuario_id,
-        `Tienes la ${unitLabel} asignada para ${operation.origen} → ${operation.destino}.`,
-        operation.reserva_id,
-        "reserva",
-        operation.reserva_id
-      );
-    }
-
     if (operation.cliente_email) {
       const imageUrl = getPublicImageUrl(operation.vehiculo_imagen_url);
       const image = imageUrl
@@ -273,6 +265,85 @@ const notificarClienteOperacion = async (
     }
   } catch (error: any) {
     console.error(`Error notificando la operación personalizada #${operationId}:`, error?.message || error);
+  }
+};
+
+const notificarConductorOperacion = async (
+  operationId: number,
+  senderId: number | null | undefined,
+  isReassignment = false
+) => {
+  try {
+    const result = await pool.query(
+      `SELECT o.id, o.reserva_id, o.requerimiento_id, o.grupo_numero, o.unidad_numero,
+              o.fecha_programada, o.hora_inicio, o.origen, o.destino, o.pasajeros,
+              c.usuario_id AS conductor_usuario_id,
+              u.nombre AS conductor_nombre, u.email AS conductor_email,
+              v.placa AS vehiculo_placa, v.modelo AS vehiculo_modelo
+       FROM operaciones o
+       JOIN conductores c ON c.id = o.conductor_id
+       JOIN usuarios u ON u.id = c.usuario_id
+       LEFT JOIN vehiculos v ON v.id = o.vehiculo_id
+       WHERE o.id = $1 AND o.estado = 'asignada'
+       LIMIT 1`,
+      [operationId]
+    );
+    if (!result.rowCount) return;
+
+    const operation = result.rows[0];
+    const reservationLabel = operation.reserva_id ? `reserva #${operation.reserva_id}` : `servicio #${operation.id}`;
+    const unitLabel = operation.requerimiento_id
+      ? ` · Grupo ${operation.grupo_numero}, unidad ${operation.unidad_numero}`
+      : "";
+    const vehicleLabel = [operation.vehiculo_placa, operation.vehiculo_modelo].filter(Boolean).join(" · ") || "Por confirmar";
+    const message = isReassignment
+      ? `Se actualizó tu asignación para la ${reservationLabel}${unitLabel}. Revisa los nuevos datos del servicio.`
+      : `Tienes un nuevo servicio asignado: ${reservationLabel}${unitLabel}, ${operation.origen} → ${operation.destino}.`;
+
+    await crearNotificacion(
+      senderId,
+      operation.conductor_usuario_id,
+      message,
+      operation.reserva_id || null,
+      operation.reserva_id ? "reserva" : null,
+      operation.reserva_id || null
+    );
+
+    if (!operation.conductor_email) return;
+
+    const safeOrigin = escapeHtml(String(operation.origen || "—"));
+    const safeDestination = escapeHtml(String(operation.destino || "—"));
+    const safeVehicle = escapeHtml(vehicleLabel);
+    const safeDate = escapeHtml(fmtFecha(operation.fecha_programada));
+    const safeTime = escapeHtml(String(operation.hora_inicio || "Por confirmar").slice(0, 5));
+    const safePassengerCount = escapeHtml(String(operation.pasajeros || "—"));
+    const title = isReassignment ? "Se actualizó tu servicio" : "Tienes un nuevo servicio asignado";
+    const webUrl = getWebBaseUrl();
+
+    await enviarCorreo({
+      to: operation.conductor_email,
+      subject: `${title} · ${reservationLabel}`,
+      html: renderBrandedEmail({
+        preheader: message,
+        eyebrow: "ASIGNACIÓN DE SERVICIO",
+        title,
+        bodyHtml: `<p style="margin:0 0 16px">Hola <strong>${escapeHtml(String(operation.conductor_nombre || "conductor"))}</strong>, ${escapeHtml(message)}</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #e2e8f0">
+            <tr><td style="padding:8px 0;color:#64748b">Ruta</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safeOrigin} → ${safeDestination}</td></tr>
+            <tr><td style="padding:8px 0;color:#64748b">Fecha</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safeDate}</td></tr>
+            <tr><td style="padding:8px 0;color:#64748b">Hora de salida</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safeTime}</td></tr>
+            <tr><td style="padding:8px 0;color:#64748b">Vehículo</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safeVehicle}</td></tr>
+            <tr><td style="padding:8px 0;color:#64748b">Pasajeros</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safePassengerCount}</td></tr>
+          </table>`,
+        actionLabel: "Ver mis servicios",
+        actionUrl: `${webUrl}/vehiculo/activas`,
+        contactEmail: CONTACTO_EMAIL,
+      }),
+      text: `${message}\nRuta: ${operation.origen} → ${operation.destino}\nFecha: ${fmtFecha(operation.fecha_programada)}\nHora de salida: ${safeTime}\nVehículo: ${vehicleLabel}\nPasajeros: ${operation.pasajeros || "—"}\n${webUrl}/vehiculo/activas${PIE_TEXTO}`,
+      attachments: [getBrandedEmailLogoAttachment()],
+    });
+  } catch (error: any) {
+    console.error(`Error notificando al conductor de la operación #${operationId}:`, error?.message || error);
   }
 };
 
@@ -340,4 +411,4 @@ const notificarReprogramacion = async (reservaId: number, senderId: number | nul
   }
 };
 
-module.exports = { notificarClienteReserva, notificarClienteOperacion, notificarReprogramacion };
+module.exports = { notificarClienteReserva, notificarClienteOperacion, notificarConductorOperacion, notificarReprogramacion };

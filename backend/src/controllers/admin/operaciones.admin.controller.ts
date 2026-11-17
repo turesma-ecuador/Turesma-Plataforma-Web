@@ -1,7 +1,7 @@
 export {};
 
 const pool = require("../../config/db");
-const { notificarClienteReserva, notificarClienteOperacion } = require("../../config/reservaMailer");
+const { notificarClienteReserva, notificarClienteOperacion, notificarConductorOperacion } = require("../../config/reservaMailer");
 const { scheduleConflictWithBuffer } = require("../../config/schedule");
 
 const ACTIVE_STATES = ["programada", "asignada", "en_curso", "incidencia"];
@@ -1031,6 +1031,9 @@ const asignarOperacion = async (req: any, res: any) => {
     }
     if (current.reserva_id && current.requerimiento_id && assignmentChanged) {
       await notificarClienteOperacion(operationId, req.user?.id || null, "asignada");
+    }
+    if (assignmentChanged) {
+      await notificarConductorOperacion(operationId, req.user?.id || null, hasPreviousAssignment);
     }
     return res.json({ success: true, data: updated });
   } catch (error) {

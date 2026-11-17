@@ -816,6 +816,7 @@ require.cache[databaseModule] = {
 };
 
 const assignmentNotifications = [];
+const driverAssignmentNotifications = [];
 const reservationMailerModule = require.resolve("../dist/config/reservaMailer");
 require.cache[reservationMailerModule] = {
   id: reservationMailerModule,
@@ -824,6 +825,9 @@ require.cache[reservationMailerModule] = {
   exports: {
     async notificarClienteReserva(...args) {
       assignmentNotifications.push(args);
+    },
+    async notificarConductorOperacion(...args) {
+      driverAssignmentNotifications.push(args);
     },
     async notificarReprogramacion() {},
   },
@@ -1050,6 +1054,7 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     ]);
     assert.equal(state.decisions[0].resultado, "aceptada");
     assert.deepEqual(assignmentNotifications, [[801, "conductor_asignado", 99, false]]);
+    assert.deepEqual(driverAssignmentNotifications, [[operationId, 99, false]]);
 
     const unchangedAssignment = await request(`/api/admin/operaciones/${operationId}/asignar`, {
       method: "PATCH",
@@ -1060,6 +1065,7 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     });
     assert.equal(unchangedAssignment.status, 200);
     assert.equal(assignmentNotifications.length, 1, "No vuelve a notificar si la asignación no cambió");
+    assert.equal(driverAssignmentNotifications.length, 1, "No vuelve a notificar al conductor si la asignación no cambió");
 
     reservationFor(803).estado = "cancelada";
     const reassigned = await request(`/api/admin/operaciones/${operationId}/asignar`, {

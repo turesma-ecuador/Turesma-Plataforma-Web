@@ -26,6 +26,8 @@ const operation = {
   fecha_programada: "2026-12-10",
   origen: "Quito",
   destino: "Otavalo",
+  hora_inicio: "09:30:00",
+  pasajeros: 5,
   estado: "asignada",
   usuario_id: 502,
   cliente_nombre: "Ana",
@@ -35,10 +37,16 @@ const operation = {
   vehiculo_imagen_url: "https://api.turesma.example/uploads/vehiculos/custom.webp",
   conductor_nombre: "Luis Pérez",
   conductor_usuario_id: 603,
+  conductor_email: "luis@example.invalid",
 };
 const fakePool = {
   async query(sql, params) {
-    if (sql.toLowerCase().includes("from operaciones o")) {
+    const query = sql.toLowerCase();
+    if (query.includes("from operaciones o") && query.includes("o.estado = 'asignada'")) {
+      assert.equal(params[0], operation.id);
+      return { rows: [operation], rowCount: 1 };
+    }
+    if (query.includes("from operaciones o")) {
       assert.equal(params[0], operation.id);
       return { rows: [operation], rowCount: 1 };
     }
@@ -73,7 +81,7 @@ installMock("../dist/config/notificaciones", {
   async notificarAdmins() {},
 });
 
-const { notificarClienteReserva, notificarClienteOperacion } = require("../dist/config/reservaMailer");
+const { notificarClienteReserva, notificarClienteOperacion, notificarConductorOperacion } = require("../dist/config/reservaMailer");
 
 test("notifica la asignación y sus cambios con los datos del vehículo", async (t) => {
   const previousWebUrl = process.env.WEB_URL;
@@ -127,9 +135,22 @@ test("notifica al cliente y al conductor al asignar una unidad personalizada", a
   assert.equal(sentEmails[0].attachments[0].cid, "turesma-logo");
   assert.match(sentEmails[0].html, /XYZ-9876 · Van/);
   assert.match(sentEmails[0].html, /custom\.webp/);
-  assert.equal(inAppNotifications.length, 2);
+  assert.equal(inAppNotifications.length, 1);
   assert.equal(inAppNotifications[0][1], operation.usuario_id);
+
+  await notificarConductorOperacion(operation.id, 99);
+
+  assert.equal(sentEmails.length, 2);
+  assert.equal(sentEmails[1].to, operation.conductor_email);
+  assert.match(sentEmails[1].subject, /nuevo servicio asignado/i);
+  assert.match(sentEmails[1].html, /Quito → Otavalo/);
+  assert.match(sentEmails[1].html, /10 de diciembre de 2026/);
+  assert.match(sentEmails[1].html, /09:30/);
+  assert.match(sentEmails[1].html, /XYZ-9876 · Van/);
+  assert.match(sentEmails[1].html, /\/vehiculo\/activas/);
+  assert.equal(inAppNotifications.length, 2);
   assert.equal(inAppNotifications[1][1], operation.conductor_usuario_id);
+  assert.match(inAppNotifications[1][2], /servicio asignado/i);
 });
 
 test("adjunta el logo inline sin reemplazar la proforma de una reserva confirmada", async () => {

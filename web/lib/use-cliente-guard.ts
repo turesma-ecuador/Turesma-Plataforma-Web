@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { clearStoredUser, getRolePath, getStoredToken, getStoredUser, isTokenExpired, normalizeRole, SessionUser } from "./session";
+import { clearStoredUser, getRolePath, getStoredToken, getStoredUser, isTokenExpired, normalizeRole, refreshStoredUser, SessionUser } from "./session";
 
 export function useClienteGuard() {
   const router = useRouter();
@@ -10,7 +10,7 @@ export function useClienteGuard() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
-    const checkSession = () => {
+    const checkSession = async () => {
       const currentUser = getStoredUser();
       // Sin usuario, sin token, o token expirado → cerrar sesión y volver al login.
       if (!currentUser || !getStoredToken() || isTokenExpired()) {
@@ -19,21 +19,32 @@ export function useClienteGuard() {
         return;
       }
 
-      const role = normalizeRole(currentUser.rol);
+      const sessionUser = await refreshStoredUser();
+      if (!sessionUser) {
+        clearStoredUser();
+        window.location.replace("/api/auth/logout");
+        return;
+      }
+
+      const role = normalizeRole(sessionUser.rol);
       if (role !== "cliente") {
         router.replace(getRolePath(role));
         return;
       }
 
-      setUser(currentUser);
+      setUser(sessionUser);
       setCheckingSession(false);
     };
 
-    checkSession();
-    window.addEventListener("pageshow", checkSession);
+    const handlePageShow = () => {
+      void checkSession();
+    };
+
+    handlePageShow();
+    window.addEventListener("pageshow", handlePageShow);
 
     return () => {
-      window.removeEventListener("pageshow", checkSession);
+      window.removeEventListener("pageshow", handlePageShow);
     };
   }, [router]);
 

@@ -3,7 +3,6 @@ export {};
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
 const path = require("path");
 require("dotenv").config();
 const authRoutes = require("./routes/auth.routes");
@@ -16,6 +15,7 @@ const requerimientosRoutes = require("./routes/requerimientos.routes");
 const { initDatabase } = require("./config/initDb");
 const pool = require("./config/db");
 const { verifyToken } = require("./middleware/auth.middleware");
+const { authRateLimit } = require("./middleware/auth-rate-limit.middleware");
 const { servePrivateFile } = require("./controllers/private-files.controller");
 const { assertStorageConfig, getUploadsRoot } = require("./config/storage");
 
@@ -53,20 +53,7 @@ for (const publicFolder of ["galeria", "perfiles", "vehiculos", "viajes", "video
 }
 app.get("/api/private-files/:folder/:filename", verifyToken, servePrivateFile);
 
-// Límite de peticiones a autenticación: frena ataques de fuerza bruta al login
-// y al envío de PIN de recuperación (por IP).
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 40,                  // 40 intentos por IP en esa ventana
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Las consultas autenticadas (por ejemplo /auth/me) son comprobaciones de
-  // sesión, no intentos de acceso. No deben bloquear el inicio de sesión.
-  skip: (req) => String(req.headers.authorization || "").startsWith("Bearer "),
-  message: { error: "Demasiados intentos. Espera unos minutos e inténtalo de nuevo." },
-});
-
-app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/auth", authRateLimit, authRoutes);
 app.use("/api/usuarios", usuariosRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/conductor", conductorRoutes);

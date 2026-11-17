@@ -10,13 +10,14 @@ import { descargarArchivo } from "../../../lib/download";
 import { normalizeRole } from "../../../lib/session";
 import {
   CreditCard, Loader2, CheckCircle2, XCircle,
-  MapPin, ArrowRight, X, ImageIcon, FileDown,
+  MapPin, ArrowRight, X, FileDown,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 type Pago = {
   id: number; reserva_id: number; monto: number; metodo: string;
+  proveedor_id?: string | null;
   comprobante_url: string | null; estado: string; notas_admin: string | null;
   creado_en: string; revisado_en: string | null;
   reserva_total: number; origen: string | null; destino: string | null; reserva_estado: string;
@@ -344,9 +345,16 @@ export default function AdminPagosPage() {
                 <button onClick={() => setZoomImg(p.comprobante_url)} className="block w-full">
                   <Image src={p.comprobante_url} alt="Comprobante de pago" width={320} height={128} unoptimized className="w-full h-32 object-cover rounded-xl border border-slate-200 hover:opacity-80 transition-all" />
                 </button>
-              ) : (
-                <div className="w-full h-32 flex items-center justify-center bg-slate-50 rounded-xl border border-slate-200"><ImageIcon size={24} className="text-slate-300" /></div>
-              )}
+              ) : p.metodo === "payphone" ? (
+                <div className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
+                  <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
+                  <div className="min-w-0 text-[10px] leading-relaxed text-emerald-900">
+                    <p className="font-black">Pago procesado por PayPhone</p>
+                    {p.proveedor_id && <p className="break-all">Transacción: {p.proveedor_id}</p>}
+                    <p>{new Date(p.creado_en).toLocaleString("es-EC", { dateStyle: "medium", timeStyle: "short" })}</p>
+                  </div>
+                </div>
+              ) : null}
 
               {p.estado === "rechazado" && p.notas_admin && (
                 <p className="text-[10px] text-red-500 bg-red-50 rounded-lg p-2">Motivo: {p.notas_admin}</p>
