@@ -52,6 +52,9 @@ const resolveLinkPath = (portal: Portal | undefined, linkType?: string | null, l
   if (linkType === "requerimiento" && portal === "admin") {
     return linkId ? `/admin/cotizaciones?requerimiento=${linkId}` : "/admin/cotizaciones";
   }
+  if (linkType === "requerimiento" && portal === "cliente") {
+    return "/cliente/requerimiento-personalizado";
+  }
   return null;
 };
 

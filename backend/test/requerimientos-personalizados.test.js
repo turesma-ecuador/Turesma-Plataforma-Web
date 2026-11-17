@@ -84,6 +84,19 @@ require.cache[notificationsModule] = {
   paths: [],
 };
 
+const requerimientoMailerModule = require.resolve("../dist/config/requerimientoMailer");
+const sentProposalEmails = [];
+require.cache[requerimientoMailerModule] = {
+  id: requerimientoMailerModule,
+  filename: requerimientoMailerModule,
+  loaded: true,
+  exports: {
+    async notificarPropuestaRequerimiento(...args) { sentProposalEmails.push(args); },
+  },
+  children: [],
+  paths: [],
+};
+
 const proformaModule = require.resolve("../dist/config/proforma");
 require.cache[proformaModule] = {
   id: proformaModule,
@@ -191,6 +204,10 @@ test("cotiza cada grupo con subtotal propio y publica el total autoritativo", as
   assert.equal(updateRes.body.service_groups[1].precio_total, 900);
   assert.equal(sentNotifications.at(-1)[0], "client");
   assert.equal(sentNotifications.at(-1)[2], 7);
+  assert.match(sentNotifications.at(-1)[3], /Total: \$3400\.00/);
+  assert.equal(sentNotifications.at(-1)[5], "requerimiento");
+  assert.equal(sentNotifications.at(-1)[6], 44);
+  assert.deepEqual(sentProposalEmails, [[updateRes.body]]);
 });
 
 test("acepta la propuesta de forma idempotente y crea una reserva maestra por el total", async () => {

@@ -4,6 +4,7 @@ const pool = require("../config/db");
 const { crearNotificacion, notificarAdmins } = require("../config/notificaciones");
 const { buildProformaDataRequerimiento, generarProformaPDF } = require("../config/proforma");
 const { prepararDespachoRequerimiento } = require("../config/requerimientosDespacho");
+const { notificarPropuestaRequerimiento } = require("../config/requerimientoMailer");
 
 const optionalText = (value: unknown, maxLength: number): string | null | undefined => {
   if (value === undefined || value === null) return null;
@@ -272,14 +273,18 @@ const actualizarRequerimientoAdmin = async (req: any, res: any) => {
     );
     await client.query("COMMIT");
     const updated = result.rows[0];
+    const isProposal = estado === "propuesta_enviada";
     await crearNotificacion(
       usuarioAdminId,
       Number(updated.usuario_id),
-      `Turesma actualizó tu requerimiento personalizado #${id}: ${estado.replace("_", " ")}`,
+      isProposal
+        ? `Turesma envió una propuesta para tu requerimiento #${id}. Total: $${Number(updated.precio_final).toFixed(2)}. Revisa los precios por grupo y responde en Mis requerimientos.`
+        : `Turesma actualizó tu requerimiento personalizado #${id}: ${estado.replace("_", " ")}`,
       null,
-      null,
-      null
+      "requerimiento",
+      Number(updated.id)
     );
+    if (isProposal) await notificarPropuestaRequerimiento(updated);
     return res.json(updated);
   } catch (error) {
     await client.query("ROLLBACK");
