@@ -22,6 +22,27 @@ const toDateOnly = (value: any, fallbackToday = false) => {
   return fallbackToday ? new Date().toISOString().slice(0, 10) : null;
 };
 
+const toServiceTimestamp = (date: string, time: any) => {
+  const normalizedTime = typeof time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(time.trim())
+    ? time.trim()
+    : "00:00";
+  return `${date} ${normalizedTime}:00`;
+};
+
+const toEstimatedArrivalTimestamp = (date: string, departureTime: any, arrivalTime: any) => {
+  if (typeof arrivalTime !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(arrivalTime.trim())) return null;
+  const normalizedDeparture = typeof departureTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(departureTime.trim())
+    ? departureTime.trim()
+    : "00:00";
+  const [departureHour, departureMinute] = normalizedDeparture.split(":").map(Number);
+  const [arrivalHour, arrivalMinute] = arrivalTime.trim().split(":").map(Number);
+  const arrivalDate = new Date(`${date}T00:00:00.000Z`);
+  if (arrivalHour * 60 + arrivalMinute <= departureHour * 60 + departureMinute) {
+    arrivalDate.setUTCDate(arrivalDate.getUTCDate() + 1);
+  }
+  return `${arrivalDate.toISOString().slice(0, 10)} ${arrivalTime.trim()}:00`;
+};
+
 // Crea la reserva pendiente de pago sin comprometer recursos. La asignación
 // definitiva de vehículo y conductor se realiza en el flujo de Despacho.
 const crearReservaDesdeCotizacion = async (client: any, c: any, precioFinal: number) => {
@@ -32,21 +53,26 @@ const crearReservaDesdeCotizacion = async (client: any, c: any, precioFinal: num
   if (!fechaServicio) {
     throw new Error(`La cotización #${c.id} no tiene una fecha de servicio válida`);
   }
+  const horaSalida = c.hora_salida || null;
+  const fechaSalida = toServiceTimestamp(fechaServicio, horaSalida);
+  const fechaLlegada = toEstimatedArrivalTimestamp(fechaServicio, horaSalida, c.hora_llegada_estimada);
+  const numViajes = Math.max(1, Math.floor(Number(c.num_viajes) || 1));
+  const modalidadServicio = String(c.modalidad_servicio || (fechaFin ? "varios_dias" : "dia")).trim().toLowerCase();
+  const duracionHoras = modalidadServicio === "horas" && Number(c.duracion_horas) > 0
+    ? Number(c.duracion_horas)
+    : null;
   const reservaRes = await client.query(
     `INSERT INTO reservas
-       (usuario_id, fecha_reserva, fecha_fin, fecha_regreso, hora_regreso, fecha_salida, fecha_servicio, hora_salida,
-        duracion_estimada_minutos, origen_lat, origen_lng, destino_lat, destino_lng,
-        num_personas, total, estado, origen, destino, tipo_vehiculo, vehiculo_id, conductor_id)
-     VALUES (
-       $1, $2, $3, $4, $5,
-       $2::date + COALESCE(NULLIF($6, '')::time, time '00:00'),
-       $2::date + COALESCE(NULLIF($6, '')::time, time '00:00'),
-       $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NULL, NULL
-     )
+       (usuario_id, fecha_reserva, fecha_fin, fecha_regreso, hora_regreso, fecha_salida, fecha_llegada, fecha_servicio,
+        hora_salida, duracion_estimada_minutos, num_viajes, modalidad_servicio, duracion_horas,
+        origen_lat, origen_lng, destino_lat, destino_lng, num_personas, total, estado, origen, destino, tipo_vehiculo,
+        vehiculo_id, conductor_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $6, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NULL, NULL)
      RETURNING id`,
     [
       c.usuario_id, fechaServicio, fechaFin, fechaRegreso, c.hora_regreso || null,
-      c.hora_salida || null, c.duracion_estimada_minutos || null,
+      fechaSalida, fechaLlegada, horaSalida, c.duracion_estimada_minutos || null,
+      numViajes, modalidadServicio, duracionHoras,
       c.origen_lat || null, c.origen_lng || null, c.destino_lat || null, c.destino_lng || null,
       c.num_personas, precioFinal, estadoInicial, c.origen, c.destino, c.tipo_vehiculo || null,
     ]
@@ -133,7 +159,15 @@ const crearReservaDirecta = async (req: any, res: any) => {
     const distanceKm = coordinates ? await roadDistanceKm(Number(origen_lat), Number(origen_lng), Number(destino_lat), Number(destino_lng)) : 0;
     const pricing = await getPricing();
     const serviceMode = String(modalidad_servicio || (fechaFin ? "varios_dias" : "dia")).trim().toLowerCase();
-    const hours = Math.max(1, Number(duracion_horas) || 1);
+    const hours = duracion_horas === null || duracion_horas === undefined || duracion_horas === ""
+      ? 1
+      : Number(duracion_horas);
+    if (!["dia", "horas", "varios_dias"].includes(serviceMode)) {
+      return res.status(400).json({ error: "La modalidad del servicio no es válida" });
+    }
+    if (serviceMode === "horas" && (!Number.isFinite(hours) || hours <= 0)) {
+      return res.status(400).json({ error: "Indica una duración válida en horas" });
+    }
     const estimatedDurationMinutes = Math.round(hours * 60);
     const breakdown = calculateQuote({ pricing, distanceKm, days, trips, vehicleType: tipoVehiculo, serviceMode, hours });
     await client.query("BEGIN");
@@ -141,8 +175,8 @@ const crearReservaDirecta = async (req: any, res: any) => {
       `INSERT INTO reservas
          (usuario_id, fecha_reserva, fecha_fin, num_personas, total, estado, origen, destino, vehiculo_id,
           tipo_vehiculo, notas, monto_pagado, estado_pago, hora_salida, duracion_estimada_minutos,
-          origen_lat, origen_lng, destino_lat, destino_lng)
-       VALUES ($1, $2, $3, $4, $5, 'pendiente_pago', $6, $7, $8, $9, $10, 0, 'pendiente', $11, $12, $13, $14, $15, $16)
+          origen_lat, origen_lng, destino_lat, destino_lng, num_viajes, modalidad_servicio, duracion_horas)
+       VALUES ($1, $2, $3, $4, $5, 'pendiente_pago', $6, $7, $8, $9, $10, 0, 'pendiente', $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING id, total`,
       [
         usuarioId, fecha_servicio, fechaFin, Number(num_personas), breakdown.total,
@@ -152,6 +186,7 @@ const crearReservaDirecta = async (req: any, res: any) => {
         coordinates ? Number(origen_lng) : null,
         coordinates ? Number(destino_lat) : null,
         coordinates ? Number(destino_lng) : null,
+        trips, serviceMode, serviceMode === "horas" ? hours : null,
       ]
     );
     await client.query("COMMIT");
@@ -423,6 +458,22 @@ const crearCotizacion = async (req: any, res: any) => {
   const fechaFin = esFecha(fecha_fin) && fecha_fin.trim() > String(fecha_servicio).trim() ? fecha_fin.trim() : null;
   const fechaRegreso = fecha_regreso == null || fecha_regreso === "" ? null : esFecha(fecha_regreso) ? fecha_regreso.trim() : null;
   const horaRegreso = typeof hora_regreso === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(hora_regreso.trim()) ? hora_regreso.trim() : null;
+  const modalidadServicio = String(modalidad_servicio || (fechaFin ? "varios_dias" : "dia")).trim().toLowerCase();
+  const duracionHoras = duracion_horas === null || duracion_horas === undefined || duracion_horas === ""
+    ? null
+    : Number(duracion_horas);
+  if (!["dia", "horas", "varios_dias"].includes(modalidadServicio)) {
+    return res.status(400).json({ error: "La modalidad del servicio no es válida" });
+  }
+  if (modalidadServicio === "varios_dias" && !fechaFin) {
+    return res.status(400).json({ error: "Indica la fecha final del servicio de varios días" });
+  }
+  if (modalidadServicio !== "varios_dias" && fechaFin) {
+    return res.status(400).json({ error: "La fecha final solo se usa en servicios de varios días" });
+  }
+  if (modalidadServicio === "horas" && (!Number.isFinite(duracionHoras) || duracionHoras <= 0)) {
+    return res.status(400).json({ error: "Indica una duración válida en horas" });
+  }
   const horaLlegadaEstimada = typeof hora_llegada_estimada === "string"
     && /^([01]\d|2[0-3]):[0-5]\d$/.test(hora_llegada_estimada.trim())
     ? hora_llegada_estimada.trim()
@@ -481,13 +532,14 @@ const crearCotizacion = async (req: any, res: any) => {
          (usuario_id, origen, destino, fecha_servicio, fecha_fin, num_personas, tipo_vehiculo, notas,
           vehiculo_id, valor_ofrecido, precio_estimado, num_viajes, distancia_km, precio_desglose,
           duracion_valor, duracion_unidad, turno,
-           origen_lat, origen_lng, destino_lat, destino_lng, hora_salida, hora_llegada_estimada, duracion_estimada_minutos, fecha_regreso, hora_regreso)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'admin', $17, $18, $19, $20, $21, $22, $23, $24, $25)
+           origen_lat, origen_lng, destino_lat, destino_lng, hora_salida, hora_llegada_estimada, duracion_estimada_minutos, fecha_regreso, hora_regreso,
+           modalidad_servicio, duracion_horas)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'admin', $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
        RETURNING *`,
       [
         usuario_id, origen, destino, fecha_servicio, fechaFin, num_personas, tipoVehiculo, notas || null,
         vehiculo_id ? Number(vehiculo_id) : null, num(valor_ofrecido), null, trips, null, null,
-         num(duracion_valor), dUnidad, num(origen_lat), num(origen_lng), num(destino_lat), num(destino_lng), horaSalida, horaLlegadaEstimada, Number.isInteger(duracionEstimada) && duracionEstimada > 0 ? duracionEstimada : null, fechaRegreso, horaRegreso,
+         num(duracion_valor), dUnidad, num(origen_lat), num(origen_lng), num(destino_lat), num(destino_lng), horaSalida, horaLlegadaEstimada, Number.isInteger(duracionEstimada) && duracionEstimada > 0 ? duracionEstimada : null, fechaRegreso, horaRegreso, modalidadServicio, modalidadServicio === "horas" ? duracionHoras : null,
       ]
     );
     const cotizacion = result.rows[0];

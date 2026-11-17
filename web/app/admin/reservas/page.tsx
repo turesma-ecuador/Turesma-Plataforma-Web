@@ -27,7 +27,18 @@ type Reserva = {
   fecha_reserva: string | null;
   fecha_salida: string | null;
   fecha_llegada: string | null;
+  fecha_fin: string | null;
+  fecha_regreso: string | null;
+  hora_salida: string | null;
+  hora_regreso: string | null;
+  origen_lat: number | string | null;
+  origen_lng: number | string | null;
+  destino_lat: number | string | null;
+  destino_lng: number | string | null;
   num_personas: number | null;
+  num_viajes: number | null;
+  modalidad_servicio: string | null;
+  duracion_horas: number | string | null;
   tipo_vehiculo: string | null;
   total: number | null;
   origen: string | null;
@@ -77,7 +88,15 @@ const createEmptyForm = () => ({
   fecha_reserva: new Date().toISOString().slice(0, 10),
   fecha_salida: "",
   fecha_llegada: "",
+  fecha_fin: "",
+  fecha_regreso: "",
+  hora_regreso: "",
+  regreso_otra_fecha: false,
   num_personas: "1",
+  num_viajes: "1",
+  modalidad_servicio: "dia",
+  duracion_horas: "2",
+  tipo_vehiculo: "",
   total: "",
   origen: "",
   destino: "",
@@ -281,12 +300,26 @@ export default function AdminReservasPage() {
 
   const openEdit = (r: Reserva) => {
     setEditingId(r.id);
+    setAdminOrigin(r.origen_lat != null && r.origen_lng != null
+      ? { lat: Number(r.origen_lat), lng: Number(r.origen_lng), label: r.origen || "" }
+      : null);
+    setAdminDestination(r.destino_lat != null && r.destino_lng != null
+      ? { lat: Number(r.destino_lat), lng: Number(r.destino_lng), label: r.destino || "" }
+      : null);
     setForm({
       usuario_id: String(r.usuario_id || ""),
       fecha_reserva: r.fecha_reserva?.slice(0, 10) || "",
       fecha_salida: r.fecha_salida?.slice(0, 16) || "",
       fecha_llegada: r.fecha_llegada?.slice(0, 16) || "",
+      fecha_fin: r.fecha_fin?.slice(0, 10) || "",
+      fecha_regreso: r.fecha_regreso?.slice(0, 10) || "",
+      hora_regreso: r.hora_regreso?.slice(0, 5) || "",
+      regreso_otra_fecha: Boolean(r.fecha_regreso),
       num_personas: String(r.num_personas || "1"),
+      num_viajes: String(r.num_viajes || "1"),
+      modalidad_servicio: r.fecha_fin ? "varios_dias" : r.modalidad_servicio === "horas" ? "horas" : "dia",
+      duracion_horas: String(r.duracion_horas || "2"),
+      tipo_vehiculo: r.tipo_vehiculo || "",
       total: String(r.total || ""),
       origen: r.origen || "",
       destino: r.destino || "",
@@ -314,9 +347,37 @@ export default function AdminReservasPage() {
       setErr("El número de personas debe ser al menos 1");
       return;
     }
+    if (!Number.isInteger(Number(form.num_viajes)) || Number(form.num_viajes) < 1) {
+      setErr("El número de viajes debe ser al menos 1");
+      return;
+    }
+    if (form.modalidad_servicio === "horas" && (!Number.isFinite(Number(form.duracion_horas)) || Number(form.duracion_horas) <= 0)) {
+      setErr("Indica una duración válida en horas");
+      return;
+    }
     if (!origin || !destination) {
       setErr("Marca la salida y el destino en el mapa para continuar");
       return;
+    }
+    if (form.modalidad_servicio === "varios_dias") {
+      if (!form.fecha_salida || !form.fecha_fin) {
+        setErr("Indica la salida y la fecha final para un servicio de varios días");
+        return;
+      }
+      if (form.fecha_fin <= form.fecha_salida.slice(0, 10)) {
+        setErr("La fecha final debe ser posterior al día de salida");
+        return;
+      }
+    }
+    if (form.regreso_otra_fecha) {
+      if (!form.fecha_salida || !form.fecha_regreso || !form.hora_regreso) {
+        setErr("Indica la fecha y hora de salida y de regreso");
+        return;
+      }
+      if (form.fecha_regreso <= form.fecha_salida.slice(0, 10)) {
+        setErr("La fecha de regreso debe ser posterior al día de salida");
+        return;
+      }
     }
     if (form.fecha_salida && form.fecha_llegada && form.fecha_llegada < form.fecha_salida) {
       setErr("La fecha de llegada no puede ser anterior a la fecha de salida");
@@ -328,10 +389,22 @@ export default function AdminReservasPage() {
       fecha_reserva: form.fecha_reserva,
       fecha_salida: form.fecha_salida || null,
       fecha_llegada: form.fecha_llegada || null,
+      fecha_servicio: form.fecha_salida || null,
+      hora_salida: form.fecha_salida ? form.fecha_salida.slice(11, 16) : null,
+      fecha_fin: form.modalidad_servicio === "varios_dias" ? form.fecha_fin || null : null,
+      fecha_regreso: form.regreso_otra_fecha ? form.fecha_regreso || null : null,
+      hora_regreso: form.regreso_otra_fecha ? form.hora_regreso || null : null,
+      duracion_estimada_minutos: form.modalidad_servicio === "horas" ? Math.round(Number(form.duracion_horas) * 60) : null,
       num_personas: Number(form.num_personas),
+      num_viajes: Number(form.num_viajes),
+      modalidad_servicio: form.modalidad_servicio,
+      duracion_horas: form.modalidad_servicio === "horas" ? Number(form.duracion_horas) : null,
+      tipo_vehiculo: form.tipo_vehiculo.trim() || null,
       total: form.total ? Number(form.total) : null,
       origen: origin,
       destino: destination,
+      ...(adminOrigin ? { origen_lat: adminOrigin.lat, origen_lng: adminOrigin.lng } : {}),
+      ...(adminDestination ? { destino_lat: adminDestination.lat, destino_lng: adminDestination.lng } : {}),
       notas: form.notas || null,
       ...(editingId ? {} : { estado: "pendiente_pago" }),
     };
@@ -418,6 +491,11 @@ export default function AdminReservasPage() {
     const d = new Date(v);
     return isNaN(d.getTime()) ? v : d.toLocaleString("es-EC", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
   };
+  const formatFechaCorta = (v?: string | null) => {
+    if (!v) return "—";
+    const [year, month, day] = v.slice(0, 10).split("-");
+    return year && month && day ? `${day}/${month}/${year}` : v;
+  };
 
   // Stats
   const stats = {
@@ -446,8 +524,13 @@ export default function AdminReservasPage() {
     && form.fecha_reserva
     && Number.isInteger(Number(form.num_personas))
     && Number(form.num_personas) >= 1
+    && Number.isInteger(Number(form.num_viajes))
+    && Number(form.num_viajes) >= 1
     && (adminOrigin?.label || form.origen.trim())
     && (adminDestination?.label || form.destino.trim())
+    && (form.modalidad_servicio !== "horas" || (Number.isFinite(Number(form.duracion_horas)) && Number(form.duracion_horas) > 0))
+    && (form.modalidad_servicio !== "varios_dias" || (Boolean(form.fecha_salida && form.fecha_fin) && form.fecha_fin > form.fecha_salida.slice(0, 10)))
+    && (!form.regreso_otra_fecha || (Boolean(form.fecha_salida && form.fecha_regreso && form.hora_regreso) && form.fecha_regreso > form.fecha_salida.slice(0, 10)))
     && (!form.fecha_salida || !form.fecha_llegada || form.fecha_llegada >= form.fecha_salida)
   );
 
@@ -571,10 +654,6 @@ export default function AdminReservasPage() {
           </div>
         );
       })()}
-      <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-800">
-        Aquí se gestionan las solicitudes y sus datos. La asignación o cambio de vehículo y conductor se realiza desde Despacho.
-      </div>
-
       {/* FILTROS */}
       <div className="flex flex-wrap gap-3 items-center bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
         <nav aria-label="Filtrar reservas" className="flex w-full flex-wrap gap-2 border-b border-slate-100 pb-3">
@@ -647,6 +726,15 @@ export default function AdminReservasPage() {
                   <div className="flex items-start gap-1.5 text-[11px] text-slate-600">
                     <MapPin size={12} className="text-[#E31E24] shrink-0 mt-0.5" />
                     <span className="min-w-0 truncate">{r.origen || "—"} → {r.destino || "—"}</span>
+                  </div>
+                )}
+                {(r.fecha_salida || r.fecha_llegada || r.fecha_fin || r.fecha_regreso) && (
+                  <div className="space-y-0.5 text-[10px] text-slate-500">
+                    {r.fecha_salida && <p>Salida: {formatFecha(r.fecha_salida)}</p>}
+                    {r.fecha_llegada && <p>Llegada estimada: {formatFecha(r.fecha_llegada)}</p>}
+                    {r.fecha_fin && <p>Servicio hasta: {formatFechaCorta(r.fecha_fin)}</p>}
+                    {r.fecha_regreso && <p>Regreso: {formatFechaCorta(r.fecha_regreso)}{r.hora_regreso ? ` · ${r.hora_regreso.slice(0, 5)}` : ""}</p>}
+                    <p>{r.num_viajes || 1} viaje(s) · {r.modalidad_servicio === "varios_dias" || r.fecha_fin ? "Varios días" : r.modalidad_servicio === "horas" ? `Por horas${r.duracion_horas ? ` · ${r.duracion_horas} h` : ""}` : "Por día"}</p>
                   </div>
                 )}
                 <div className="flex items-center justify-between text-[11px] text-slate-500">
@@ -736,6 +824,11 @@ export default function AdminReservasPage() {
                     <td className="px-4 py-4">
                       <p className="text-xs text-slate-600">{formatFecha(r.fecha_reserva)}</p>
                       {r.num_personas && <p className="text-[10px] text-slate-400">{r.num_personas} persona(s)</p>}
+                      {r.fecha_salida && <p className="text-[10px] text-slate-500">Salida: {formatFecha(r.fecha_salida)}</p>}
+                      {r.fecha_llegada && <p className="text-[10px] text-slate-500">Llegada: {formatFecha(r.fecha_llegada)}</p>}
+                      {r.fecha_fin && <p className="text-[10px] text-slate-500">Hasta: {formatFechaCorta(r.fecha_fin)}</p>}
+                      {r.fecha_regreso && <p className="text-[10px] text-slate-500">Regreso: {formatFechaCorta(r.fecha_regreso)}{r.hora_regreso ? ` · ${r.hora_regreso.slice(0, 5)}` : ""}</p>}
+                      <p className="text-[10px] text-slate-400">{r.num_viajes || 1} viaje(s) · {r.modalidad_servicio === "varios_dias" || r.fecha_fin ? "Varios días" : r.modalidad_servicio === "horas" ? `Por horas${r.duracion_horas ? ` · ${r.duracion_horas} h` : ""}` : "Por día"}</p>
                     </td>
                     <td className="px-4 py-4">
                       <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-black uppercase border ${ESTADO_BADGE[r.estado] || ESTADO_BADGE.pendiente}`}>
@@ -915,12 +1008,125 @@ export default function AdminReservasPage() {
                       </div>
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div>
-                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Salida</label>
+                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Salida — fecha y hora</label>
                           <input type="datetime-local" value={form.fecha_salida} onChange={e => setForm(p => ({ ...p, fecha_salida: e.target.value }))} className={INPUT_CLS} />
                         </div>
                         <div>
-                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Llegada</label>
+                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Llegada estimada — fecha y hora</label>
                           <input type="datetime-local" value={form.fecha_llegada} onChange={e => setForm(p => ({ ...p, fecha_llegada: e.target.value }))} className={INPUT_CLS} />
+                        </div>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Modalidad del servicio</label>
+                          <select
+                            value={form.modalidad_servicio}
+                            onChange={e => {
+                              const modalidad = e.target.value;
+                              setForm(current => ({
+                                ...current,
+                                modalidad_servicio: modalidad,
+                                fecha_fin: modalidad === "varios_dias" ? current.fecha_fin : "",
+                                regreso_otra_fecha: modalidad === "varios_dias" ? false : current.regreso_otra_fecha,
+                                fecha_regreso: modalidad === "varios_dias" ? "" : current.fecha_regreso,
+                                hora_regreso: modalidad === "varios_dias" ? "" : current.hora_regreso,
+                              }));
+                            }}
+                            className={INPUT_CLS}
+                          >
+                            <option value="dia">Por día</option>
+                            <option value="horas">Por horas</option>
+                            <option value="varios_dias">Varios días</option>
+                          </select>
+                        </div>
+                        {form.modalidad_servicio === "horas" && (
+                          <div>
+                            <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Duración (horas)</label>
+                            <input
+                              type="number"
+                              min="0.5"
+                              step="0.5"
+                              value={form.duracion_horas}
+                              onChange={e => setForm(p => ({ ...p, duracion_horas: e.target.value }))}
+                              className={INPUT_CLS}
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Número de viajes</label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={form.num_viajes}
+                          onChange={e => setForm(p => ({ ...p, num_viajes: e.target.value }))}
+                          className={INPUT_CLS}
+                        />
+                      </div>
+                      {form.modalidad_servicio === "varios_dias" ? (
+                        <div>
+                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Último día del servicio *</label>
+                          <input
+                            type="date"
+                            min={form.fecha_salida ? form.fecha_salida.slice(0, 10) : undefined}
+                            value={form.fecha_fin}
+                            onChange={e => setForm(p => ({ ...p, fecha_fin: e.target.value }))}
+                            className={INPUT_CLS}
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                          <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={form.regreso_otra_fecha}
+                              onChange={e => setForm(current => ({
+                                ...current,
+                                regreso_otra_fecha: e.target.checked,
+                                fecha_regreso: e.target.checked ? current.fecha_regreso : "",
+                                hora_regreso: e.target.checked ? current.hora_regreso : "",
+                              }))}
+                              className="h-4 w-4 rounded border-slate-300 accent-[#E31E24]"
+                            />
+                            Regreso en otra fecha
+                          </label>
+                          {form.regreso_otra_fecha && (
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <div>
+                                <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Fecha de regreso *</label>
+                                <input
+                                  type="date"
+                                  min={form.fecha_salida ? form.fecha_salida.slice(0, 10) : undefined}
+                                  value={form.fecha_regreso}
+                                  onChange={e => setForm(p => ({ ...p, fecha_regreso: e.target.value }))}
+                                  className={INPUT_CLS}
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Hora de regreso *</label>
+                                <input
+                                  type="time"
+                                  value={form.hora_regreso}
+                                  onChange={e => setForm(p => ({ ...p, hora_regreso: e.target.value }))}
+                                  className={INPUT_CLS}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Preferencia de vehículo</label>
+                          <input
+                            type="text"
+                            maxLength={60}
+                            value={form.tipo_vehiculo}
+                            onChange={e => setForm(p => ({ ...p, tipo_vehiculo: e.target.value }))}
+                            className={INPUT_CLS}
+                            placeholder="Ej. van, minibus, bus"
+                          />
                         </div>
                       </div>
                       <div>

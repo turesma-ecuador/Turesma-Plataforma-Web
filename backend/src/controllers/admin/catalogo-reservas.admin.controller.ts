@@ -39,6 +39,31 @@ const normalizeTimestampInput = (value) => {
   return raw.slice(0, 19);
 };
 
+const normalizeDateOnlyInput = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value.toISOString().slice(0, 10);
+  }
+  const raw = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return undefined;
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === raw ? raw : undefined;
+};
+
+const normalizeTimeInput = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const raw = String(value).trim();
+  if (!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(raw)) return undefined;
+  return raw.slice(0, 5);
+};
+
+const isValidTimestampInput = (value) => {
+  if (value === null || value === undefined || value === "") return true;
+  const normalized = normalizeTimestampInput(value);
+  const match = normalized?.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}(?::\d{2})?)$/);
+  return Boolean(match && normalizeDateOnlyInput(match[1]) && normalizeTimeInput(match[2]) !== undefined);
+};
+
 const getReservasColumnInfo = async (columnName) => {
   const result = await pool.query(
     `SELECT column_name, is_nullable
@@ -338,12 +363,40 @@ const listarReservas = async (req, res) => {
   try {
     await syncReservaEstadosAutomaticos();
 
-    const [origenSelect, destinoSelect, fechaSalidaSelect, fechaLlegadaSelect, fechaServicioSelect] = await Promise.all([
+    const [
+      origenSelect,
+      destinoSelect,
+      fechaSalidaSelect,
+      fechaLlegadaSelect,
+      fechaServicioSelect,
+      fechaFinSelect,
+      fechaRegresoSelect,
+      horaSalidaSelect,
+      horaRegresoSelect,
+      numViajesSelect,
+      modalidadSelect,
+      duracionHorasSelect,
+      origenLatSelect,
+      origenLngSelect,
+      destinoLatSelect,
+      destinoLngSelect,
+    ] = await Promise.all([
       getReservaSelectColumn("origen"),
       getReservaSelectColumn("destino"),
       getReservaSelectColumn("fecha_salida"),
       getReservaSelectColumn("fecha_llegada"),
       getReservaSelectColumn("fecha_servicio"),
+      getReservaSelectColumn("fecha_fin"),
+      getReservaSelectColumn("fecha_regreso"),
+      getReservaSelectColumn("hora_salida"),
+      getReservaSelectColumn("hora_regreso"),
+      getReservaSelectColumn("num_viajes"),
+      getReservaSelectColumn("modalidad_servicio"),
+      getReservaSelectColumn("duracion_horas"),
+      getReservaSelectColumn("origen_lat"),
+      getReservaSelectColumn("origen_lng"),
+      getReservaSelectColumn("destino_lat"),
+      getReservaSelectColumn("destino_lng"),
     ]);
 
     // Filtro opcional por cliente (?usuario_id=)
@@ -377,6 +430,17 @@ const listarReservas = async (req, res) => {
          ${fechaSalidaSelect},
          ${fechaLlegadaSelect},
          ${fechaServicioSelect},
+         ${fechaFinSelect},
+         ${fechaRegresoSelect},
+         ${horaSalidaSelect},
+         ${horaRegresoSelect},
+         ${numViajesSelect},
+         ${modalidadSelect},
+         ${duracionHorasSelect},
+         ${origenLatSelect},
+         ${origenLngSelect},
+         ${destinoLatSelect},
+         ${destinoLngSelect},
          u.nombre AS cliente_nombre,
          u.email AS cliente_email,
          t.titulo AS tour_titulo,
@@ -432,6 +496,79 @@ const crearReserva = async (req, res) => {
     : Number(submittedTotal);
   if (parsedTotal !== null && (!Number.isFinite(parsedTotal) || parsedTotal < 0)) {
     return res.status(400).json({ error: "El total debe ser un monto válido mayor o igual a cero" });
+  }
+
+  if (
+    !isValidTimestampInput(req.body.fecha_salida)
+    || !isValidTimestampInput(req.body.fecha_llegada)
+    || !isValidTimestampInput(req.body.fecha_servicio)
+  ) {
+    return res.status(400).json({ error: "Indica fechas y horas válidas para el servicio" });
+  }
+  if (
+    (req.body.tipo_vehiculo !== null && req.body.tipo_vehiculo !== undefined && typeof req.body.tipo_vehiculo !== "string")
+    || (req.body.notas !== null && req.body.notas !== undefined && typeof req.body.notas !== "string")
+  ) {
+    return res.status(400).json({ error: "La preferencia de vehículo y las notas deben ser texto" });
+  }
+  const fechaSalidaInput = normalizeTimestampInput(req.body.fecha_salida);
+  const fechaLlegadaInput = normalizeTimestampInput(req.body.fecha_llegada);
+  const fechaFin = normalizeDateOnlyInput(req.body.fecha_fin);
+  const fechaRegreso = normalizeDateOnlyInput(req.body.fecha_regreso);
+  const horaRegreso = normalizeTimeInput(req.body.hora_regreso);
+  const horaSalidaInput = normalizeTimeInput(req.body.hora_salida);
+  const modalidadServicio = String(req.body.modalidad_servicio || "dia").trim().toLowerCase();
+  const numViajes = req.body.num_viajes === undefined ? 1 : parsePositiveInt(req.body.num_viajes);
+  const duracionHoras = req.body.duracion_horas === null || req.body.duracion_horas === undefined || req.body.duracion_horas === ""
+    ? null
+    : Number(req.body.duracion_horas);
+  const tipoVehiculo = typeof req.body.tipo_vehiculo === "string" ? req.body.tipo_vehiculo.trim() : "";
+
+  if (fechaFin === undefined || fechaRegreso === undefined || horaRegreso === undefined || horaSalidaInput === undefined) {
+    return res.status(400).json({ error: "Revisa las fechas y horas del servicio" });
+  }
+  if (!["dia", "horas", "varios_dias"].includes(modalidadServicio)) {
+    return res.status(400).json({ error: "La modalidad del servicio no es válida" });
+  }
+  if (!numViajes) {
+    return res.status(400).json({ error: "El número de viajes debe ser al menos 1" });
+  }
+  if (modalidadServicio === "horas" && (!Number.isFinite(duracionHoras) || duracionHoras <= 0)) {
+    return res.status(400).json({ error: "Indica una duración válida en horas" });
+  }
+  if (duracionHoras !== null && (!Number.isFinite(duracionHoras) || duracionHoras <= 0)) {
+    return res.status(400).json({ error: "La duración en horas debe ser mayor que cero" });
+  }
+  if (duracionHoras !== null && modalidadServicio !== "horas") {
+    return res.status(400).json({ error: "La duración en horas solo aplica a servicios por horas" });
+  }
+  if (tipoVehiculo.length > 60) {
+    return res.status(400).json({ error: "La preferencia de vehículo no puede superar 60 caracteres" });
+  }
+  if (fechaFin && (fechaRegreso || modalidadServicio !== "varios_dias")) {
+    return res.status(400).json({ error: "La fecha final solo se usa en servicios de varios días" });
+  }
+  if (modalidadServicio === "varios_dias" && !fechaFin) {
+    return res.status(400).json({ error: "Indica la fecha final del servicio de varios días" });
+  }
+  if (fechaRegreso && (!horaRegreso || fechaFin || !fechaSalidaInput)) {
+    return res.status(400).json({ error: "Para un regreso en otra fecha indica la salida, la fecha y la hora de regreso; no se combina con varios días" });
+  }
+  if (!fechaRegreso && horaRegreso) {
+    return res.status(400).json({ error: "La hora de regreso requiere una fecha de regreso" });
+  }
+  if (fechaFin && !fechaSalidaInput) {
+    return res.status(400).json({ error: "Indica la fecha y hora de salida para el servicio de varios días" });
+  }
+  const fechaInicioServicio = fechaSalidaInput?.slice(0, 10) || String(fecha_reserva).slice(0, 10);
+  if (fechaFin && fechaFin <= fechaInicioServicio) {
+    return res.status(400).json({ error: "La fecha final debe ser posterior al día de salida" });
+  }
+  if (fechaRegreso && fechaRegreso <= fechaInicioServicio) {
+    return res.status(400).json({ error: "La fecha de regreso debe ser posterior al día de salida" });
+  }
+  if (fechaSalidaInput && fechaLlegadaInput && fechaLlegadaInput < fechaSalidaInput) {
+    return res.status(400).json({ error: "La llegada estimada no puede ser anterior a la salida" });
   }
 
   try {
@@ -493,9 +630,10 @@ const crearReserva = async (req, res) => {
     const destinoTexto = destinoTextoReq || (destinoLat !== null && destinoLng !== null ? `${destinoLat},${destinoLng}` : "Destino pendiente");
 
     const fechaReservaTimestamp = normalizeTimestampInput(fecha_reserva) || `${String(fecha_reserva).slice(0, 10)} 00:00:00`;
-    const fechaSalida = normalizeTimestampInput(req.body.fecha_salida) || fechaReservaTimestamp;
-    const fechaLlegada = normalizeTimestampInput(req.body.fecha_llegada) || fechaReservaTimestamp;
-    const fechaServicio = normalizeTimestampInput(req.body.fecha_servicio) || fechaReservaTimestamp;
+    const fechaSalida = fechaSalidaInput || fechaReservaTimestamp;
+    const fechaLlegada = fechaLlegadaInput || fechaReservaTimestamp;
+    const fechaServicio = normalizeTimestampInput(req.body.fecha_servicio) || fechaSalida;
+    const horaSalida = horaSalidaInput || fechaSalida.slice(11, 16) || null;
 
     let insertSql = `INSERT INTO reservas (
         usuario_id,
@@ -516,12 +654,22 @@ const crearReserva = async (req, res) => {
       { name: "fecha_salida", value: fechaSalida, requiredFallback: fechaReservaTimestamp },
       { name: "fecha_llegada", value: fechaLlegada, requiredFallback: fechaReservaTimestamp },
       { name: "fecha_servicio", value: fechaServicio, requiredFallback: fechaReservaTimestamp },
+      { name: "fecha_fin", value: fechaFin, requiredFallback: null },
+      { name: "fecha_regreso", value: fechaRegreso, requiredFallback: null },
+      { name: "hora_regreso", value: horaRegreso, requiredFallback: null },
+      { name: "hora_salida", value: horaSalida, requiredFallback: null },
+      { name: "tipo_vehiculo", value: tipoVehiculo || null, requiredFallback: null },
+      { name: "num_viajes", value: numViajes, requiredFallback: 1 },
+      { name: "modalidad_servicio", value: modalidadServicio, requiredFallback: "dia" },
+      { name: "duracion_horas", value: modalidadServicio === "horas" ? duracionHoras : null, requiredFallback: null },
+      { name: "duracion_estimada_minutos", value: modalidadServicio === "horas" ? Math.round(duracionHoras * 60) : null, requiredFallback: null },
       { name: "origen_lat", value: origenLat, requiredFallback: 0 },
       { name: "origen_lng", value: origenLng, requiredFallback: 0 },
       { name: "destino_lat", value: destinoLat, requiredFallback: 0 },
       { name: "destino_lng", value: destinoLng, requiredFallback: 0 },
       { name: "monto_pagado", value: 0, requiredFallback: 0 },
       { name: "estado_pago", value: "pendiente", requiredFallback: "pendiente" },
+      { name: "notas", value: typeof req.body.notas === "string" ? req.body.notas.trim() || null : null, requiredFallback: null },
     ];
 
     for (const column of optionalColumns) {
@@ -617,27 +765,119 @@ const editarReserva = async (req, res) => {
     const fechaReserva = req.body.fecha_reserva || current.fecha_reserva;
     const numPersonas = parsePositiveInt(req.body.num_personas) || current.num_personas;
     const estado = current.estado;
-    const fechaReservaActual = String(current.fecha_reserva || "").slice(0, 10);
-    const fechaReservaNueva = String(fechaReserva || "").slice(0, 10);
-    const rutaCambiada = ["origen", "destino"].some((field) =>
-      Object.prototype.hasOwnProperty.call(req.body || {}, field)
-      && String(req.body[field] || "").trim() !== String(current[field] || "").trim()
-    );
-    const servicioCambiado = rutaCambiada
-      || (Object.prototype.hasOwnProperty.call(req.body || {}, "num_personas")
-        && Number(req.body.num_personas) !== Number(current.num_personas))
-      || (Object.prototype.hasOwnProperty.call(req.body || {}, "tour_id")
-        && Number(req.body.tour_id || 0) !== Number(current.tour_id || 0));
-    const estadoFinal = estado;
+    const hasBodyField = (field) => Object.prototype.hasOwnProperty.call(req.body || {}, field);
+    if (
+      !isValidTimestampInput(req.body.fecha_salida)
+      || !isValidTimestampInput(req.body.fecha_llegada)
+      || !isValidTimestampInput(req.body.fecha_servicio)
+    ) {
+      return res.status(400).json({ error: "Indica fechas y horas válidas para el servicio" });
+    }
+    if (
+      (req.body.tipo_vehiculo !== null && req.body.tipo_vehiculo !== undefined && typeof req.body.tipo_vehiculo !== "string")
+      || (req.body.notas !== null && req.body.notas !== undefined && typeof req.body.notas !== "string")
+    ) {
+      return res.status(400).json({ error: "La preferencia de vehículo y las notas deben ser texto" });
+    }
     const fechaReservaTimestamp = normalizeTimestampInput(fechaReserva) || `${String(fechaReserva).slice(0, 10)} 00:00:00`;
     const fechaSalida = normalizeTimestampInput(req.body.fecha_salida) || normalizeTimestampInput(current.fecha_salida) || fechaReservaTimestamp;
     const fechaLlegada = normalizeTimestampInput(req.body.fecha_llegada) || normalizeTimestampInput(current.fecha_llegada) || fechaReservaTimestamp;
     const fechaServicio = normalizeTimestampInput(req.body.fecha_servicio) || fechaSalida;
+    const fechaFin = hasBodyField("fecha_fin")
+      ? normalizeDateOnlyInput(req.body.fecha_fin)
+      : normalizeDateOnlyInput(current.fecha_fin);
+    const fechaRegreso = hasBodyField("fecha_regreso")
+      ? normalizeDateOnlyInput(req.body.fecha_regreso)
+      : normalizeDateOnlyInput(current.fecha_regreso);
+    const horaRegreso = hasBodyField("hora_regreso")
+      ? normalizeTimeInput(req.body.hora_regreso)
+      : normalizeTimeInput(current.hora_regreso);
+    const horaSalidaInput = hasBodyField("hora_salida")
+      ? normalizeTimeInput(req.body.hora_salida)
+      : normalizeTimeInput(current.hora_salida);
+    const horaSalida = horaSalidaInput || fechaSalida.slice(11, 16) || null;
+    const modalidadServicio = String(
+      hasBodyField("modalidad_servicio")
+        ? req.body.modalidad_servicio || "dia"
+        : current.modalidad_servicio || (fechaFin ? "varios_dias" : "dia")
+    ).trim().toLowerCase();
+    const numViajes = hasBodyField("num_viajes")
+      ? parsePositiveInt(req.body.num_viajes)
+      : parsePositiveInt(current.num_viajes) || 1;
+    const duracionHoras = hasBodyField("duracion_horas")
+      ? (req.body.duracion_horas === null || req.body.duracion_horas === "" ? null : Number(req.body.duracion_horas))
+      : (current.duracion_horas === null || current.duracion_horas === undefined ? null : Number(current.duracion_horas));
+    const tipoVehiculo = hasBodyField("tipo_vehiculo")
+      ? (typeof req.body.tipo_vehiculo === "string" ? req.body.tipo_vehiculo.trim() : "")
+      : String(current.tipo_vehiculo || "").trim();
+    const rutaCambiada = ["origen", "destino"].some((field) =>
+      hasBodyField(field)
+      && String(req.body[field] || "").trim() !== String(current[field] || "").trim()
+    );
+    if (fechaFin === undefined || fechaRegreso === undefined || horaRegreso === undefined || horaSalidaInput === undefined) {
+      return res.status(400).json({ error: "Revisa las fechas y horas del servicio" });
+    }
+    if (!["dia", "horas", "varios_dias"].includes(modalidadServicio)) {
+      return res.status(400).json({ error: "La modalidad del servicio no es válida" });
+    }
+    if (!numViajes) {
+      return res.status(400).json({ error: "El número de viajes debe ser al menos 1" });
+    }
+    if (modalidadServicio === "horas" && (!Number.isFinite(duracionHoras) || duracionHoras <= 0)) {
+      return res.status(400).json({ error: "Indica una duración válida en horas" });
+    }
+    if (duracionHoras !== null && (!Number.isFinite(duracionHoras) || duracionHoras <= 0)) {
+      return res.status(400).json({ error: "La duración en horas debe ser mayor que cero" });
+    }
+    if (duracionHoras !== null && modalidadServicio !== "horas") {
+      return res.status(400).json({ error: "La duración en horas solo aplica a servicios por horas" });
+    }
+    if (tipoVehiculo.length > 60) {
+      return res.status(400).json({ error: "La preferencia de vehículo no puede superar 60 caracteres" });
+    }
+    if (fechaFin && (fechaRegreso || modalidadServicio !== "varios_dias")) {
+      return res.status(400).json({ error: "La fecha final solo se usa en servicios de varios días" });
+    }
+    if (modalidadServicio === "varios_dias" && !fechaFin) {
+      return res.status(400).json({ error: "Indica la fecha final del servicio de varios días" });
+    }
+    if (fechaRegreso && (!horaRegreso || fechaFin || !hasBodyField("fecha_salida") && !current.fecha_salida)) {
+      return res.status(400).json({ error: "Para un regreso en otra fecha indica la salida, la fecha y la hora de regreso; no se combina con varios días" });
+    }
+    if (!fechaRegreso && horaRegreso) {
+      return res.status(400).json({ error: "La hora de regreso requiere una fecha de regreso" });
+    }
+    if (fechaFin && !fechaSalida) {
+      return res.status(400).json({ error: "Indica la fecha y hora de salida para el servicio de varios días" });
+    }
+    const fechaInicioServicio = fechaSalida.slice(0, 10);
+    if (fechaFin && fechaFin <= fechaInicioServicio) {
+      return res.status(400).json({ error: "La fecha final debe ser posterior al día de salida" });
+    }
+    if (fechaRegreso && fechaRegreso <= fechaInicioServicio) {
+      return res.status(400).json({ error: "La fecha de regreso debe ser posterior al día de salida" });
+    }
+    if (fechaSalida && fechaLlegada && fechaLlegada < fechaSalida) {
+      return res.status(400).json({ error: "La llegada estimada no puede ser anterior a la salida" });
+    }
+    const servicioCambiado = rutaCambiada
+      || (hasBodyField("num_personas")
+        && Number(req.body.num_personas) !== Number(current.num_personas))
+      || (hasBodyField("tour_id") && Number(req.body.tour_id || 0) !== Number(current.tour_id || 0))
+      || (hasBodyField("num_viajes") && numViajes !== Number(current.num_viajes || 1))
+      || (hasBodyField("modalidad_servicio") && modalidadServicio !== String(current.modalidad_servicio || "dia"))
+      || (hasBodyField("duracion_horas") && duracionHoras !== (current.duracion_horas == null ? null : Number(current.duracion_horas)))
+      || (hasBodyField("tipo_vehiculo") && tipoVehiculo !== String(current.tipo_vehiculo || "").trim());
+    const estadoFinal = estado;
     const scheduleChanged = [
       [fechaReservaTimestamp, normalizeTimestampInput(current.fecha_reserva)],
       [fechaSalida, normalizeTimestampInput(current.fecha_salida) || normalizeTimestampInput(current.fecha_reserva)],
       [fechaLlegada, normalizeTimestampInput(current.fecha_llegada) || normalizeTimestampInput(current.fecha_reserva)],
       [fechaServicio, normalizeTimestampInput(current.fecha_servicio) || normalizeTimestampInput(current.fecha_salida) || normalizeTimestampInput(current.fecha_reserva)],
+      [fechaFin || null, normalizeDateOnlyInput(current.fecha_fin)],
+      [fechaRegreso || null, normalizeDateOnlyInput(current.fecha_regreso)],
+      [horaRegreso || null, normalizeTimeInput(current.hora_regreso)],
+      [horaSalida || null, normalizeTimeInput(current.hora_salida) || normalizeTimestampInput(current.fecha_salida)?.slice(11, 16)],
     ].some(([next, previous]) => next !== previous);
 
     if (!(await isReservaEstadoValido(estadoFinal))) {
@@ -730,6 +970,16 @@ const editarReserva = async (req, res) => {
       "fecha_salida",
       "fecha_llegada",
       "fecha_servicio",
+      "fecha_fin",
+      "fecha_regreso",
+      "hora_salida",
+      "hora_regreso",
+      "num_viajes",
+      "modalidad_servicio",
+      "duracion_horas",
+      "duracion_estimada_minutos",
+      "tipo_vehiculo",
+      "notas",
       "origen_lat",
       "origen_lng",
       "destino_lat",
@@ -742,15 +992,25 @@ const editarReserva = async (req, res) => {
     for (const columnName of optionalColumns) {
       const info = await getReservasColumnInfo(columnName);
       if (!info.exists) continue;
-      if (!(columnName in req.body)) continue;
+      if (!hasBodyField(columnName)) continue;
 
       let value = req.body[columnName];
       if (columnName === "fecha_salida") value = fechaSalida;
       if (columnName === "fecha_llegada") value = fechaLlegada;
       if (columnName === "fecha_servicio") value = fechaServicio;
+      if (columnName === "fecha_fin") value = fechaFin;
+      if (columnName === "fecha_regreso") value = fechaRegreso;
+      if (columnName === "hora_salida") value = horaSalida;
+      if (columnName === "hora_regreso") value = horaRegreso;
+      if (columnName === "num_viajes") value = numViajes;
+      if (columnName === "modalidad_servicio") value = modalidadServicio;
+      if (columnName === "duracion_horas") value = modalidadServicio === "horas" ? duracionHoras : null;
+      if (columnName === "duracion_estimada_minutos") value = modalidadServicio === "horas" ? Math.round(duracionHoras * 60) : null;
+      if (columnName === "tipo_vehiculo") value = tipoVehiculo || null;
+      if (columnName === "notas") value = typeof req.body.notas === "string" ? req.body.notas.trim() || null : null;
 
       optionalValues.push(value);
-      const placeholder = `$${9 + optionalValues.length}`;
+      const placeholder = `$${8 + optionalValues.length}`;
       if (columnName === "fecha_salida" || columnName === "fecha_llegada" || columnName === "fecha_servicio") {
         optionalSetClauses.push(`${columnName} = ${placeholder}::timestamp`);
       } else {
@@ -953,8 +1213,8 @@ const actualizarEstadoViaje = async (req, res) => {
         [reservaId]
       )
       : await client.query(
-        "UPDATE reservas SET estado = $1, estado_operativo = CASE WHEN $1 = 'cancelada' THEN 'cancelada' ELSE estado_operativo END WHERE id = $2 RETURNING id, estado, estado_operativo",
-        [estado, reservaId]
+        "UPDATE reservas SET estado = $1, estado_operativo = CASE WHEN $3::boolean THEN 'cancelada' ELSE estado_operativo END WHERE id = $2 RETURNING id, estado, estado_operativo",
+        [estado, reservaId, estado === "cancelada"]
       );
 
     if (estado === "cancelada") {

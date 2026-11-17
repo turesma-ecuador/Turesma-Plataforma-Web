@@ -671,6 +671,9 @@ const initDatabase = async () => {
     ADD COLUMN IF NOT EXISTS destino VARCHAR(300),
     ADD COLUMN IF NOT EXISTS hora_salida VARCHAR(10),
     ADD COLUMN IF NOT EXISTS duracion_estimada_minutos INT,
+    ADD COLUMN IF NOT EXISTS num_viajes INT NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS modalidad_servicio VARCHAR(20) NOT NULL DEFAULT 'dia',
+    ADD COLUMN IF NOT EXISTS duracion_horas DECIMAL(6, 2),
     ADD COLUMN IF NOT EXISTS origen_lat NUMERIC(10, 7),
     ADD COLUMN IF NOT EXISTS origen_lng NUMERIC(10, 7),
     ADD COLUMN IF NOT EXISTS destino_lat NUMERIC(10, 7),
@@ -1237,7 +1240,9 @@ const initDatabase = async () => {
   await pool.query(`
     ALTER TABLE cotizaciones
     ADD COLUMN IF NOT EXISTS fecha_regreso DATE,
-    ADD COLUMN IF NOT EXISTS hora_regreso VARCHAR(10);
+    ADD COLUMN IF NOT EXISTS hora_regreso VARCHAR(10),
+    ADD COLUMN IF NOT EXISTS modalidad_servicio VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS duracion_horas DECIMAL(6, 2);
   `);
 
   await pool.query(`
