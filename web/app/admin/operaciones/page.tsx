@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, Info, Plus, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, Plus, RefreshCw, X } from "lucide-react";
 import { getAuthHeaders } from "../../../lib/session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -80,7 +80,7 @@ type Operation = {
   subcontratacion_costo?: string | number | null;
 };
 
-type DispatchView = "por_atender" | "en_curso" | "atendidos" | "todos";
+type DispatchView = "por_asignar" | "proximos" | "en_curso" | "vencidos" | "historial" | "todos";
 
 type ReservationReady = {
   id: number;
@@ -179,20 +179,77 @@ const formatDate = (value: string) => {
 
 const formatTime = (value?: string | null) => value?.slice(0, 5) || null;
 const dateKey = (value?: string | null) => value?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] || "";
+const ecuadorDateTime = (value?: string | null) => {
+  if (!value) return { date: "", time: null };
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return { date: "", time: null };
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Guayaquil",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(parsed);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value || "";
+  return {
+    date: `${part("year")}-${part("month")}-${part("day")}`,
+    time: `${part("hour")}:${part("minute")}`,
+  };
+};
 const normalizeVehicleType = (value?: string | null) =>
   value?.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() || "";
-const localToday = () => {
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+const reservationTimestampParts = (value?: string | null) => {
+  if (!value) return { date: "", time: "" };
+  if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) {
+    const localDateTime = ecuadorDateTime(value);
+    return { date: localDateTime.date, time: localDateTime.time || "" };
+  }
+  return {
+    date: dateKey(value),
+    time: /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value) ? value.slice(11, 16) : "",
+  };
 };
 const reservationServiceDate = (reservation: ReservationReady) =>
-  dateKey(reservation.fecha_salida) || dateKey(reservation.fecha_servicio) || dateKey(reservation.fecha_reserva);
+  reservationTimestampParts(reservation.fecha_salida).date
+  || reservationTimestampParts(reservation.fecha_servicio).date
+  || dateKey(reservation.fecha_reserva);
 const reservationServiceTime = (reservation: ReservationReady) => {
   if (reservation.hora_salida) return formatTime(reservation.hora_salida);
-  const dateTime = [reservation.fecha_salida, reservation.fecha_servicio, reservation.fecha_llegada]
-    .find((value) => value && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value));
-  return dateTime ? dateTime.slice(11, 16) : "";
+  return reservationTimestampParts(reservation.fecha_salida).time
+    || reservationTimestampParts(reservation.fecha_servicio).time
+    || reservationTimestampParts(reservation.fecha_llegada).time;
 };
+const reservationServiceEnd = (reservation: ReservationReady) => {
+  const startDate = reservationServiceDate(reservation);
+  const returnDate = dateKey(reservation.fecha_regreso);
+  const arrival = reservationTimestampParts(reservation.fecha_llegada);
+  const arrivalDate = arrival.date;
+  const endDate = [
+    dateKey(reservation.fecha_fin),
+    returnDate,
+    arrivalDate,
+    startDate,
+  ].filter(Boolean).sort().at(-1) || "";
+  const arrivalTime = arrival.time;
+  const endTime = returnDate === endDate
+    ? formatTime(reservation.hora_regreso) || (arrivalDate === endDate ? arrivalTime : "")
+    : arrivalDate === endDate ? arrivalTime : "";
+  return { date: endDate, time: endTime };
+};
+const operationServiceEnd = (operation: Operation) => {
+  const scheduledEndDate = dateKey(operation.fecha_fin_programada) || dateKey(operation.fecha_programada);
+  const eta = ecuadorDateTime(operation.eta_actualizada);
+  const etaDate = eta.date;
+  const endDate = [scheduledEndDate, etaDate].filter(Boolean).sort().at(-1) || "";
+  const endTime = etaDate === endDate
+    ? eta.time
+    : scheduledEndDate === endDate ? formatTime(operation.hora_fin) : "";
+  return { date: endDate, time: endTime };
+};
+const isScheduleOverdue = (end: { date: string; time: string | null }, today: string, currentTime: string) =>
+  Boolean(end.date && (end.date < today || (end.date === today && end.time && end.time <= currentTime)));
 const compareSchedule = (dateA: string, timeA: string, dateB: string, timeB: string) =>
   dateA.localeCompare(dateB) || timeA.localeCompare(timeB);
 const assignmentScheduleLabel = (operation: Operation) => {
@@ -325,7 +382,7 @@ const assignmentAvailabilityMessage = (error: unknown) => {
 export default function OperacionesPage() {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [reservations, setReservations] = useState<ReservationReady[]>([]);
-  const [dispatchView, setDispatchView] = useState<DispatchView>("por_atender");
+  const [dispatchView, setDispatchView] = useState<DispatchView>("por_asignar");
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [partnerCompanies, setPartnerCompanies] = useState<PartnerCompany[]>([]);
@@ -372,8 +429,13 @@ export default function OperacionesPage() {
     destino: "",
     pasajeros: "1",
   });
-  const today = localToday();
-  const sortedReservations = [...reservations].sort((a, b) => a.id - b.id);
+  const nowInEcuador = ecuadorDateTime(clockNow.toISOString());
+  const today = nowInEcuador.date;
+  const currentTime = nowInEcuador.time || "00:00";
+  const sortedReservations = [...reservations].sort((a, b) =>
+    compareSchedule(reservationServiceDate(a), reservationServiceTime(a) || "", reservationServiceDate(b), reservationServiceTime(b) || "")
+    || a.id - b.id
+  );
   const activeOperationStates = ["programada", "asignada", "en_curso", "incidencia"];
   const sortedOperations = [...operations].sort((a, b) => {
     const activeRankA = activeOperationStates.includes(a.estado) ? 0 : 1;
@@ -389,17 +451,44 @@ export default function OperacionesPage() {
   });
   const isAttendedOperation = (operation: Operation) => ["completada", "cancelada"].includes(operation.estado);
   const isInProgressOperation = (operation: Operation) => ["en_curso", "incidencia"].includes(operation.estado);
+  const isOverdueOperation = (operation: Operation) =>
+    activeOperationStates.includes(operation.estado)
+    && isScheduleOverdue(operationServiceEnd(operation), today, currentTime);
+  const hasAssignedResources = (operation: Operation) =>
+    Boolean(operation.vehiculo_id && operation.conductor_id)
+    || operation.subcontratacion_estado === "confirmada";
+  const needsAssignment = (operation: Operation) =>
+    !isAttendedOperation(operation)
+    && !isInProgressOperation(operation)
+    && !isOverdueOperation(operation)
+    && !hasAssignedResources(operation);
+  const isUpcomingOperation = (operation: Operation) =>
+    !isAttendedOperation(operation)
+    && !isInProgressOperation(operation)
+    && !isOverdueOperation(operation)
+    && hasAssignedResources(operation);
+  const isReservationOverdue = (reservation: ReservationReady) =>
+    isScheduleOverdue(reservationServiceEnd(reservation), today, currentTime);
+  const visibleReservations = sortedReservations.filter((reservation) => {
+    if (dispatchView === "todos") return true;
+    if (dispatchView === "vencidos") return isReservationOverdue(reservation);
+    return dispatchView === "por_asignar" && !isReservationOverdue(reservation);
+  });
   const dispatchCounts = {
-    por_atender: operations.filter((operation) => !isAttendedOperation(operation) && !isInProgressOperation(operation)).length + reservations.length,
-    en_curso: operations.filter(isInProgressOperation).length,
-    atendidos: operations.filter(isAttendedOperation).length,
+    por_asignar: operations.filter(needsAssignment).length + reservations.filter((reservation) => !isReservationOverdue(reservation)).length,
+    proximos: operations.filter(isUpcomingOperation).length,
+    en_curso: operations.filter((operation) => isInProgressOperation(operation) && !isOverdueOperation(operation)).length,
+    vencidos: operations.filter(isOverdueOperation).length + reservations.filter(isReservationOverdue).length,
+    historial: operations.filter(isAttendedOperation).length,
     todos: operations.length + reservations.length,
   };
   const visibleOperations = sortedOperations.filter((operation) => {
     if (dispatchView === "todos") return true;
-    if (dispatchView === "atendidos") return isAttendedOperation(operation);
-    if (dispatchView === "en_curso") return isInProgressOperation(operation);
-    return !isAttendedOperation(operation) && !isInProgressOperation(operation);
+    if (dispatchView === "historial") return isAttendedOperation(operation);
+    if (dispatchView === "vencidos") return isOverdueOperation(operation);
+    if (dispatchView === "en_curso") return isInProgressOperation(operation) && !isOverdueOperation(operation);
+    if (dispatchView === "proximos") return isUpcomingOperation(operation);
+    return needsAssignment(operation);
   });
   const selectedAvailableVehicle = vehicles.find((vehicle) => String(vehicle.id) === selectedVehicleId);
   const requestedVehicleType = assignment?.tipo_vehiculo_solicitado?.trim() || "";
@@ -715,9 +804,11 @@ export default function OperacionesPage() {
 
       <nav aria-label="Filtrar despachos" className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         {([
-          ["por_atender", "Por atender"],
+          ["por_asignar", "Por asignar"],
+          ["proximos", "Próximos"],
           ["en_curso", "En curso"],
-          ["atendidos", "Atendidos"],
+          ["vencidos", "Vencidos"],
+          ["historial", "Historial"],
           ["todos", "Todos"],
         ] as const).map(([view, label]) => (
           <button
@@ -734,33 +825,28 @@ export default function OperacionesPage() {
         ))}
       </nav>
 
-      {(dispatchView === "por_atender" || dispatchView === "todos") && <section className="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
+      {(dispatchView === "por_asignar" || dispatchView === "vencidos" || dispatchView === "todos")
+        && (loading || visibleReservations.length > 0) && <section className="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50/70 px-5 py-4">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">Flujo principal</p>
-            <h2 className="mt-1 font-black text-slate-900">Reservas confirmadas por despachar</h2>
+            <h2 className="mt-1 font-black text-slate-900">{dispatchView === "vencidos" ? "Reservas vencidas por despachar" : "Reservas confirmadas por despachar"}</h2>
           </div>
-          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">{reservations.length}</span>
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">{visibleReservations.length}</span>
         </div>
-        {loading ? <p className="p-6 text-center text-sm font-semibold text-slate-400">Buscando reservas confirmadas...</p> : reservations.length === 0 ? (
-          <div className="p-7 text-center">
-            <p className="text-sm font-black text-slate-600">No hay reservas pendientes de despacho</p>
-            <p className="mt-1 text-xs text-slate-400">Toda reserva confirmada sin un despacho activo aparecerá aquí para asignar o verificar sus recursos.</p>
-          </div>
-        ) : (
+        {loading ? <p className="p-6 text-center text-sm font-semibold text-slate-400">Buscando reservas confirmadas...</p> : (
           <div className="divide-y divide-slate-100">
-            {sortedReservations.map((reservation) => {
+            {visibleReservations.map((reservation) => {
               const serviceDate = reservationServiceDate(reservation);
               const serviceTime = reservationServiceTime(reservation);
-              const overdue = Boolean(serviceDate && serviceDate < today);
+              const overdue = isReservationOverdue(reservation);
               return (
               <article key={reservation.id} data-reservation-id={reservation.id} className={`grid gap-4 border-l-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-5 ${focusedReservationId === reservation.id ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100" : overdue ? "border-l-red-400 bg-red-50/40" : "border-l-transparent"}`}>
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-black leading-snug text-slate-900">Reserva #{reservation.id}</p>
-                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${overdue ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>
-                      {overdue ? "Fecha vencida" : "Por despachar"}
-                    </span>
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-800">Sin despacho</span>
+                    {overdue && <span className="rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-red-700">Vencida · revisar</span>}
                     <span className="text-sm font-semibold text-slate-500">{reservation.cliente_nombre || "Cliente"}</span>
                   </div>
                   <p className="break-words rounded-lg bg-slate-50 px-3 py-2 text-sm leading-relaxed text-slate-700">
@@ -797,19 +883,43 @@ export default function OperacionesPage() {
 
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-          <div className="flex items-center gap-3"><ClipboardList className="text-red-600" size={20} /><h2 className="font-black text-slate-900">{dispatchView === "atendidos" ? "Despachos atendidos" : dispatchView === "en_curso" ? "Despachos en curso" : dispatchView === "todos" ? "Todos los despachos" : "Servicios por atender"}</h2></div>
+          <div className="flex items-center gap-3">
+            <ClipboardList className="text-red-600" size={20} />
+            <h2 className="font-black text-slate-900">
+              {dispatchView === "por_asignar" ? "Servicios por asignar"
+                : dispatchView === "proximos" ? "Próximos servicios"
+                  : dispatchView === "en_curso" ? "Servicios en curso"
+                    : dispatchView === "vencidos" ? "Servicios vencidos por revisar"
+                      : dispatchView === "historial" ? "Historial de despachos"
+                        : "Todos los servicios"}
+            </h2>
+          </div>
           <button onClick={() => void load()} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Actualizar operaciones"><RefreshCw size={17} /></button>
         </div>
-        {loading ? <p className="p-8 text-center text-sm font-semibold text-slate-400">Cargando servicios...</p> : visibleOperations.length === 0 ? <div className="p-10 text-center"><p className="text-sm font-black text-slate-500">{dispatchView === "atendidos" ? "No hay despachos atendidos" : dispatchView === "en_curso" ? "No hay despachos en curso" : "No hay servicios en esta vista"}</p><p className="mt-1 text-xs text-slate-400">{dispatchView === "por_atender" ? "Las reservas confirmadas aparecerán aquí para asignar conductor y vehículo." : "Prueba otra categoría para consultar otros despachos."}</p></div> : (
+        {loading ? <p className="p-8 text-center text-sm font-semibold text-slate-400">Cargando servicios...</p> : visibleOperations.length === 0 ? <div className="p-10 text-center">
+          <p className="text-sm font-black text-slate-500">
+            {dispatchView === "por_asignar" ? "No hay operaciones por asignar"
+              : dispatchView === "proximos" ? "No hay próximos servicios asignados"
+                : dispatchView === "en_curso" ? "No hay servicios en curso"
+                  : dispatchView === "vencidos" ? "No hay servicios vencidos por revisar"
+                    : dispatchView === "historial" ? "No hay despachos en el historial"
+                      : "No hay servicios en esta vista"}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            {dispatchView === "por_asignar" ? "Las operaciones sin recursos asignados aparecerán aquí."
+              : dispatchView === "vencidos" ? "Se mostrarán aquí cuando haya pasado la fecha y hora de finalización."
+                : "Prueba otra categoría para consultar otros despachos."}
+          </p>
+        </div> : (
           <div className="space-y-3 p-3 sm:p-5">
             {visibleOperations.map((operation) => {
               const startTime = formatTime(operation.hora_inicio);
               const endTime = formatTime(operation.hora_fin);
               const scheduledDate = dateKey(operation.fecha_programada);
-              const currentTime = `${String(clockNow.getHours()).padStart(2, "0")}:${String(clockNow.getMinutes()).padStart(2, "0")}`;
               const startPending = operation.estado === "asignada"
+                && !isOverdueOperation(operation)
                 && Boolean(scheduledDate && (scheduledDate < today || (scheduledDate === today && startTime && startTime <= currentTime)));
-              const overdue = (activeOperationStates.includes(operation.estado) && Boolean(scheduledDate && scheduledDate < today)) || startPending;
+              const overdue = isOverdueOperation(operation);
               const subcontractState = operation.subcontratacion_estado || "no_requerida";
               const canEditSubcontracting = activeOperationStates.includes(operation.estado);
               const dateRange = operation.fecha_fin_programada && dateKey(operation.fecha_fin_programada) !== scheduledDate
@@ -823,9 +933,10 @@ export default function OperacionesPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-black leading-snug text-slate-900">{serviceTitle}</h3>
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Operación #{operation.id}</span>
-                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${overdue ? "border-red-200 bg-red-100 text-red-700" : stateBadgeStyles[operation.estado] || "border-slate-200 bg-slate-50 text-slate-700"}`}>
-                      {overdue ? "Fecha vencida" : stateLabels[operation.estado] || operation.estado}
+                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${stateBadgeStyles[operation.estado] || "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                      {stateLabels[operation.estado] || operation.estado}
                     </span>
+                    {overdue && <span className="rounded-full border border-red-200 bg-red-100 px-2.5 py-1 text-[10px] font-black text-red-700">Vencida · revisar</span>}
                     {startPending && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-800">Inicio pendiente del conductor</span>}
                     {subcontractState !== "no_requerida" && (
                       <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${subcontractState === "confirmada" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
@@ -1072,11 +1183,6 @@ export default function OperacionesPage() {
                   </span>
                 )}
               </label>
-            </div>
-
-            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs leading-relaxed text-amber-900">
-              <Info size={16} className="mt-0.5 shrink-0 text-amber-700" />
-              <p>Se prioriza la categoría solicitada. Si eliges otra disponible, confirma la sustitución; el backend volverá a validar la asignación.</p>
             </div>
 
             <footer className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">

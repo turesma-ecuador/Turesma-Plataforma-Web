@@ -135,6 +135,7 @@ function PagoModal({ reserva, onClose, onSuccess }: { reserva: Reserva; onClose:
   const [sending, setSending] = useState(false);
   const [downloadingReceiptId, setDownloadingReceiptId] = useState<number | null>(null);
   const [err, setErr] = useState("");
+  const [successNotice, setSuccessNotice] = useState("");
 
   const loadPagos = async () => {
     setLoadingPagos(true);
@@ -161,6 +162,7 @@ function PagoModal({ reserva, onClose, onSuccess }: { reserva: Reserva; onClose:
 
   const handleSubmit = async () => {
     setErr("");
+    setSuccessNotice("");
     if (!monto || Number(monto) <= 0) { setErr("Ingresa un monto válido"); return; }
     if (metodo === "payphone" && Number(monto) < 1) {
       setErr("El monto mínimo para pagar con PayPhone es $1.00");
@@ -209,6 +211,8 @@ function PagoModal({ reserva, onClose, onSuccess }: { reserva: Reserva; onClose:
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo enviar el pago");
       setFile(null);
+      setSuccessNotice("Comprobante enviado. Está pendiente de revisión por el administrador.");
+      void loadPagos();
       onSuccess();
     } catch (e) { setErr(e instanceof Error ? e.message : "Error inesperado"); }
     finally { setUploading(false); setSending(false); }
@@ -241,11 +245,11 @@ function PagoModal({ reserva, onClose, onSuccess }: { reserva: Reserva; onClose:
           <div className="space-y-2">
             <p className="text-[10px] font-black uppercase text-slate-400">¿Cómo vas a pagar?</p>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setMetodo("transferencia")}
+              <button type="button" onClick={() => { setMetodo("transferencia"); setSuccessNotice(""); }}
                 className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest border-2 transition-all ${metodo === "transferencia" ? "bg-[#E31E24] border-[#E31E24] text-white" : "border-slate-100 text-slate-500"}`}>
                 <Building2 size={14} /> Transferencia
               </button>
-              <button type="button" onClick={() => setMetodo("payphone")}
+              <button type="button" onClick={() => { setMetodo("payphone"); setSuccessNotice(""); }}
                 className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest border-2 transition-all ${metodo === "payphone" ? "bg-[#00a99d] border-[#00a99d] text-white" : "border-slate-100 text-slate-500"}`}>
                 <CreditCard size={14} /> PayPhone / Tarjeta
               </button>
@@ -272,7 +276,7 @@ function PagoModal({ reserva, onClose, onSuccess }: { reserva: Reserva; onClose:
           <div className="space-y-3 pt-2 border-t border-slate-100">
             <div className="space-y-1">
               <label className="text-[10px] font-black uppercase text-slate-400">Monto que estás pagando ($) *</label>
-              <input type="number" min={metodo === "payphone" ? "1.00" : "0.01"} step="0.01" value={monto} onChange={e => setMonto(e.target.value)}
+              <input type="number" min={metodo === "payphone" ? "1.00" : "0.01"} step="0.01" value={monto} onChange={e => { setMonto(e.target.value); setSuccessNotice(""); }}
                 className="w-full rounded-xl border-2 border-slate-100 bg-slate-50 px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-[#E31E24] focus:bg-white" />
             </div>
             {metodo !== "payphone" && <div className="space-y-1">
@@ -280,7 +284,7 @@ function PagoModal({ reserva, onClose, onSuccess }: { reserva: Reserva; onClose:
               <label className="flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-xl py-4 cursor-pointer hover:border-[#E31E24] transition-all">
                 <UploadCloud size={16} className="text-slate-400" />
                 <span className="text-xs font-bold text-slate-500">{file ? <span data-no-translate>{file.name}</span> : "Selecciona una imagen"}</span>
-                <input type="file" accept="image/*" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
+                <input type="file" accept="image/*" className="hidden" onChange={e => { setFile(e.target.files?.[0] || null); setSuccessNotice(""); }} />
               </label>
             </div>}
             {err && <p className="text-red-600 text-xs font-bold">{err}</p>}
@@ -289,6 +293,12 @@ function PagoModal({ reserva, onClose, onSuccess }: { reserva: Reserva; onClose:
               {(uploading || sending) ? <Loader2 size={16} className="animate-spin" /> : metodo === "payphone" ? <CreditCard size={16} /> : <UploadCloud size={16} />}
               {uploading ? "Subiendo imagen..." : sending ? "Enviando..." : metodo === "payphone" ? "Continuar con PayPhone" : "Enviar comprobante"}
             </button>
+            {successNotice && (
+              <p role="status" aria-live="polite" className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold leading-relaxed text-emerald-800">
+                <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" />
+                <span>{successNotice}</span>
+              </p>
+            )}
           </div>
 
           {/* HISTORIAL DE COMPROBANTES ENVIADOS */}
@@ -346,7 +356,6 @@ export default function ClienteHistorialPage() {
   const [comentario, setComentario] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
-  const [paymentSuccessNotice, setPaymentSuccessNotice] = useState("");
   const [trackId, setTrackId] = useState<number | null>(null);
   const [pagoReserva, setPagoReserva] = useState<Reserva | null>(null);
   const [downloadingOrderId, setDownloadingOrderId] = useState<number | null>(null);
@@ -364,12 +373,6 @@ export default function ClienteHistorialPage() {
   const [reprogHora, setReprogHora] = useState("");
   const [reprogSaving, setReprogSaving] = useState(false);
   const [reprogMsg, setReprogMsg] = useState("");
-
-  useEffect(() => {
-    if (!paymentSuccessNotice) return;
-    const timeout = window.setTimeout(() => setPaymentSuccessNotice(""), 6000);
-    return () => window.clearTimeout(timeout);
-  }, [paymentSuccessNotice]);
 
   const abrirReprogramar = (r: Reserva) => {
     setReprogReserva(r);
@@ -861,21 +864,8 @@ export default function ClienteHistorialPage() {
         <PagoModal
           reserva={pagoReserva}
           onClose={() => setPagoReserva(null)}
-          onSuccess={() => {
-            setPagoReserva(null);
-            setPaymentSuccessNotice("Comprobante enviado. El administrador lo revisará pronto.");
-            void load(true);
-          }}
+          onSuccess={() => void load(true)}
         />
-      )}
-      {paymentSuccessNotice && (
-        <div role="status" aria-live="polite" className="fixed right-4 top-4 z-[120] flex max-w-sm items-start gap-3 rounded-2xl border border-emerald-200 bg-white p-4 text-sm font-bold text-emerald-800 shadow-xl">
-          <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-emerald-600" />
-          <span>{paymentSuccessNotice}</span>
-          <button type="button" onClick={() => setPaymentSuccessNotice("")} aria-label="Cerrar aviso" className="ml-auto rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-            <X size={16} />
-          </button>
-        </div>
       )}
 
       {cambioDestinoReserva && (
