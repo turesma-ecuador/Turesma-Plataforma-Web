@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle, ArrowRight, Bus, CalendarDays, Car, CheckCircle2,
@@ -149,9 +149,13 @@ export default function CalendarioFlotaPage() {
   const [events, setEvents] = useState<FleetEvent[]>([]);
   const [unassigned, setUnassigned] = useState<UnassignedReservation[]>([]);
   const [typeFilter, setTypeFilter] = useState("todos");
+  const [vehicleFilter, setVehicleFilter] = useState("todos");
+  const [statusFilter, setStatusFilter] = useState("todos");
   const [selectedItemKey, setSelectedItemKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const calendarHeaderScrollRef = useRef<HTMLDivElement>(null);
+  const calendarBodyScrollRef = useRef<HTMLDivElement>(null);
 
   const monthStart = asIsoDate(month);
   const monthEnd = asIsoDate(new Date(month.getFullYear(), month.getMonth() + 1, 0));
@@ -212,14 +216,34 @@ export default function CalendarioFlotaPage() {
   const days = viewMode === "week" ? weekDays : monthDays;
   const calendarDays = days.filter((day): day is string => day !== null);
   const dayOffset = viewMode === "month" ? fromIsoDate(monthStart).getDay() : 0;
+  const dayColumnWidth = viewMode === "week" ? 113 : 49;
+  const calendarTableWidth = 220 + days.length * dayColumnWidth;
   const types = useMemo(() => [...new Set(vehicles.map((vehicle) => vehicle.tipo).filter((type): type is string => Boolean(type)))].sort(), [vehicles]);
   const filteredVehicles = useMemo(
-    () => vehicles.filter((vehicle) => typeFilter === "todos" || vehicle.tipo === typeFilter),
-    [typeFilter, vehicles]
+    () => vehicles.filter((vehicle) =>
+      (typeFilter === "todos" || vehicle.tipo === typeFilter)
+      && (vehicleFilter === "todos" || String(vehicle.id) === vehicleFilter)
+    ),
+    [typeFilter, vehicleFilter, vehicles]
+  );
+  const filteredVehicleIds = useMemo(() => new Set(filteredVehicles.map((vehicle) => vehicle.id)), [filteredVehicles]);
+  const filteredEvents = useMemo(
+    () => events.filter((event) => {
+      const matchesStatus = statusFilter === "todos"
+        || (["mantenimiento", "externo", "reserva"].includes(statusFilter)
+          ? event.tipo === statusFilter
+          : event.estado === statusFilter);
+      return matchesStatus && filteredVehicleIds.has(event.vehiculo_id);
+    }),
+    [events, filteredVehicleIds, statusFilter]
   );
   const selectedEvents = useMemo(
     () => events.filter((event) => event.fecha_inicio <= selectedDate && event.fecha_fin >= selectedDate),
     [events, selectedDate]
+  );
+  const visibleSelectedEvents = useMemo(
+    () => filteredEvents.filter((event) => event.fecha_inicio <= selectedDate && event.fecha_fin >= selectedDate),
+    [filteredEvents, selectedDate]
   );
   const selectedVehicleIds = useMemo(
     () => new Set(selectedEvents.map((event) => event.vehiculo_id)),
@@ -250,7 +274,7 @@ export default function CalendarioFlotaPage() {
     const result = new Map<number, CalendarEventLayout[]>();
     for (const vehicle of filteredVehicles) {
       const laneEnds: number[] = [];
-      const vehicleEvents = events
+      const vehicleEvents = filteredEvents
         .filter((event) => event.vehiculo_id === vehicle.id && event.fecha_inicio <= visibleEnd && event.fecha_fin >= visibleStart)
         .sort((a, b) => a.fecha_inicio.localeCompare(b.fecha_inicio) || a.fecha_fin.localeCompare(b.fecha_fin));
       const layouts = vehicleEvents.map((event) => {
@@ -266,19 +290,19 @@ export default function CalendarioFlotaPage() {
       result.set(vehicle.id, layouts);
     }
     return result;
-  }, [calendarDays, dayOffset, events, filteredVehicles, visibleEnd, visibleStart]);
+  }, [calendarDays, dayOffset, filteredEvents, filteredVehicles, visibleEnd, visibleStart]);
 
   const mobileAgenda = useMemo(
     () => calendarDays.map((day) => ({
       day,
-      events: events.filter((event) => event.fecha_inicio <= day && event.fecha_fin >= day),
+      events: filteredEvents.filter((event) => event.fecha_inicio <= day && event.fecha_fin >= day),
       reservations: unassigned.filter((reservation) => {
         const start = (reservation.fecha_salida || reservation.fecha_servicio || reservation.fecha_reserva).slice(0, 10);
         const end = (reservation.fecha_llegada || reservation.fecha_fin || reservation.fecha_reserva).slice(0, 10);
         return (start <= day && end >= day) || reservation.fecha_regreso === day;
       }),
     })).filter((group) => viewMode === "week" || group.events.length > 0 || group.reservations.length > 0),
-    [calendarDays, events, unassigned, viewMode]
+    [calendarDays, filteredEvents, unassigned, viewMode]
   );
 
   const navigateCalendar = (amount: number) => {
@@ -346,7 +370,7 @@ export default function CalendarioFlotaPage() {
         ))}
       </div>
 
-      <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
           <div>
             <h2 className="text-lg font-black capitalize text-slate-900">
@@ -382,9 +406,28 @@ export default function CalendarioFlotaPage() {
               ))}
             </div>
             <label htmlFor="fleet-type-filter" className="text-xs font-bold text-slate-500">Tipo</label>
-            <select id="fleet-type-filter" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+            <select id="fleet-type-filter" value={typeFilter} onChange={(event) => { setTypeFilter(event.target.value); setVehicleFilter("todos"); setSelectedItemKey(null); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
               <option value="todos">Toda la flota</option>
               {types.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select>
+            <label htmlFor="fleet-vehicle-filter" className="text-xs font-bold text-slate-500">Vehículo</label>
+            <select id="fleet-vehicle-filter" value={vehicleFilter} onChange={(event) => { setVehicleFilter(event.target.value); setSelectedItemKey(null); }} className="max-w-44 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+              <option value="todos">Todos</option>
+              {vehicles
+                .filter((vehicle) => typeFilter === "todos" || vehicle.tipo === typeFilter)
+                .map((vehicle) => <option key={vehicle.id} value={String(vehicle.id)}>{vehicle.placa} · {vehicle.tipo || vehicle.modelo}</option>)}
+            </select>
+            <label htmlFor="fleet-status-filter" className="text-xs font-bold text-slate-500">Estado</label>
+            <select id="fleet-status-filter" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setSelectedItemKey(null); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+              <option value="todos">Todos</option>
+              <option value="programada">Programada</option>
+              <option value="asignada">Asignada</option>
+              <option value="en_curso">En curso</option>
+              <option value="incidencia">Incidencia</option>
+              <option value="completada">Finalizada</option>
+              <option value="mantenimiento">Mantenimiento</option>
+              <option value="externo">Viaje externo</option>
+              <option value="reserva">Reserva</option>
             </select>
             <button type="button" onClick={() => void load()} disabled={loading} aria-label="Actualizar calendario" className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
@@ -392,22 +435,43 @@ export default function CalendarioFlotaPage() {
           </div>
         </div>
 
-        <div className="hidden max-h-[72vh] overflow-auto lg:block">
-          <table className={`w-full border-collapse text-center ${viewMode === "month" ? "min-w-[1640px]" : "min-w-[1000px]"}`}>
-            <thead>
-              <tr className="bg-slate-50">
-                <th scope="col" className="sticky left-0 top-0 z-30 min-w-[220px] border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-left text-[11px] font-black uppercase tracking-wide text-slate-500">Vehículo</th>
-                {days.map((day, index) => (
-                  <th key={day || `blank-${index}`} scope="col" className={`sticky top-0 z-20 border-b border-l border-slate-200 bg-slate-50 px-1 py-2 ${viewMode === "week" ? "min-w-[112px]" : "min-w-[48px]"}`}>
-                    {day && (
-                      <button type="button" onClick={() => { setSelectedDate(day); setSelectedItemKey(null); }} aria-label={`Ver disponibilidad del ${formatDate(day)}`} aria-pressed={selectedDate === day} className={`flex w-full flex-col items-center rounded-lg py-2 text-[11px] font-bold ${selectedDate === day ? "bg-[#E31E24] text-white" : day === asIsoDate(new Date()) ? "bg-red-50 text-[#E31E24]" : "text-slate-600 hover:bg-slate-100"}`}>
-                        <span className="capitalize">{fromIsoDate(day).toLocaleDateString("es-EC", { weekday: "short" }).replace(".", "")}</span><span className="mt-0.5 text-sm font-black">{Number(day.slice(8, 10))}</span>
-                      </button>
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+        <div className="hidden lg:block">
+          <div className="sticky top-0 z-30 bg-white">
+            <div ref={calendarHeaderScrollRef} className="overflow-hidden">
+              <table className="table-fixed border-collapse text-center" style={{ width: `${calendarTableWidth}px` }}>
+                <colgroup>
+                  <col style={{ width: "220px" }} />
+                  {days.map((day, index) => <col key={day || `blank-${index}`} style={{ width: `${dayColumnWidth}px` }} />)}
+                </colgroup>
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th scope="col" className="sticky left-0 z-30 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 text-left text-[11px] font-black uppercase tracking-wide text-slate-500">Vehículo</th>
+                    {days.map((day, index) => (
+                      <th key={day || `blank-${index}`} scope="col" className="border-b border-l border-slate-200 bg-slate-50 px-1 py-2">
+                        {day && (
+                          <button type="button" onClick={() => { setSelectedDate(day); setSelectedItemKey(null); }} aria-label={`Ver disponibilidad del ${formatDate(day)}`} aria-pressed={selectedDate === day} className={`flex w-full flex-col items-center rounded-lg py-2 text-[11px] font-bold ${selectedDate === day ? "bg-[#E31E24] text-white" : day === asIsoDate(new Date()) ? "bg-red-50 text-[#E31E24]" : "text-slate-600 hover:bg-slate-100"}`}>
+                            <span className="capitalize">{fromIsoDate(day).toLocaleDateString("es-EC", { weekday: "short" }).replace(".", "")}</span><span className="mt-0.5 text-sm font-black">{Number(day.slice(8, 10))}</span>
+                          </button>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+              </table>
+            </div>
+          </div>
+          <div
+            ref={calendarBodyScrollRef}
+            onScroll={(event) => {
+              if (calendarHeaderScrollRef.current) calendarHeaderScrollRef.current.scrollLeft = event.currentTarget.scrollLeft;
+            }}
+            className="overflow-x-auto"
+          >
+            <table className="table-fixed border-collapse text-center" style={{ width: `${calendarTableWidth}px` }}>
+              <colgroup>
+                <col style={{ width: "220px" }} />
+                {days.map((day, index) => <col key={day || `blank-${index}`} style={{ width: `${dayColumnWidth}px` }} />)}
+              </colgroup>
             <tbody>
               {loading ? (
                 <tr><td colSpan={days.length + 1} className="py-16 text-center text-sm font-semibold text-slate-500"><Loader2 className="mx-auto mb-2 animate-spin text-[#E31E24]" size={24} />Cargando calendario…</td></tr>
@@ -425,7 +489,7 @@ export default function CalendarioFlotaPage() {
                       </span>
                     </div>
                   </th>
-                  <td colSpan={days.length} className="border-b border-slate-100 p-1">
+                  <td colSpan={days.length} className="border-b border-slate-100 p-0">
                     {(() => {
                       const vehicleEvents = calendarEventsByVehicle.get(vehicle.id) || [];
                       const laneCount = Math.max(1, ...vehicleEvents.map((event) => event.lane + 1));
@@ -433,9 +497,9 @@ export default function CalendarioFlotaPage() {
                         <div
                           className="grid gap-x-1 gap-y-1 py-1"
                           style={{
-                            gridTemplateColumns: `repeat(${days.length}, minmax(${viewMode === "week" ? "112px" : "48px"}, 1fr))`,
-                            gridTemplateRows: `22px repeat(${laneCount}, ${viewMode === "week" ? "44px" : "26px"})`,
-                            minWidth: `${days.length * (viewMode === "week" ? 113 : 49)}px`,
+                            gridTemplateColumns: `repeat(${days.length}, ${dayColumnWidth}px)`,
+                            gridTemplateRows: `22px repeat(${laneCount}, ${viewMode === "week" ? "52px" : "30px"})`,
+                            minWidth: `${days.length * dayColumnWidth}px`,
                           }}
                         >
                           {days.map((day, index) => day ? (
@@ -473,12 +537,11 @@ export default function CalendarioFlotaPage() {
                                   {event.hora_inicio && <span className="shrink-0 font-bold opacity-80">{event.hora_inicio.slice(0, 5)}</span>}
                                 </span>
                                 {viewMode === "week" && (
-                                  <>
-                                    <span className="block truncate text-[9px] font-semibold opacity-80">
-                                      {[event.origen, event.destino].filter(Boolean).join(" → ") || eventStatusLabel(event)}
-                                    </span>
-                                    <span className="block truncate text-[9px] font-bold opacity-75">{eventStatusLabel(event)}</span>
-                                  </>
+                                  <span className="block truncate text-[9px] font-semibold opacity-80">
+                                    {event.tipo === "mantenimiento" || event.tipo === "externo"
+                                      ? eventStatusLabel(event)
+                                      : [event.origen, event.destino].filter(Boolean).join(" → ") || eventStatusLabel(event)}
+                                  </span>
                                 )}
                               </button>
                             );
@@ -491,6 +554,7 @@ export default function CalendarioFlotaPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         <div className="hidden flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 px-4 py-3 text-[10px] font-semibold text-slate-600 sm:px-5 lg:flex">
@@ -576,9 +640,11 @@ export default function CalendarioFlotaPage() {
           </div>
           {selectedEvents.length === 0 ? (
             <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No hay viajes ni mantenimientos registrados para este día.</p>
+          ) : visibleSelectedEvents.length === 0 ? (
+            <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No hay servicios que coincidan con los filtros seleccionados.</p>
           ) : (
             <ul className="space-y-2">
-              {selectedEvents.map((event) => {
+              {visibleSelectedEvents.map((event) => {
                 const vehicle = vehicles.find((entry) => entry.id === event.vehiculo_id);
                 const itemKey = `event:${event.tipo}:${event.id}`;
                 return (

@@ -81,6 +81,23 @@ type Operation = {
 };
 
 type DispatchView = "por_asignar" | "proximos" | "en_curso" | "vencidos" | "historial" | "todos";
+type GroupAssignmentItem = {
+  operation: Operation;
+  vehicleId: string;
+  driverId: string;
+  confirmVehicleSubstitution: boolean;
+  error?: string;
+};
+type GroupAssignmentState = {
+  requerimientoId: number;
+  groupNumber: number;
+  operations: Operation[];
+  items: GroupAssignmentItem[];
+  requestedVehicleType: string;
+  assignedCount: number;
+  unavailableVehicleIds: string[];
+  unavailableDriverIds: string[];
+};
 
 type ReservationReady = {
   id: number;
@@ -390,6 +407,12 @@ export default function OperacionesPage() {
   const [partnerCompaniesLoading, setPartnerCompaniesLoading] = useState(false);
   const [assignmentResourcesError, setAssignmentResourcesError] = useState("");
   const [assignmentError, setAssignmentError] = useState("");
+  const [groupAssignmentResourcesLoading, setGroupAssignmentResourcesLoading] = useState(false);
+  const [groupAssignmentResourcesError, setGroupAssignmentResourcesError] = useState("");
+  const [groupAssignmentError, setGroupAssignmentError] = useState("");
+  const [groupAssignmentVehicles, setGroupAssignmentVehicles] = useState<Vehicle[]>([]);
+  const [groupAssignmentDrivers, setGroupAssignmentDrivers] = useState<Driver[]>([]);
+  const [groupAssignment, setGroupAssignment] = useState<GroupAssignmentState | null>(null);
   const [partnerCompaniesError, setPartnerCompaniesError] = useState("");
   const [loading, setLoading] = useState(true);
   const [focusedReservationId, setFocusedReservationId] = useState<number | null>(null);
@@ -490,6 +513,24 @@ export default function OperacionesPage() {
     if (dispatchView === "proximos") return isUpcomingOperation(operation);
     return needsAssignment(operation);
   });
+  const specialOperationGroups = new Map<string, Operation[]>();
+  for (const operation of operations) {
+    if (!operation.requerimiento_id || !operation.grupo_numero) continue;
+    const key = `${operation.requerimiento_id}:${operation.grupo_numero}`;
+    const group = specialOperationGroups.get(key) || [];
+    group.push(operation);
+    specialOperationGroups.set(key, group);
+  }
+  const specialGroupByOperationId = new Map<number, Operation[]>();
+  const assignableSpecialGroups = Array.from(specialOperationGroups.values())
+    .map((group) => group.sort((a, b) => (a.unidad_numero || 0) - (b.unidad_numero || 0) || a.id - b.id))
+    .filter((group) => group.length > 1 && group.some(needsAssignment));
+  const visibleAssignableSpecialGroups = dispatchView === "por_asignar" || dispatchView === "todos"
+    ? assignableSpecialGroups
+    : [];
+  for (const group of specialOperationGroups.values()) {
+    for (const operation of group) specialGroupByOperationId.set(operation.id, group);
+  }
   const selectedAvailableVehicle = vehicles.find((vehicle) => String(vehicle.id) === selectedVehicleId);
   const requestedVehicleType = assignment?.tipo_vehiculo_solicitado?.trim() || "";
   const hasRequestedVehicleTypeAvailable = Boolean(
@@ -714,6 +755,40 @@ export default function OperacionesPage() {
   const selectedPartner = partnerCompanies.find((company) => String(company.id) === subcontractingForm.empresa_asociada_id);
   const partnerVehicles = selectedPartner?.vehiculos.filter((vehicle) => vehicle.activo) || [];
 
+  const loadAvailableAssignmentResources = async (operation: Operation) => {
+    const startDate = dateKey(operation.fecha_programada);
+    const endDate = dateKey(operation.fecha_fin_programada) || startDate;
+    if (!startDate || !endDate) {
+      throw new ApiResponseError(
+        "La operación no tiene un rango de fechas válido.",
+        "INVALID_ASSIGNMENT_DATE_RANGE",
+      );
+    }
+    const query = new URLSearchParams({
+      fecha: startDate,
+      fecha_fin: endDate,
+      pasajeros: String(operation.pasajeros),
+      operacion_id: String(operation.id),
+      solo_disponibles: "true",
+    });
+    if (operation.hora_inicio) query.set("hora_inicio", operation.hora_inicio.slice(0, 5));
+    if (operation.hora_fin) query.set("hora_fin", operation.hora_fin.slice(0, 5));
+    const availabilityPath = `/api/admin/inteligencia/asignacion-recomendada?${query}`;
+    const availability = await readApiJson<{
+      data?: { tipo_vehiculo_solicitado?: string | null; vehiculos?: Vehicle[]; conductores?: Driver[] };
+    }>(await fetch(`${API_URL}${availabilityPath}`, { headers: getAuthHeaders() }), availabilityPath);
+    const resources = availability.data;
+    if (!resources || !Array.isArray(resources.vehiculos) || !Array.isArray(resources.conductores)) {
+      throw new Error("La API no devolvió la lista de recursos disponibles.");
+    }
+    const requestedType = resources.tipo_vehiculo_solicitado || operation.tipo_vehiculo_solicitado || "";
+    const availableVehicles = [...resources.vehiculos].sort((a, b) =>
+      Number(normalizeVehicleType(b.tipo) === normalizeVehicleType(requestedType))
+      - Number(normalizeVehicleType(a.tipo) === normalizeVehicleType(requestedType))
+    );
+    return { requestedType, availableVehicles, availableDrivers: resources.conductores };
+  };
+
   const openAssignment = async (operation: Operation) => {
     setAssignment(operation);
     setAssignmentResourcesLoading(true);
@@ -724,50 +799,19 @@ export default function OperacionesPage() {
     setConfirmVehicleSubstitution(false);
     setError("");
     try {
-      const startDate = dateKey(operation.fecha_programada);
-      const endDate = dateKey(operation.fecha_fin_programada) || startDate;
-      if (!startDate || !endDate) {
-        throw new ApiResponseError(
-          "La operación no tiene un rango de fechas válido.",
-          "INVALID_ASSIGNMENT_DATE_RANGE",
-        );
+      const resources = await loadAvailableAssignmentResources(operation);
+      if (resources.requestedType && !operation.tipo_vehiculo_solicitado) {
+        setAssignment({ ...operation, tipo_vehiculo_solicitado: resources.requestedType });
       }
-      const query = new URLSearchParams({
-        fecha: startDate,
-        fecha_fin: endDate,
-        pasajeros: String(operation.pasajeros),
-        operacion_id: String(operation.id),
-        solo_disponibles: "true",
-      });
-      if (operation.hora_inicio) query.set("hora_inicio", operation.hora_inicio.slice(0, 5));
-      if (operation.hora_fin) query.set("hora_fin", operation.hora_fin.slice(0, 5));
-      const headers = getAuthHeaders();
-      const availabilityPath = `/api/admin/inteligencia/asignacion-recomendada?${query}`;
-      const availability = await readApiJson<{
-        data?: { tipo_vehiculo_solicitado?: string | null; vehiculos?: Vehicle[]; conductores?: Driver[] };
-      }>(await fetch(`${API_URL}${availabilityPath}`, { headers }), availabilityPath);
-      const resources = availability.data;
-      if (!resources || !Array.isArray(resources.vehiculos) || !Array.isArray(resources.conductores)) {
-        throw new Error("La API no devolvió la lista de recursos disponibles.");
-      }
-      const requestedType = resources.tipo_vehiculo_solicitado || operation.tipo_vehiculo_solicitado || "";
-      if (requestedType && !operation.tipo_vehiculo_solicitado) {
-        setAssignment({ ...operation, tipo_vehiculo_solicitado: requestedType });
-      }
-      const availableVehicles = [...resources.vehiculos].sort((a, b) =>
-        Number(normalizeVehicleType(b.tipo) === normalizeVehicleType(requestedType))
-        - Number(normalizeVehicleType(a.tipo) === normalizeVehicleType(requestedType))
-      );
-      const availableDrivers = resources.conductores;
-      setVehicles(availableVehicles);
-      setDrivers(availableDrivers);
+      setVehicles(resources.availableVehicles);
+      setDrivers(resources.availableDrivers);
       setSelectedVehicleId(
-        availableVehicles.some((vehicle) => vehicle.id === operation.vehiculo_id)
+        resources.availableVehicles.some((vehicle) => vehicle.id === operation.vehiculo_id)
           ? String(operation.vehiculo_id)
           : "",
       );
       setSelectedDriverId(
-        availableDrivers.some((driver) => driver.id === operation.conductor_usuario_id)
+        resources.availableDrivers.some((driver) => driver.id === operation.conductor_usuario_id)
           ? String(operation.conductor_usuario_id)
           : "",
       );
@@ -776,6 +820,153 @@ export default function OperacionesPage() {
       setAssignmentResourcesError(assignmentAvailabilityMessage(loadError));
     } finally {
       setAssignmentResourcesLoading(false);
+    }
+  };
+
+  const updateGroupAssignmentItem = (operationId: number, patch: Partial<GroupAssignmentItem>) => {
+    setGroupAssignment((current) => current && ({
+      ...current,
+      items: current.items.map((item) => item.operation.id === operationId
+        ? { ...item, ...patch, error: undefined }
+        : item),
+    }));
+    setGroupAssignmentError("");
+  };
+
+  const openGroupAssignment = async (operationsInGroup: Operation[]) => {
+    const operationsToAssign = operationsInGroup.filter(needsAssignment);
+    if (!operationsInGroup[0]?.requerimiento_id || !operationsInGroup[0]?.grupo_numero || !operationsToAssign.length) return;
+    const pendingIds = new Set(operationsToAssign.map((operation) => operation.id));
+    setGroupAssignment({
+      requerimientoId: operationsInGroup[0].requerimiento_id,
+      groupNumber: operationsInGroup[0].grupo_numero,
+      operations: operationsInGroup,
+      items: operationsToAssign.map((operation) => ({
+        operation,
+        vehicleId: "",
+        driverId: "",
+        confirmVehicleSubstitution: false,
+      })),
+      requestedVehicleType: "",
+      assignedCount: operationsInGroup.filter(hasAssignedResources).length,
+      unavailableVehicleIds: operationsInGroup
+        .filter((operation) => !pendingIds.has(operation.id) && operation.vehiculo_id)
+        .map((operation) => String(operation.vehiculo_id)),
+      unavailableDriverIds: operationsInGroup
+        .filter((operation) => !pendingIds.has(operation.id) && operation.conductor_usuario_id)
+        .map((operation) => String(operation.conductor_usuario_id)),
+    });
+    setGroupAssignmentResourcesLoading(true);
+    setGroupAssignmentResourcesError("");
+    setGroupAssignmentError("");
+    setGroupAssignmentVehicles([]);
+    setGroupAssignmentDrivers([]);
+    setError("");
+    try {
+      const resources = await loadAvailableAssignmentResources(operationsToAssign[0]);
+      setGroupAssignmentVehicles(resources.availableVehicles);
+      setGroupAssignmentDrivers(resources.availableDrivers);
+      setGroupAssignment((current) => current && ({
+        ...current,
+        requestedVehicleType: resources.requestedType,
+        items: current.items.map((item) => ({
+          ...item,
+          operation: {
+            ...item.operation,
+            tipo_vehiculo_solicitado: item.operation.tipo_vehiculo_solicitado || resources.requestedType,
+          },
+        })),
+      }));
+    } catch (loadError) {
+      console.error("No se pudo consultar la disponibilidad para el grupo del requerimiento.", loadError);
+      setGroupAssignmentResourcesError(assignmentAvailabilityMessage(loadError));
+    } finally {
+      setGroupAssignmentResourcesLoading(false);
+    }
+  };
+
+  const assignOperationGroup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!groupAssignment) return;
+    const vehicleIds = groupAssignment.items.map((item) => item.vehicleId);
+    const driverIds = groupAssignment.items.map((item) => item.driverId);
+    if (vehicleIds.some((id) => !id) || driverIds.some((id) => !id)) {
+      setGroupAssignmentError("Selecciona un vehículo y un conductor para cada unidad.");
+      return;
+    }
+    if (new Set(vehicleIds).size !== vehicleIds.length || new Set(driverIds).size !== driverIds.length) {
+      setGroupAssignmentError("Cada unidad debe tener un vehículo y un conductor distintos.");
+      return;
+    }
+    const substitutionUnconfirmed = groupAssignment.items.some((item) => {
+      const vehicle = groupAssignmentVehicles.find((candidate) => String(candidate.id) === item.vehicleId);
+      const requestedType = item.operation.tipo_vehiculo_solicitado || groupAssignment.requestedVehicleType;
+      return Boolean(
+        requestedType && vehicle
+        && normalizeVehicleType(vehicle.tipo) !== normalizeVehicleType(requestedType)
+        && !item.confirmVehicleSubstitution
+      );
+    });
+    if (substitutionUnconfirmed) {
+      setGroupAssignmentError("Confirma la sustitución de categoría para cada unidad que use un vehículo alternativo.");
+      return;
+    }
+
+    setSaving(true);
+    setGroupAssignmentError("");
+    const successfulItems: GroupAssignmentItem[] = [];
+    const failedItems: GroupAssignmentItem[] = [];
+    try {
+      for (const item of groupAssignment.items) {
+        const vehicle = groupAssignmentVehicles.find((candidate) => String(candidate.id) === item.vehicleId);
+        const requestedType = item.operation.tipo_vehiculo_solicitado || groupAssignment.requestedVehicleType;
+        const categorySubstitution = Boolean(
+          requestedType && vehicle
+          && normalizeVehicleType(vehicle.tipo) !== normalizeVehicleType(requestedType)
+        );
+        try {
+          await request(`/api/admin/operaciones/${item.operation.id}/asignar`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              vehiculo_id: Number(item.vehicleId),
+              conductor_id: Number(item.driverId),
+              confirmar_sustitucion: categorySubstitution && item.confirmVehicleSubstitution,
+            }),
+          });
+          successfulItems.push(item);
+        } catch (saveError) {
+          failedItems.push({
+            ...item,
+            error: saveError instanceof Error ? saveError.message : "No se pudo asignar esta unidad.",
+          });
+        }
+      }
+
+      if (successfulItems.length) await load(true);
+      if (failedItems.length) {
+        setGroupAssignment((current) => current && ({
+          ...current,
+          items: failedItems,
+          assignedCount: current.assignedCount + successfulItems.length,
+          unavailableVehicleIds: Array.from(new Set([
+            ...current.unavailableVehicleIds,
+            ...successfulItems.map((item) => item.vehicleId),
+          ])),
+          unavailableDriverIds: Array.from(new Set([
+            ...current.unavailableDriverIds,
+            ...successfulItems.map((item) => item.driverId),
+          ])),
+        }));
+        setGroupAssignmentError(
+          `Se asignaron ${successfulItems.length} de ${groupAssignment.items.length} unidades. Revisa los conflictos indicados para completar el grupo.`
+        );
+      } else {
+        setGroupAssignment(null);
+        setMessage(`Se asignaron correctamente ${successfulItems.length} unidades del grupo ${groupAssignment.groupNumber}.`);
+        await load(true);
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -896,6 +1087,37 @@ export default function OperacionesPage() {
           </div>
           <button onClick={() => void load()} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Actualizar operaciones"><RefreshCw size={17} /></button>
         </div>
+        {visibleAssignableSpecialGroups.length > 0 && (
+          <div className="space-y-3 border-b border-slate-100 bg-slate-50/70 p-4">
+            {visibleAssignableSpecialGroups.map((group) => {
+              const pendingCount = group.filter(needsAssignment).length;
+              const first = group[0];
+              return (
+                <article key={`${first.requerimiento_id}-${first.grupo_numero}`} className="flex flex-col gap-3 rounded-2xl border border-violet-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-violet-700">
+                      Requerimiento #{first.requerimiento_id} · Grupo {first.grupo_numero}
+                    </p>
+                    <p className="mt-1 text-sm font-black text-slate-900">
+                      {pendingCount} de {group.length} unidades por asignar
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Cada unidad tendrá su propio vehículo y conductor; se validará la disponibilidad al guardar.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void openGroupAssignment(group)}
+                    disabled={saving}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-3 text-xs font-black text-white transition hover:bg-violet-800 disabled:opacity-50"
+                  >
+                    <CheckCircle2 size={15} /> Asignar grupo
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        )}
         {loading ? <p className="p-8 text-center text-sm font-semibold text-slate-400">Cargando servicios...</p> : visibleOperations.length === 0 ? <div className="p-10 text-center">
           <p className="text-sm font-black text-slate-500">
             {dispatchView === "por_asignar" ? "No hay operaciones por asignar"
@@ -922,6 +1144,7 @@ export default function OperacionesPage() {
               const overdue = isOverdueOperation(operation);
               const subcontractState = operation.subcontratacion_estado || "no_requerida";
               const canEditSubcontracting = activeOperationStates.includes(operation.estado);
+              const isMultiUnitSpecialOperation = (specialGroupByOperationId.get(operation.id)?.length || 0) > 1;
               const dateRange = operation.fecha_fin_programada && dateKey(operation.fecha_fin_programada) !== scheduledDate
                 ? `${formatDate(scheduledDate)} - ${formatDate(dateKey(operation.fecha_fin_programada))}`
                 : formatDate(scheduledDate);
@@ -992,7 +1215,10 @@ export default function OperacionesPage() {
 
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                     <button onClick={() => void openOperationHistory(operation)} className="rounded-lg bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700">Historial</button>
-                    {["programada", "asignada"].includes(operation.estado) && subcontractState === "no_requerida" && <button onClick={() => openAssignment(operation)} className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-700">{operation.vehiculo_id ? "Reasignar" : "Asignar"}</button>}
+                    {["programada", "asignada"].includes(operation.estado)
+                      && subcontractState === "no_requerida"
+                      && (!isMultiUnitSpecialOperation || hasAssignedResources(operation))
+                      && <button onClick={() => openAssignment(operation)} className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-700">{operation.vehiculo_id ? "Reasignar" : "Asignar"}</button>}
                     {canEditSubcontracting && <button onClick={() => openSubcontracting(operation)} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-800">{subcontractState === "no_requerida" ? "Subcontratar" : "Editar proveedor"}</button>}
                     {operation.estado === "cancelada" && <button onClick={() => void reopenOperation(operation)} disabled={saving} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">Reabrir unidad</button>}
                   </div>
@@ -1201,6 +1427,196 @@ export default function OperacionesPage() {
               >
                 {saving ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={17} />}
                 {saving ? "Validando..." : "Confirmar asignación"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      )}
+
+      {groupAssignment && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-5">
+          <form
+            onSubmit={assignOperationGroup}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="group-assignment-title"
+            className="max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl space-y-5 overflow-y-auto overscroll-contain rounded-3xl border border-white/70 bg-white p-5 shadow-2xl sm:max-h-[calc(100dvh-2.5rem)] sm:p-6"
+          >
+            <header className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-violet-700">
+                  Requerimiento #{groupAssignment.requerimientoId} · Grupo {groupAssignment.groupNumber}
+                </p>
+                <h2 id="group-assignment-title" className="mt-1 text-2xl font-black tracking-tight text-slate-950">
+                  Asignar unidades en grupo
+                </h2>
+                <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                  Selecciona un vehículo y un conductor para cada unidad. Cada recurso se valida al guardar.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!saving) setGroupAssignment(null); }}
+                aria-label="Cerrar asignación grupal"
+                disabled={saving}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 disabled:opacity-50"
+              >
+                <X size={18} />
+              </button>
+            </header>
+
+            <div className="flex flex-wrap gap-2 rounded-xl border border-violet-100 bg-violet-50 p-3 text-xs font-bold text-violet-900">
+              <span>{groupAssignment.operations.length} unidades en el grupo</span>
+              <span aria-hidden="true">·</span>
+              <span>{groupAssignment.assignedCount} ya asignadas</span>
+              <span aria-hidden="true">·</span>
+              <span>{groupAssignment.items.length} pendientes de asignación</span>
+            </div>
+
+            {groupAssignmentResourcesLoading && (
+              <div role="status" className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3.5 text-sm font-semibold text-blue-800">
+                <RefreshCw size={17} className="shrink-0 animate-spin" />
+                Consultando disponibilidad para el grupo...
+              </div>
+            )}
+            {groupAssignmentResourcesError && (
+              <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-800">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" />
+                <div>
+                  <p className="font-black">No fue posible consultar la disponibilidad</p>
+                  <p className="mt-0.5 leading-relaxed">{groupAssignmentResourcesError}</p>
+                </div>
+              </div>
+            )}
+            {groupAssignmentError && (
+              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm font-semibold leading-relaxed text-red-800">
+                {groupAssignmentError}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {groupAssignment.items.map((item) => {
+                const requestedType = item.operation.tipo_vehiculo_solicitado || groupAssignment.requestedVehicleType;
+                const selectedVehicle = groupAssignmentVehicles.find((vehicle) => String(vehicle.id) === item.vehicleId);
+                const isSubstitution = Boolean(
+                  requestedType && selectedVehicle
+                  && normalizeVehicleType(selectedVehicle.tipo) !== normalizeVehicleType(requestedType)
+                );
+                const availableVehicles = groupAssignmentVehicles.filter((vehicle) => {
+                  const id = String(vehicle.id);
+                  const selectedByOtherUnit = groupAssignment.items.some(
+                    (other) => other.operation.id !== item.operation.id && other.vehicleId === id
+                  );
+                  return !groupAssignment.unavailableVehicleIds.includes(id)
+                    && (!selectedByOtherUnit || item.vehicleId === id);
+                });
+                const availableDrivers = groupAssignmentDrivers.filter((driver) => {
+                  const id = String(driver.id);
+                  const selectedByOtherUnit = groupAssignment.items.some(
+                    (other) => other.operation.id !== item.operation.id && other.driverId === id
+                  );
+                  return !groupAssignment.unavailableDriverIds.includes(id)
+                    && (!selectedByOtherUnit || item.driverId === id);
+                });
+                return (
+                  <section key={item.operation.id} className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <h3 className="font-black text-slate-900">
+                          Unidad {item.operation.unidad_numero || "—"} de {groupAssignment.operations.length}
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Operación #{item.operation.id} · {formatDate(dateKey(item.operation.fecha_programada))}
+                          {item.operation.hora_inicio ? ` · ${formatTime(item.operation.hora_inicio)}` : ""}
+                          {` · ${item.operation.pasajeros} pasajeros`}
+                        </p>
+                      </div>
+                      {requestedType && (
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black capitalize text-slate-600">
+                          Solicita {requestedType}
+                        </span>
+                      )}
+                    </div>
+                    {item.error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs font-semibold leading-relaxed text-red-700">{item.error}</p>}
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block text-xs font-black text-slate-700">
+                        Vehículo
+                        <select
+                          value={item.vehicleId}
+                          onChange={(event) => updateGroupAssignmentItem(item.operation.id, { vehicleId: event.target.value, confirmVehicleSubstitution: false })}
+                          disabled={groupAssignmentResourcesLoading || Boolean(groupAssignmentResourcesError) || saving}
+                          required
+                          className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-800 focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:bg-slate-100"
+                        >
+                          <option value="">
+                            {groupAssignmentResourcesLoading ? "Buscando vehículos..." : availableVehicles.length ? "Selecciona un vehículo" : "Sin vehículos disponibles"}
+                          </option>
+                          {availableVehicles.map((vehicle) => {
+                            const isAlternative = requestedType
+                              && normalizeVehicleType(vehicle.tipo) !== normalizeVehicleType(requestedType);
+                            return (
+                              <option key={vehicle.id} value={vehicle.id}>
+                                {vehicle.placa} · {vehicle.modelo} · {vehicle.capacidad} pax · {vehicle.tipo || "tipo no registrado"}
+                                {isAlternative ? " · alternativa" : ""}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </label>
+                      <label className="block text-xs font-black text-slate-700">
+                        Conductor
+                        <select
+                          value={item.driverId}
+                          onChange={(event) => updateGroupAssignmentItem(item.operation.id, { driverId: event.target.value })}
+                          disabled={groupAssignmentResourcesLoading || Boolean(groupAssignmentResourcesError) || saving}
+                          required
+                          className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-800 focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:bg-slate-100"
+                        >
+                          <option value="">
+                            {groupAssignmentResourcesLoading ? "Buscando conductores..." : availableDrivers.length ? "Selecciona un conductor" : "Sin conductores disponibles"}
+                          </option>
+                          {availableDrivers.map((driver) => (
+                            <option key={driver.id} value={driver.id}>
+                              {driver.nombre} {driver.apellido || ""} · {driver.licencia || "sin licencia"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    {isSubstitution && (
+                      <label className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-relaxed text-amber-900">
+                        <input
+                          type="checkbox"
+                          checked={item.confirmVehicleSubstitution}
+                          onChange={(event) => updateGroupAssignmentItem(item.operation.id, { confirmVehicleSubstitution: event.target.checked })}
+                          className="mt-0.5 accent-amber-700"
+                        />
+                        Confirmo sustituir la categoría solicitada ({requestedType}) por {selectedVehicle?.tipo || "una categoría no registrada"} para esta unidad.
+                      </label>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+
+            <footer className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setGroupAssignment(null)}
+                disabled={saving}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={saving || groupAssignmentResourcesLoading || Boolean(groupAssignmentResourcesError) || !groupAssignment.items.length}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+              >
+                {saving ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={17} />}
+                {saving ? "Validando unidades..." : `Asignar ${groupAssignment.items.length} unidades`}
               </button>
             </footer>
           </form>
