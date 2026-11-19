@@ -321,17 +321,6 @@ export default function CalendarioFlotaPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 self-end sm:self-auto">
-          <button type="button" onClick={() => navigateCalendar(-1)} aria-label={viewMode === "week" ? "Semana anterior" : "Mes anterior"} className="rounded-xl border border-slate-200 p-2.5 text-slate-600 hover:bg-slate-50">
-            <ChevronLeft size={18} />
-          </button>
-          <button type="button" onClick={goToToday} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
-            Hoy
-          </button>
-          <button type="button" onClick={() => navigateCalendar(1)} aria-label={viewMode === "week" ? "Semana siguiente" : "Mes siguiente"} className="rounded-xl border border-slate-200 p-2.5 text-slate-600 hover:bg-slate-50">
-            <ChevronRight size={18} />
-          </button>
-        </div>
       </header>
 
       {error && (
@@ -368,6 +357,17 @@ export default function CalendarioFlotaPage() {
             <p className="text-xs text-slate-500">Selecciona un día para consultar sus servicios y vehículos disponibles.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-1" role="group" aria-label="Navegar por el calendario">
+              <button type="button" onClick={() => navigateCalendar(-1)} aria-label={viewMode === "week" ? "Semana anterior" : "Mes anterior"} className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50">
+                <ChevronLeft size={18} />
+              </button>
+              <button type="button" onClick={goToToday} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                Hoy
+              </button>
+              <button type="button" onClick={() => navigateCalendar(1)} aria-label={viewMode === "week" ? "Semana siguiente" : "Mes siguiente"} className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50">
+                <ChevronRight size={18} />
+              </button>
+            </div>
             <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Vista del calendario">
               {(["week", "month"] as const).map((mode) => (
                 <button
