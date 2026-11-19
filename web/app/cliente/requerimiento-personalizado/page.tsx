@@ -210,7 +210,10 @@ export default function ClienteRequerimientoPersonalizadoPage() {
               {request.estado === "pagado" && <p className="inline-flex items-center gap-2 text-xs font-black text-emerald-700"><CheckCircle2 size={15} /> Pago confirmado · Despacho: {request.estado_despacho || "pendiente"}</p>}
             </div>}
             {request.estado_despacho === "error" && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-xs font-bold text-amber-800">El pago está confirmado. Estamos revisando la preparación del despacho y te avisaremos cuando esté listo.</p>}
-            {request.respuesta_admin && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">{request.respuesta_admin}</p>}
+            {request.respuesta_admin && <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+              <p className="text-[9px] font-black uppercase tracking-widest text-blue-700">Respuesta de Turesma</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-blue-950">{request.respuesta_admin}</p>
+            </div>}
           </article>;
         })}
       </section>

@@ -4,7 +4,10 @@ const pool = require("../config/db");
 const { crearNotificacion, notificarAdmins } = require("../config/notificaciones");
 const { buildProformaDataRequerimiento, generarProformaPDF } = require("../config/proforma");
 const { prepararDespachoRequerimiento } = require("../config/requerimientosDespacho");
-const { notificarPropuestaRequerimiento } = require("../config/requerimientoMailer");
+const {
+  notificarRespuestaRequerimiento,
+  notificarPropuestaRequerimiento,
+} = require("../config/requerimientoMailer");
 
 const optionalText = (value: unknown, maxLength: number): string | null | undefined => {
   if (value === undefined || value === null) return null;
@@ -181,13 +184,30 @@ const listarRequerimientosAdmin = async (_req: any, res: any) => {
 const actualizarRequerimientoAdmin = async (req: any, res: any) => {
   const id = Number(req.params.id);
   const usuarioAdminId = Number(req.user?.id);
-  const estado = String(req.body?.estado || "").trim();
+  const requestedAction = String(req.body?.action || "").trim();
+  const legacyState = String(req.body?.estado || "").trim();
   const respuesta = String(req.body?.respuesta_admin || "").trim();
-  const estadosValidos = ["pendiente", "en_revision", "respondido", "propuesta_enviada", "cerrado", "rechazado"];
+  const action = requestedAction || (
+    legacyState === "respondido" ? "send_response"
+      : legacyState === "propuesta_enviada" ? "send_proposal"
+        : "update_status"
+  );
+  const estado = action === "send_response" ? "respondido"
+    : action === "send_proposal" ? "propuesta_enviada"
+      : legacyState;
+  const estadosManuales = ["pendiente", "en_revision", "cerrado", "rechazado"];
 
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "Requerimiento inválido" });
-  if (!estadosValidos.includes(estado)) return res.status(400).json({ error: "Selecciona un estado válido" });
+  if (!["send_response", "send_proposal", "update_status"].includes(action)) {
+    return res.status(400).json({ error: "Selecciona una acción válida" });
+  }
+  if (action === "update_status" && !estadosManuales.includes(estado)) {
+    return res.status(400).json({ error: "Selecciona un estado de seguimiento válido" });
+  }
   if (respuesta.length > 5000) return res.status(400).json({ error: "La respuesta no puede superar 5000 caracteres" });
+  if (action === "send_response" && !respuesta) {
+    return res.status(400).json({ error: "Escribe la respuesta que verá el cliente antes de enviarla" });
+  }
 
   const client = await pool.connect();
   try {
@@ -242,7 +262,7 @@ const actualizarRequerimientoAdmin = async (req: any, res: any) => {
       }));
       price = Math.round(sum * 100) / 100;
     }
-    if (estado === "propuesta_enviada") {
+    if (action === "send_proposal") {
       if (price === null || !updatedGroups.length || updatedGroups.some((group: Record<string, unknown>) => {
         const startDate = validDate(group.fecha_servicio);
         const endDate = validDate(group.fecha_fin);
@@ -266,26 +286,54 @@ const actualizarRequerimientoAdmin = async (req: any, res: any) => {
         estado,
         price,
         JSON.stringify(updatedGroups),
-        respuesta || null,
-        Number.isInteger(usuarioAdminId) ? usuarioAdminId : null,
+        action === "update_status" ? current.respuesta_admin : respuesta || null,
+        action === "update_status"
+          ? current.respondido_por
+          : Number.isInteger(usuarioAdminId) ? usuarioAdminId : null,
         id,
       ]
     );
     await client.query("COMMIT");
     const updated = result.rows[0];
-    const isProposal = estado === "propuesta_enviada";
-    await crearNotificacion(
-      usuarioAdminId,
-      Number(updated.usuario_id),
-      isProposal
-        ? `Turesma envió una propuesta para tu requerimiento #${id}. Total: $${Number(updated.precio_final).toFixed(2)}. Revisa los precios por grupo y responde en Mis requerimientos.`
-        : `Turesma actualizó tu requerimiento personalizado #${id}: ${estado.replace("_", " ")}`,
-      null,
-      "requerimiento",
-      Number(updated.id)
-    );
-    if (isProposal) await notificarPropuestaRequerimiento(updated);
-    return res.json(updated);
+    if (action === "update_status") return res.json(updated);
+
+    const isProposal = action === "send_proposal";
+    const notificationText = isProposal
+      ? `Turesma envió una propuesta para tu requerimiento #${id}. Total: $${Number(updated.precio_final).toFixed(2)}. Revisa la proforma y los detalles en Mis requerimientos.`
+      : `Turesma respondió a tu requerimiento personalizado #${id}: ${respuesta}`;
+    let inAppSent = false;
+    try {
+      inAppSent = await crearNotificacion(
+        usuarioAdminId,
+        Number(updated.usuario_id),
+        notificationText,
+        null,
+        "requerimiento",
+        Number(updated.id)
+      );
+    } catch (error) {
+      console.error("Error notificando al cliente sobre su requerimiento:", error);
+    }
+
+    let emailDelivery: { sent: boolean; reason?: string } = { sent: false, reason: "error" };
+    try {
+      emailDelivery = isProposal
+        ? await notificarPropuestaRequerimiento(updated)
+        : await notificarRespuestaRequerimiento(updated);
+    } catch (error) {
+      console.error("Error enviando correo sobre el requerimiento:", error);
+    }
+
+    return res.json({
+      ...updated,
+      delivery: {
+        inApp: { sent: inAppSent },
+        email: {
+          sent: emailDelivery?.sent === true,
+          ...(emailDelivery?.reason ? { reason: emailDelivery.reason } : {}),
+        },
+      },
+    });
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("Error actualizando requerimiento personalizado:", error);

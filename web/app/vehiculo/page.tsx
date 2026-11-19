@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useConductorPanel } from "./_components/use-conductor-panel";
 import {
   Zap, History, TrendingUp,
-  MapPin, Loader2, CheckCircle, Bell, Bus, ChevronRight,
+  MapPin, Loader2, CheckCircle, Bus, ChevronRight,
 } from "lucide-react";
 export default function ConductorInicioPage() {
   const {
-    checkingSession, panel, vehiculo, actualizarEstadoGeneral,
+    checkingSession, panel, vehiculo,
     msg: panelMsg, err: panelErr,
   } = useConductorPanel();
 
@@ -21,24 +21,14 @@ export default function ConductorInicioPage() {
 
   const totalIngresos = panel.historial.reduce((s, r) => s + (Number(r.total) || 0), 0);
   const totalFinalizados = panel.historial.filter(r => r.estado === "finalizada").length;
-  const pendientesCount = panel.pendientes.length;
   const activasCount = panel.activas.length;
-
-  const ESTADO_COLOR: Record<string, string> = {
-    disponible:   "bg-emerald-400",
-    en_servicio:  "bg-blue-500",
-    mantenimiento:"bg-amber-400",
-    inactivo:     "bg-gray-400",
-  };
-  const estadoActual = vehiculo?.estado || "disponible";
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
 
       {/* ── KPIs ───────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
-          { label: "Solicitudes", val: pendientesCount, color: "text-amber-600", bg: "bg-amber-50 border-amber-200", icon: <Bell size={18} className="text-amber-500" />, href: "/vehiculo/solicitudes" },
           { label: "Activos",     val: activasCount,     color: "text-blue-600",   bg: "bg-blue-50 border-blue-200",   icon: <Zap size={18} className="text-blue-500" />,   href: "/vehiculo/activas" },
           { label: "Completados", val: totalFinalizados, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", icon: <CheckCircle size={18} className="text-emerald-500" />, href: "/vehiculo/historial" },
           { label: "Ingresos",    val: `$${totalIngresos.toFixed(0)}`, color: "text-slate-900", bg: "bg-white border-slate-200", icon: <TrendingUp size={18} className="text-[#E31E24]" />, href: "/vehiculo/historial" },
@@ -61,7 +51,7 @@ export default function ConductorInicioPage() {
       {vehiculo ? (
         <div className="bg-white rounded-3xl border-2 border-slate-200 shadow-xl overflow-hidden">
           {/* Header del card */}
-          <div className="bg-[#0b0f1a] px-5 sm:px-6 py-4 flex items-center justify-between">
+          <div className="bg-[#0b0f1a] px-5 sm:px-6 py-4">
             <div className="flex items-center gap-3">
               <div className="bg-[#E31E24] p-2 rounded-xl">
                 <Bus size={18} className="text-white" />
@@ -70,20 +60,6 @@ export default function ConductorInicioPage() {
                 <p className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-500">Mi Vehículo Asignado</p>
                 <p className="text-lg font-black italic tracking-tighter text-white uppercase">{vehiculo.placa}</p>
               </div>
-            </div>
-            {/* Estado selector */}
-            <div className="flex items-center gap-2">
-              <div className={`w-2.5 h-2.5 rounded-full ${ESTADO_COLOR[estadoActual]} shadow-lg`} />
-              <select
-                value={estadoActual}
-                onChange={e => actualizarEstadoGeneral(e.target.value)}
-                className="bg-white/10 border border-white/20 text-white text-[10px] font-black uppercase tracking-widest rounded-xl px-3 py-1.5 outline-none cursor-pointer hover:bg-white/20 transition-all"
-              >
-                <option value="disponible"    className="text-black bg-white">Disponible</option>
-                <option value="en_servicio"   className="text-black bg-white">En Servicio</option>
-                <option value="mantenimiento" className="text-black bg-white">Mantenimiento</option>
-                <option value="inactivo"      className="text-black bg-white">Inactivo</option>
-              </select>
             </div>
           </div>
 
@@ -138,20 +114,14 @@ export default function ConductorInicioPage() {
       )}
 
       {/* ── ACCIONES RÁPIDAS ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
-          { href: "/vehiculo/solicitudes", label: "Solicitudes", icon: Bell,    bg: "bg-[#0b0f1a]",  text: "text-white", badge: pendientesCount },
           { href: "/vehiculo/activas",     label: "Activos",     icon: Zap,     bg: "bg-[#E31E24]",  text: "text-white" },
           { href: "/vehiculo/historial",   label: "Historial",   icon: History, bg: "bg-[#0b0f1a]",  text: "text-white" },
           { href: "/vehiculo/ruta",        label: "Registrar Ruta", icon: MapPin, bg: "bg-white border border-slate-200", text: "text-slate-900" },
         ].map(item => (
           <Link key={item.href} href={item.href}
             className={`${item.bg} ${item.text} group flex flex-col items-center justify-center gap-2 p-5 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all duration-300 shadow-sm hover:shadow-md hover:-translate-y-0.5 relative`}>
-            {item.badge !== undefined && item.badge > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#E31E24] text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-lg animate-pulse">
-                {item.badge}
-              </span>
-            )}
             <item.icon size={22} />
             {item.label}
           </Link>

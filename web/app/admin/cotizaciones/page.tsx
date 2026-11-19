@@ -402,12 +402,24 @@ function AdminCotizacionesContent() {
     finally { setSaving(false); }
   };
 
-  const saveCustomRequest = async (request: RequerimientoPersonalizado) => {
+  const saveCustomRequest = async (
+    request: RequerimientoPersonalizado,
+    action: "send_response" | "send_proposal" | "update_status"
+  ) => {
+    const responseText = (customResponses[request.id] ?? request.respuesta_admin ?? "").trim();
+    if (action === "send_response" && !responseText) {
+      setErr("Escribe la respuesta que verá el cliente antes de enviarla.");
+      setMsg("");
+      return;
+    }
+
     setSavingCustomId(request.id);
     setErr("");
     setMsg("");
     try {
-      const nextStatus = customStatuses[request.id] || request.estado;
+      const nextStatus = action === "send_response" ? "respondido"
+        : action === "send_proposal" ? "propuesta_enviada"
+          : customStatuses[request.id] || request.estado;
       const storedGroupPrices = request.service_groups?.map(group =>
         group.precio_total == null ? "" : String(group.precio_total)
       ) || [];
@@ -416,17 +428,39 @@ function AdminCotizacionesContent() {
         method: "PATCH",
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          estado: nextStatus,
-          ...(customServiceGroups[request.id] ? { grupos_servicio: customServiceGroups[request.id] } : {}),
-          ...((nextStatus === "propuesta_enviada" || customGroupPrices[request.id])
-            ? { precios_grupo: groupPrices }
-            : {}),
-          respuesta_admin: customResponses[request.id] || "",
+          action,
+          ...(action === "update_status" ? { estado: nextStatus } : {}),
+          ...(action === "send_proposal" ? {
+            grupos_servicio: customServiceGroups[request.id] || request.service_groups || [],
+            precios_grupo: groupPrices,
+            respuesta_admin: responseText,
+          } : {}),
+          ...(action === "send_response" ? { respuesta_admin: responseText } : {}),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo actualizar el requerimiento");
-      setMsg(`Requerimiento #${request.id} actualizado.`);
+      setCustomStatuses(current => ({ ...current, [request.id]: data.estado }));
+      if (action === "update_status") {
+        setMsg(`Estado del requerimiento #${request.id} actualizado.`);
+      } else {
+        const failures = [];
+        if (!data.delivery?.inApp?.sent) failures.push("no se pudo crear la notificación en la plataforma");
+        if (!data.delivery?.email?.sent) {
+          const reason = data.delivery?.email?.reason;
+          const emailFailure = reason === "not_configured" ? "el correo no está configurado"
+            : reason === "recipient_unavailable" ? "el cliente no tiene un correo activo"
+              : reason === "proforma_unavailable" ? "no se pudo generar la proforma PDF"
+                : "no se pudo enviar el correo";
+          failures.push(emailFailure);
+        }
+        const actionLabel = action === "send_proposal" ? "Propuesta" : "Respuesta";
+        if (failures.length) {
+          setErr(`${actionLabel} guardada, pero ${failures.join(" y ")}. Revisa la configuración y vuelve a enviar.`);
+        } else {
+          setMsg(`${actionLabel} enviada al cliente por correo y en la plataforma.`);
+        }
+      }
       await load(true);
     } catch (error) {
       setErr(error instanceof Error ? error.message : "No se pudo actualizar el requerimiento");
@@ -827,17 +861,25 @@ function AdminCotizacionesContent() {
                   </p>}
                   <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
                     <div>
-                      <label htmlFor={`custom-status-${request.id}`} className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-500">Estado</label>
+                      <label htmlFor={`custom-status-${request.id}`} className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-slate-500">Estado de seguimiento</label>
                       <select id={`custom-status-${request.id}`} value={customStatuses[request.id] || request.estado}
                         disabled={Boolean(request.reserva_id)}
                         onChange={event => setCustomStatuses(current => ({ ...current, [request.id]: event.target.value }))}
                         className={INPUT_CLS}>
                         <option value="pendiente">Pendiente</option>
                         <option value="en_revision">En revisión</option>
-                        <option value="respondido">Respondido</option>
-                        <option value="propuesta_enviada">Enviar propuesta</option>
                         <option value="cerrado">Cerrado</option>
                         <option value="rechazado">Rechazado</option>
+                        {["respondido", "propuesta_enviada", "pago_pendiente", "pagado"].includes(customStatuses[request.id] || request.estado) && (
+                          <option value={customStatuses[request.id] || request.estado} disabled>
+                            {({
+                              respondido: "Respondido (automático)",
+                              propuesta_enviada: "Propuesta enviada (automático)",
+                              pago_pendiente: "Pago pendiente",
+                              pagado: "Pagado",
+                            } as Record<string, string>)[customStatuses[request.id] || request.estado]}
+                          </option>
+                        )}
                       </select>
                     </div>
                     <div>
@@ -850,11 +892,23 @@ function AdminCotizacionesContent() {
                         className={INPUT_CLS + " resize-y"} />
                     </div>
                   </div>
-                  <button type="button" onClick={() => void saveCustomRequest(request)} disabled={savingCustomId === request.id || Boolean(request.reserva_id)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-violet-900 disabled:opacity-60">
-                    {savingCustomId === request.id ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                    Guardar y notificar al cliente
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => void saveCustomRequest(request, "send_response")} disabled={savingCustomId === request.id || Boolean(request.reserva_id) || !(customResponses[request.id] ?? request.respuesta_admin ?? "").trim()}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-violet-900 disabled:opacity-60">
+                      {savingCustomId === request.id ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                      Enviar respuesta
+                    </button>
+                    <button type="button" onClick={() => void saveCustomRequest(request, "send_proposal")} disabled={savingCustomId === request.id || Boolean(request.reserva_id)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#E31E24] px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-red-700 disabled:opacity-60">
+                      {savingCustomId === request.id ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                      Enviar propuesta y proforma
+                    </button>
+                    <button type="button" onClick={() => void saveCustomRequest(request, "update_status")}
+                      disabled={savingCustomId === request.id || Boolean(request.reserva_id) || (customStatuses[request.id] || request.estado) === request.estado}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
+                      Guardar estado
+                    </button>
+                  </div>
                   {["propuesta_enviada", "pago_pendiente", "pagado"].includes(request.estado) && <button type="button" onClick={() => void downloadCustomProforma(request)} disabled={savingCustomId === request.id}
                     className="ml-2 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-60">
                     <Download size={14} /> Descargar proforma

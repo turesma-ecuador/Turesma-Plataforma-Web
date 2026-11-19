@@ -72,13 +72,17 @@ require.cache[dbModule] = {
 
 const notificationsModule = require.resolve("../dist/config/notificaciones");
 const sentNotifications = [];
+let notificationResult = true;
 require.cache[notificationsModule] = {
   id: notificationsModule,
   filename: notificationsModule,
   loaded: true,
   exports: {
     async notificarAdmins(...args) { sentNotifications.push(["admins", ...args]); },
-    async crearNotificacion(...args) { sentNotifications.push(["client", ...args]); },
+    async crearNotificacion(...args) {
+      sentNotifications.push(["client", ...args]);
+      return notificationResult;
+    },
   },
   children: [],
   paths: [],
@@ -86,12 +90,22 @@ require.cache[notificationsModule] = {
 
 const requerimientoMailerModule = require.resolve("../dist/config/requerimientoMailer");
 const sentProposalEmails = [];
+const sentResponseEmails = [];
+let proposalEmailResult = { sent: true };
+let responseEmailResult = { sent: true };
 require.cache[requerimientoMailerModule] = {
   id: requerimientoMailerModule,
   filename: requerimientoMailerModule,
   loaded: true,
   exports: {
-    async notificarPropuestaRequerimiento(...args) { sentProposalEmails.push(args); },
+    async notificarRespuestaRequerimiento(...args) {
+      sentResponseEmails.push(args);
+      return responseEmailResult;
+    },
+    async notificarPropuestaRequerimiento(...args) {
+      sentProposalEmails.push(args);
+      return proposalEmailResult;
+    },
   },
   children: [],
   paths: [],
@@ -181,7 +195,40 @@ test("valida y guarda un requerimiento personalizado asociado al cliente autenti
   assert.equal(sentNotifications[0][0], "admins");
 });
 
-test("cotiza cada grupo con subtotal propio y publica el total autoritativo", async () => {
+test("responder guarda el texto, cambia el estado automáticamente e informa fallos de entrega", async () => {
+  notificationResult = false;
+  responseEmailResult = { sent: false, reason: "not_configured" };
+
+  const emptyResponse = response();
+  await actualizarRequerimientoAdmin({
+    params: { id: "44" },
+    user: { id: 2 },
+    body: { action: "send_response", respuesta_admin: "   " },
+  }, emptyResponse);
+  assert.equal(emptyResponse.statusCode, 400);
+
+  const updateRes = response();
+  await actualizarRequerimientoAdmin({
+    params: { id: "44" },
+    user: { id: 2 },
+    body: { action: "send_response", respuesta_admin: "Podemos coordinar el servicio." },
+  }, updateRes);
+  assert.equal(updateRes.statusCode, 200);
+  assert.equal(updateRes.body.estado, "respondido");
+  assert.equal(updateRes.body.respuesta_admin, "Podemos coordinar el servicio.");
+  assert.deepEqual(updateRes.body.delivery, {
+    inApp: { sent: false },
+    email: { sent: false, reason: "not_configured" },
+  });
+  assert.equal(sentNotifications.at(-1)[0], "client");
+  assert.match(sentNotifications.at(-1)[3], /Podemos coordinar el servicio/);
+  assert.equal(sentResponseEmails.at(-1)[0].respuesta_admin, "Podemos coordinar el servicio.");
+});
+
+test("enviar propuesta calcula el total y notifica con el estado automático", async () => {
+  notificationResult = true;
+  responseEmailResult = { sent: true };
+  proposalEmailResult = { sent: true };
   const listRes = response();
   await listarMisRequerimientos({ user: { id: 7 } }, listRes);
   assert.equal(listRes.body[0].usuario_id, 7);
@@ -192,7 +239,7 @@ test("cotiza cada grupo con subtotal propio y publica el total autoritativo", as
     params: { id: "44" },
     user: { id: 2 },
     body: {
-      estado: "propuesta_enviada",
+      action: "send_proposal",
       precios_grupo: [2500, 900],
       respuesta_admin: "Incluye coordinación de las unidades indicadas.",
     },
@@ -202,12 +249,19 @@ test("cotiza cada grupo con subtotal propio y publica el total autoritativo", as
   assert.equal(updateRes.body.precio_final, 3400);
   assert.equal(updateRes.body.service_groups[0].precio_total, 2500);
   assert.equal(updateRes.body.service_groups[1].precio_total, 900);
+  assert.deepEqual(updateRes.body.delivery, {
+    inApp: { sent: true },
+    email: { sent: true },
+  });
   assert.equal(sentNotifications.at(-1)[0], "client");
   assert.equal(sentNotifications.at(-1)[2], 7);
   assert.match(sentNotifications.at(-1)[3], /Total: \$3400\.00/);
   assert.equal(sentNotifications.at(-1)[5], "requerimiento");
   assert.equal(sentNotifications.at(-1)[6], 44);
-  assert.deepEqual(sentProposalEmails, [[updateRes.body]]);
+  assert.equal(sentProposalEmails.length, 1);
+  assert.equal(sentProposalEmails[0][0].estado, "propuesta_enviada");
+  assert.equal(sentProposalEmails[0][0].precio_final, 3400);
+  assert.equal(sentProposalEmails[0][0].respuesta_admin, "Incluye coordinación de las unidades indicadas.");
 });
 
 test("acepta la propuesta de forma idempotente y crea una reserva maestra por el total", async () => {

@@ -2,6 +2,7 @@ export {};
 
 const pool = require("./db");
 const { enviarCorreo } = require("./mailer");
+const { buildProformaDataRequerimiento, generarProformaPDF } = require("./proforma");
 const {
   escapeHtml,
   getWebBaseUrl,
@@ -23,19 +24,70 @@ const formatDate = (value: unknown) => {
 
 const safe = (value: unknown) => escapeHtml(value == null ? "" : String(value));
 
+const obtenerDestinatario = async (request: any) => {
+  const recipientResult = await pool.query(
+    "SELECT nombre, email FROM usuarios WHERE id = $1 AND activo = true LIMIT 1",
+    [request.usuario_id]
+  );
+  const recipient = recipientResult.rows[0];
+  if (!recipient?.email) {
+    console.error("No se pudo enviar el requerimiento: cliente sin correo", {
+      requerimientoId: request.id,
+    });
+    return null;
+  }
+  return recipient;
+};
+
+const notificarRespuestaRequerimiento = async (request: any) => {
+  try {
+    const recipient = await obtenerDestinatario(request);
+    if (!recipient) return { sent: false, reason: "recipient_unavailable" };
+
+    const webUrl = `${getWebBaseUrl()}/cliente/requerimiento-personalizado`;
+    const responseHtml = safe(request.respuesta_admin).replace(/\r?\n/g, "<br>");
+    const html = renderBrandedEmail({
+      preheader: `Turesma respondió tu requerimiento personalizado #${request.id}.`,
+      eyebrow: "ACTUALIZACIÓN DE REQUERIMIENTO",
+      title: "Tienes una respuesta de Turesma",
+      bodyHtml: `
+        <p style="margin:0 0 16px">Hola <strong>${safe(recipient.nombre || "cliente")}</strong>, respondimos a tu requerimiento personalizado <strong>#${safe(request.id)}</strong>.</p>
+        <div style="padding:16px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;white-space:pre-line">${responseHtml}</div>`,
+      actionLabel: "Ver mi requerimiento",
+      actionUrl: webUrl,
+      contactEmail: CONTACTO_EMAIL,
+    });
+    const text = [
+      `Hola ${recipient.nombre || "cliente"}, Turesma respondió a tu requerimiento personalizado #${request.id}.`,
+      request.respuesta_admin,
+      `Consulta tu requerimiento: ${webUrl}`,
+      `Para más información, comunícate al correo ${CONTACTO_EMAIL}.`,
+    ].filter(Boolean).join("\n\n");
+
+    return await enviarCorreo({
+      to: recipient.email,
+      subject: `Turesma respondió tu requerimiento #${request.id}`,
+      html,
+      text,
+      attachments: [getBrandedEmailLogoAttachment()],
+    });
+  } catch (error) {
+    console.error("Error notificando la respuesta del requerimiento personalizado:", {
+      requerimientoId: request?.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return { sent: false, reason: "error" };
+  }
+};
+
 const notificarPropuestaRequerimiento = async (request: any) => {
   try {
-    const recipientResult = await pool.query(
-      "SELECT nombre, email FROM usuarios WHERE id = $1 AND activo = true LIMIT 1",
-      [request.usuario_id]
-    );
-    const recipient = recipientResult.rows[0];
-    if (!recipient?.email) {
-      console.error("No se pudo enviar la propuesta del requerimiento: cliente sin correo", {
-        requerimientoId: request.id,
-      });
-      return { sent: false, reason: "recipient_unavailable" };
-    }
+    const recipient = await obtenerDestinatario(request);
+    if (!recipient) return { sent: false, reason: "recipient_unavailable" };
+
+    const proformaData = await buildProformaDataRequerimiento(Number(request.id), Number(request.usuario_id));
+    if (!proformaData) return { sent: false, reason: "proforma_unavailable" };
+    const proformaPdf = await generarProformaPDF(proformaData);
 
     const groups = Array.isArray(request.service_groups) ? request.service_groups : [];
     const total = Number(request.precio_final);
@@ -103,7 +155,14 @@ const notificarPropuestaRequerimiento = async (request: any) => {
       subject: `Tu propuesta de Turesma está lista · Requerimiento #${request.id}`,
       html,
       text,
-      attachments: [getBrandedEmailLogoAttachment()],
+      attachments: [
+        getBrandedEmailLogoAttachment(),
+        {
+          filename: `Proforma-REQ-${request.id}.pdf`,
+          content: proformaPdf,
+          contentType: "application/pdf",
+        },
+      ],
     });
   } catch (error) {
     console.error("Error notificando la propuesta del requerimiento personalizado:", {
@@ -114,4 +173,4 @@ const notificarPropuestaRequerimiento = async (request: any) => {
   }
 };
 
-module.exports = { notificarPropuestaRequerimiento };
+module.exports = { notificarRespuestaRequerimiento, notificarPropuestaRequerimiento };

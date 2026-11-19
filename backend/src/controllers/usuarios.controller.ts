@@ -817,7 +817,7 @@ const reprogramarMiReserva = async (req: any, res: any) => {
            fecha_regreso = CASE WHEN fecha_regreso IS NOT NULL THEN fecha_regreso + ($1::date - $2::date) ELSE NULL END,
            fecha_salida = CASE WHEN fecha_salida IS NOT NULL THEN $1::date + COALESCE(NULLIF($3, '')::time, fecha_salida::time) ELSE NULL END,
            fecha_llegada = CASE WHEN fecha_llegada IS NOT NULL THEN
-             fecha_llegada + ($1::date - $2::date)
+             fecha_llegada + (($1::date - $2::date) * INTERVAL '1 day')
              + CASE WHEN NULLIF($3, '') IS NOT NULL AND fecha_salida IS NOT NULL
                  THEN ($3::time - fecha_salida::time) ELSE INTERVAL '0' END
              ELSE NULL END,

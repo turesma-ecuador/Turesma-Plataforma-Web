@@ -132,7 +132,7 @@ export default function ConductorActivasPage() {
               <Zap size={40} className="text-slate-200" />
             </div>
             <p className="text-sm font-black uppercase text-slate-300 italic">Sin viajes activos</p>
-            <p className="text-xs text-slate-400 font-bold">Los viajes en curso aparecerán aquí</p>
+            <p className="text-xs text-slate-400 font-bold">Los viajes que te asigne administración aparecerán aquí</p>
           </div>
         </div>
       ) : (

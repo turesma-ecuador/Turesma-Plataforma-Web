@@ -5,7 +5,6 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState, useRef } from "react";
 import {
-  Bell,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -35,7 +34,6 @@ type ConductorShellProps = {
 
 const menuItems: MenuItemType[] = [
   { href: "/vehiculo", label: "Inicio", icon: LayoutDashboard },
-  { href: "/vehiculo/solicitudes", label: "Solicitudes", icon: Bell },
   { href: "/vehiculo/activas", label: "Viajes Activos", icon: Truck },
   { href: "/vehiculo/historial", label: "Historial", icon: History },
   { href: "/vehiculo/mantenimiento", label: "Mantenimiento", icon: Wrench },
@@ -47,7 +45,7 @@ const menuItems: MenuItemType[] = [
 export function ConductorShell({ children }: ConductorShellProps) {
   const pathname = usePathname();
   const panelState = useConductorPanelState();
-  const { newSolicitudesCount, user } = panelState;
+  const { user } = panelState;
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLElement | null>(null);
   const mobileMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -93,7 +91,6 @@ export function ConductorShell({ children }: ConductorShellProps) {
           {menuItems.map((item) => {
             const active = isActive(item.href);
             const Icon = item.icon;
-            const hasNotification = item.href === "/vehiculo/solicitudes" && newSolicitudesCount > 0;
 
             return (
               <Link
@@ -113,12 +110,7 @@ export function ConductorShell({ children }: ConductorShellProps) {
                     {item.label}
                   </span>
                 </div>
-                {hasNotification && (
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white shadow-lg shadow-red-500/30 animate-pulse">
-                    {newSolicitudesCount}
-                  </span>
-                )}
-                {active && !hasNotification && <Zap size={14} className="text-yellow-400 fill-yellow-400 animate-pulse" />}
+                {active && <Zap size={14} className="text-yellow-400 fill-yellow-400 animate-pulse" />}
               </Link>
             );
           })}
@@ -173,9 +165,7 @@ export function ConductorShell({ children }: ConductorShellProps) {
           <button type="button" onClick={() => setIsMobileMenuOpen(false)} aria-label="Cerrar menú" className="flex min-h-11 min-w-11 items-center justify-center rounded-full p-2 transition-colors hover:bg-white/5"><X size={20} /></button>
         </div>
         <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6">
-          {menuItems.map((item) => {
-            const hasNotification = item.href === "/vehiculo/solicitudes" && newSolicitudesCount > 0;
-            return (
+          {menuItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -186,14 +176,8 @@ export function ConductorShell({ children }: ConductorShellProps) {
                   <item.icon size={20} />
                   <span className="font-bold text-sm uppercase tracking-tight">{item.label}</span>
                 </div>
-                {hasNotification && (
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
-                    {newSolicitudesCount}
-                  </span>
-                )}
               </Link>
-            );
-          })}
+          ))}
         </nav>
         <div className="mt-auto shrink-0 border-t border-white/5 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <button

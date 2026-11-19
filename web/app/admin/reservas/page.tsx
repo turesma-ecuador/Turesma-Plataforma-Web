@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders, normalizeRole } from "../../../lib/session";
 import { useAutoRefresh } from "../../../lib/use-auto-refresh";
@@ -174,6 +174,8 @@ export default function AdminReservasPage() {
   const [focusedReservationId, setFocusedReservationId] = useState<number | null>(null);
   const [solicitudesCambioDestino, setSolicitudesCambioDestino] = useState<CambioDestinoAdmin[]>([]);
   const [propuestasCambio, setPropuestasCambio] = useState<Record<number, { total: string; nota: string; referencia: string }>>({});
+  const [savingChangeIds, setSavingChangeIds] = useState<Set<number>>(() => new Set());
+  const savingChangeIdsRef = useRef(new Set<number>());
 
   const h = getAuthHeaders();
 
@@ -461,6 +463,9 @@ export default function AdminReservasPage() {
   };
 
   const actualizarSolicitudCambio = async (id: number, action: "propuesta" | "rechazar" | "devolucion") => {
+    if (savingChangeIdsRef.current.has(id)) return;
+    savingChangeIdsRef.current.add(id);
+    setSavingChangeIds(new Set(savingChangeIdsRef.current));
     const form = propuestasCambio[id] || { total: "", nota: "", referencia: "" };
     const endpoint = action === "devolucion"
       ? `/api/admin/solicitudes-cambio-destino/${id}/devolucion`
@@ -478,11 +483,17 @@ export default function AdminReservasPage() {
         body: JSON.stringify(payload),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "No se pudo procesar la solicitud");
+      if (!response.ok) {
+        if (response.status === 409) await load(true);
+        throw new Error(data.error || "No se pudo procesar la solicitud");
+      }
       setMsg(data.message || "Solicitud actualizada");
       await load(true);
     } catch (requestError) {
       setErr(requestError instanceof Error ? requestError.message : "No se pudo procesar la solicitud");
+    } finally {
+      savingChangeIdsRef.current.delete(id);
+      setSavingChangeIds(new Set(savingChangeIdsRef.current));
     }
   };
 
@@ -585,13 +596,13 @@ export default function AdminReservasPage() {
                   {change.estado === "pendiente_admin" && (
                     <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)_auto_auto]">
                       <label className="text-[10px] font-black uppercase text-slate-500">Nuevo total ($)
-                        <input type="number" min="0.01" step="0.01" value={proposalForm.total} onChange={(event) => setPropuestasCambio((old) => ({ ...old, [change.id]: { ...proposalForm, total: event.target.value } }))} className={`${INPUT_CLS} mt-1`} />
+                        <input type="number" min="0.01" step="0.01" value={proposalForm.total} disabled={savingChangeIds.has(change.id)} onChange={(event) => setPropuestasCambio((old) => ({ ...old, [change.id]: { ...proposalForm, total: event.target.value } }))} className={`${INPUT_CLS} mt-1`} />
                       </label>
                       <label className="text-[10px] font-black uppercase text-slate-500">Detalle para el cliente
-                        <input maxLength={500} value={proposalForm.nota} onChange={(event) => setPropuestasCambio((old) => ({ ...old, [change.id]: { ...proposalForm, nota: event.target.value } }))} className={`${INPUT_CLS} mt-1`} placeholder="Motivo del precio propuesto" />
+                        <input maxLength={500} value={proposalForm.nota} disabled={savingChangeIds.has(change.id)} onChange={(event) => setPropuestasCambio((old) => ({ ...old, [change.id]: { ...proposalForm, nota: event.target.value } }))} className={`${INPUT_CLS} mt-1`} placeholder="Motivo del precio propuesto" />
                       </label>
-                      <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "propuesta")} disabled={Number(proposalForm.total) <= 0 || proposalForm.nota.trim().length < 5} className="self-end rounded-xl bg-emerald-600 px-4 py-3 text-xs font-black uppercase text-white disabled:opacity-50">Enviar propuesta</button>
-                      <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "rechazar")} disabled={proposalForm.nota.trim().length < 5} className="self-end rounded-xl bg-red-50 px-4 py-3 text-xs font-black uppercase text-red-700 disabled:opacity-50">Rechazar</button>
+                      <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "propuesta")} disabled={savingChangeIds.has(change.id) || Number(proposalForm.total) <= 0 || proposalForm.nota.trim().length < 5} className="self-end rounded-xl bg-emerald-600 px-4 py-3 text-xs font-black uppercase text-white disabled:opacity-50">{savingChangeIds.has(change.id) ? "Enviando..." : "Enviar propuesta"}</button>
+                      <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "rechazar")} disabled={savingChangeIds.has(change.id) || proposalForm.nota.trim().length < 5} className="self-end rounded-xl bg-red-50 px-4 py-3 text-xs font-black uppercase text-red-700 disabled:opacity-50">{savingChangeIds.has(change.id) ? "Procesando..." : "Rechazar"}</button>
                     </div>
                   )}
                   {change.estado === "pendiente_admin" && <p className="text-xs text-slate-500">Reserva pagada: ${Number(change.total_anterior).toFixed(2)}. Revisa ruta, disponibilidad y despacho antes de proponer.</p>}

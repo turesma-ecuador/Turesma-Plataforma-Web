@@ -291,6 +291,7 @@ test("reprograma en una fecha disponible y rechaza conflictos sin cambiar la res
   assert.equal(state.updates.length, 1);
   assert.equal(state.updates[0].params[0], RESCHEDULED_DATE);
   assert.equal(state.updates[0].params[1], OLD_SERVICE_DATE);
+  assert.match(state.updates[0].query, /fecha_llegada \+ \(\(\$1::date - \$2::date\) \* interval '1 day'\)/);
   assert.equal(state.history.length, 1);
   assert.equal(state.history[0].fecha_anterior, OLD_SERVICE_DATE);
   assert.equal(state.history[0].fecha_nueva, RESCHEDULED_DATE);

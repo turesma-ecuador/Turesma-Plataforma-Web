@@ -56,7 +56,6 @@ export type ReservaConductor = {
   referencia_recogida?: string | null;
   hora_salida?: string | null;
   recogido?: boolean;
-  isNew?: boolean;
 };
 
 export type VehiculoAsignado = {
@@ -75,7 +74,6 @@ export type VehiculoAsignado = {
 };
 
 type PanelConductor = {
-  pendientes: ReservaConductor[];
   activas: ReservaConductor[];
   historial: ReservaConductor[];
 };
@@ -84,14 +82,12 @@ const useConductorPanelState = () => {
   const router = useRouter();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
-  const [panel, setPanel] = useState<PanelConductor>({ pendientes: [], activas: [], historial: [] });
+  const [panel, setPanel] = useState<PanelConductor>({ activas: [], historial: [] });
   const [vehiculo, setVehiculo] = useState<VehiculoAsignado | null>(null);
   const [loadingPanel, setLoadingPanel] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
-  const [seenSolicitudesIds, setSeenSolicitudesIds] = useState<number[]>([]);
-  const [newSolicitudesCount, setNewSolicitudesCount] = useState(0);
   const primeraCargaRef = useRef(true);
 
   useEffect(() => {
@@ -153,22 +149,10 @@ const useConductorPanelState = () => {
         throw new Error(data.error || "No se pudo cargar el panel del conductor");
       }
 
-      const pendientes: ReservaConductor[] = Array.isArray(data.pendientes) ? data.pendientes : [];
       const activas: ReservaConductor[] = Array.isArray(data.activas) ? data.activas : [];
       const historial: ReservaConductor[] = Array.isArray(data.historial) ? data.historial : [];
 
-      const newPendientesIds = pendientes.map((r) => r.id);
-      const actualNewCount = newPendientesIds.filter((id) => !seenSolicitudesIds.includes(id)).length;
-      setNewSolicitudesCount(actualNewCount);
-
-      const pendientesWithNew: ReservaConductor[] = pendientes.map((r) => ({
-        ...r,
-        isNew: !seenSolicitudesIds.includes(r.id),
-      }));
-
-      setSeenSolicitudesIds((prev) => [...new Set([...prev, ...newPendientesIds])]);
-
-      setPanel({ pendientes: pendientesWithNew, activas, historial });
+      setPanel({ activas, historial });
 
       setVehiculo(data.vehiculo ?? null);
     } catch (loadError) {
@@ -212,7 +196,6 @@ const useConductorPanelState = () => {
       if (!res.ok) throw new Error(data.error || "No se pudo procesar la acción");
 
       setMsg(data.message || "Acción realizada correctamente");
-      if (endpoint === "aceptar") setNewSolicitudesCount(Math.max(0, newSolicitudesCount - 1));
       await loadPanel();
     } catch (actionError) {
       setErr(actionError instanceof Error ? actionError.message : "Error ejecutando la acción");
@@ -228,32 +211,6 @@ const useConductorPanelState = () => {
     return date.toLocaleDateString("es-EC", { day: "2-digit", month: "short", year: "numeric" });
   };
 
-  const actualizarEstadoGeneral = async (nuevoEstado: string) => {
-    if (!user?.id) return;
-    setErr("");
-    setMsg("");
-    setLoadingPanel(true);
-
-    try {
-      const res = await fetch(`${API_URL}/api/conductor/${user.id}/estado`, {
-        method: "PATCH",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ estado: nuevoEstado }),
-      });
-      if (handleUnauthorized(res.status)) return;
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "No se pudo actualizar el estado");
-
-      setMsg(data.message || "Estado actualizado");
-      if (vehiculo) setVehiculo((prev) => prev ? { ...prev, estado: nuevoEstado } : null);
-    } catch (actionError) {
-      setErr(actionError instanceof Error ? actionError.message : "Error actualizando el estado");
-    } finally {
-      setLoadingPanel(false);
-    }
-  };
-
   const greeting = useMemo(() => getRoleGreeting(user?.rol), [user?.rol]);
 
   return {
@@ -266,11 +223,9 @@ const useConductorPanelState = () => {
     msg,
     err,
     greeting,
-    newSolicitudesCount,
     loadPanel,
     callAction,
     formatFecha,
-    actualizarEstadoGeneral,
   };
 };
 
