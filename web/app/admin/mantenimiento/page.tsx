@@ -72,7 +72,6 @@ const ESTADO_BADGE: Record<string, string> = {
 export default function AdminHistorialMantenimientoPage() {
   const { checkingSession } = useAdminGuard();
   const [mantenimientos, setMantenimientos] = useState<Mantenimiento[]>([]);
-  const [vehicleIdsWithMaintenance, setVehicleIdsWithMaintenance] = useState<number[]>([]);
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -93,7 +92,7 @@ export default function AdminHistorialMantenimientoPage() {
     hora_inicio: "", hora_fin: "", motivo: "",
   });
   // Acción sobre un próximo mantenimiento (marcar hecho / reprogramar)
-  const [mantAccion, setMantAccion] = useState<{ vehiculoId: number; placa: string; modo: "completar" | "reprogramar" | "programar" } | null>(null);
+  const [mantAccion, setMantAccion] = useState<{ vehiculoId: number; placa: string; modo: "completar" | "reprogramar" } | null>(null);
   const [mantFecha, setMantFecha] = useState("");
   const [mantKm, setMantKm] = useState("");
   const [mantSaving, setMantSaving] = useState(false);
@@ -112,12 +111,6 @@ export default function AdminHistorialMantenimientoPage() {
       if (mRes.ok) {
         const data = await mRes.json();
         setMantenimientos(Array.isArray(data) ? data : data.mantenimientos || data.data || []);
-        setVehicleIdsWithMaintenance(
-          Array.isArray(data?.vehicleIdsWithMaintenance)
-            ? data.vehicleIdsWithMaintenance.map(Number)
-            : (Array.isArray(data) ? data : data.mantenimientos || data.data || [])
-                .map((mantenimiento: Mantenimiento) => mantenimiento.vehiculo_id)
-        );
       }
       if (vRes.ok) setVehiculos(await vRes.json());
       if (pRes.ok) {
@@ -149,16 +142,6 @@ export default function AdminHistorialMantenimientoPage() {
   const idsActivos = new Set(vehiculosActivos.map((vehiculo) => vehiculo.id));
   const idsInactivos = new Set(vehiculosInactivos.map((vehiculo) => vehiculo.id));
   const idsRegistrados = new Set(vehiculos.map((vehiculo) => vehiculo.id));
-  const idsConMantenimiento = new Set(vehicleIdsWithMaintenance);
-  const vehiculosSinMantenimiento = vehiculosActivos.filter((vehiculo) => !idsConMantenimiento.has(vehiculo.id));
-  const vehiculosSinMantenimientoFiltrados = vehiculosSinMantenimiento.filter((vehiculo) => {
-    const coincideVehiculo = filtroVehiculo === "todos" || String(vehiculo.id) === filtroVehiculo;
-    const consulta = search.toLowerCase();
-    const coincideBusqueda = !consulta ||
-      vehiculo.placa.toLowerCase().includes(consulta) ||
-      vehiculo.modelo.toLowerCase().includes(consulta);
-    return coincideVehiculo && coincideBusqueda;
-  });
   const gruposMantenimiento: Record<GrupoFlota, Mantenimiento[]> = {
     activos: mantenimientos.filter((mantenimiento) => idsActivos.has(mantenimiento.vehiculo_id)),
     inactivos: mantenimientos.filter((mantenimiento) => idsInactivos.has(mantenimiento.vehiculo_id)),
@@ -335,20 +318,14 @@ export default function AdminHistorialMantenimientoPage() {
     setMantFecha(""); setMantKm(""); setMantErr("");
   };
 
-  const abrirProgramacion = (vehiculo: Vehiculo) => {
-    setMantAccion({ vehiculoId: vehiculo.id, placa: vehiculo.placa, modo: "programar" });
-    setMantFecha(""); setMantKm(""); setMantErr("");
-  };
-
   const ejecutarAccion = async () => {
     if (!mantAccion) return;
-    if (mantAccion.modo !== "completar" && !mantFecha && !mantKm) {
+    if (mantAccion.modo === "reprogramar" && !mantFecha && !mantKm) {
       setMantErr("Indica la nueva fecha o el próximo kilometraje"); return;
     }
     setMantSaving(true); setMantErr("");
     try {
-      const endpointAccion = mantAccion.modo === "programar" ? "reprogramar" : mantAccion.modo;
-      const res = await fetch(`${API_URL}/api/admin/mantenimiento/${mantAccion.vehiculoId}/${endpointAccion}`, {
+      const res = await fetch(`${API_URL}/api/admin/mantenimiento/${mantAccion.vehiculoId}/${mantAccion.modo}`, {
         method: "PATCH", headers: getAuthHeaders(),
         body: JSON.stringify({ proxima_fecha: mantFecha || null, proximo_km: mantKm ? Number(mantKm) : null }),
       });
@@ -553,11 +530,6 @@ export default function AdminHistorialMantenimientoPage() {
         </div>
       </section>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 sm:p-4 flex items-center gap-3">
-        <DollarSign size={16} className="text-blue-500 flex-shrink-0" />
-        <p className="text-[11px] sm:text-xs font-bold text-blue-700">Este gasto se refleja en el Dashboard, en el gráfico <span className="italic">&quot;Gasto de Mantenimiento por Vehículo&quot;</span>.</p>
-      </div>
-
       {/* ALERTAS DE PRÓXIMO MANTENIMIENTO (programado por el conductor: fecha y/o km) */}
       {grupoFlota === "activos" && proximos.length > 0 && (
         <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4">
@@ -625,38 +597,6 @@ export default function AdminHistorialMantenimientoPage() {
         </div>
       </div>
 
-      {grupoFlota === "activos" && !loading && vehiculosSinMantenimientoFiltrados.length > 0 && (
-        <section className="w-full min-w-0 overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/70 p-3 sm:p-5">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <h2 className="break-words text-sm font-black uppercase tracking-wide text-slate-800">Vehículos sin mantenimiento registrado</h2>
-              <p className="mt-1 break-words text-xs leading-relaxed text-slate-500">Los vehículos activos aparecen aquí automáticamente hasta que tengan su primer registro.</p>
-            </div>
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-amber-700">{vehiculosSinMantenimientoFiltrados.length}</span>
-          </div>
-          <div className="grid min-w-0 w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {vehiculosSinMantenimientoFiltrados.map((vehiculo) => (
-              <div key={vehiculo.id} className="flex min-w-0 w-full flex-col gap-3 rounded-xl border border-amber-100 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 items-start gap-2">
-                  <Car size={16} className="shrink-0 text-slate-400" />
-                  <div className="min-w-0">
-                    <p className="break-words text-sm font-black text-slate-900">{vehiculo.placa}</p>
-                    <p className="break-words text-xs leading-relaxed text-slate-500">{vehiculo.modelo} · Sin mantenimiento registrado</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => abrirProgramacion(vehiculo)}
-                  className="min-h-10 w-full shrink-0 rounded-lg bg-amber-500 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white transition hover:bg-amber-600 sm:w-auto"
-                >
-                  Programar
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* TABLA (SOLO LECTURA) */}
       <div className="bg-white rounded-2xl md:rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden border-b-8 border-b-amber-500">
         {loading ? (
@@ -668,7 +608,7 @@ export default function AdminHistorialMantenimientoPage() {
               {grupoFlota === "activos" ? "Sin registros de mantenimiento" : grupoFlota === "inactivos" ? "Sin mantenimientos de vehículos inactivos" : "Sin registros sin vehículo asociado"}
             </p>
             <p className="text-xs text-slate-400 -mt-2">
-              {grupoFlota === "activos" ? "Los vehículos activos sin historial aparecen arriba para que puedas programar su mantenimiento." : grupoFlota === "inactivos" ? "El historial de vehículos inactivos se conserva aquí, separado de la operación actual." : "Los registros cuyo vehículo ya no existe en la flota se conservan para consulta."}
+              {grupoFlota === "activos" ? "Los registros de mantenimiento de los vehículos activos aparecerán aquí." : grupoFlota === "inactivos" ? "El historial de vehículos inactivos se conserva aquí, separado de la operación actual." : "Los registros cuyo vehículo ya no existe en la flota se conservan para consulta."}
             </p>
           </div>
         ) : (
@@ -781,7 +721,7 @@ export default function AdminHistorialMantenimientoPage() {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 sm:p-7 border-b-8 border-amber-500">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-lg font-black uppercase italic tracking-tight">
-                {mantAccion.modo === "completar" ? "Marcar como hecho" : mantAccion.modo === "programar" ? "Programar mantenimiento" : "Reprogramar"}
+                {mantAccion.modo === "completar" ? "Marcar como hecho" : "Reprogramar"}
               </h3>
               <button onClick={() => setMantAccion(null)} className="p-2 hover:bg-slate-100 rounded-xl"><X size={18} /></button>
             </div>
@@ -789,9 +729,7 @@ export default function AdminHistorialMantenimientoPage() {
               Vehículo <b>{mantAccion.placa}</b>.{" "}
               {mantAccion.modo === "completar"
                 ? "Se registrará como realizado y se quitará el aviso. Si quieres, programa el próximo abajo (opcional)."
-                : mantAccion.modo === "programar"
-                  ? "Indica una fecha y/o kilometraje. Esto programará el próximo mantenimiento sin crear un registro de trabajo realizado."
-                  : "Indica la nueva fecha y/o kilometraje del próximo mantenimiento."}
+                : "Indica la nueva fecha y/o kilometraje del próximo mantenimiento."}
             </p>
             <div className="space-y-3">
               <div>
@@ -812,7 +750,7 @@ export default function AdminHistorialMantenimientoPage() {
               <button onClick={() => setMantAccion(null)} className="flex-1 py-3 rounded-xl border-2 border-slate-200 text-slate-500 font-black text-xs uppercase">Cancelar</button>
               <button onClick={ejecutarAccion} disabled={mantSaving} className="flex-1 py-3 rounded-xl bg-amber-500 text-white font-black text-xs uppercase hover:bg-amber-600 disabled:opacity-60 flex items-center justify-center gap-2">
                 {mantSaving ? <Loader2 size={14} className="animate-spin" /> : (mantAccion.modo === "completar" ? <CheckCircle2 size={14} /> : <Clock size={14} />)}
-                {mantAccion.modo === "completar" ? "Confirmar" : mantAccion.modo === "programar" ? "Programar" : "Reprogramar"}
+                {mantAccion.modo === "completar" ? "Confirmar" : "Reprogramar"}
               </button>
             </div>
           </div>
