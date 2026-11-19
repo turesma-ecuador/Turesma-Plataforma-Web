@@ -143,7 +143,7 @@ export default function ClienteRequerimientoPersonalizadoPage() {
       if (handleUnauthorized(response.status)) return;
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "No se pudo enviar el requerimiento");
-      setMessage(`Requerimiento #${data.id} enviado a cotizaciones. Administración revisará los detalles y te enviará un precio.`);
+      setMessage("Solicitud enviada. Administración revisará los detalles y te enviará una propuesta desde esta página.");
       setOrganizacion(""); setDetalles(""); setGroups([emptyGroup()]); await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "No se pudo enviar el requerimiento");

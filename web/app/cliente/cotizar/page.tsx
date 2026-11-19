@@ -497,7 +497,7 @@ export default function ClienteCotizarPage() {
         window.location.assign(data.approval_url);
         return;
       }
-      setFormMsg("Solicitud de cotización enviada. Administración revisará tu destino y datos, definirá el precio y te avisará cuando puedas aceptarlo y pagar el anticipo desde Historial.");
+      setFormMsg("Solicitud enviada.");
       setForm({ fecha_servicio: "", fecha_fin: "", fecha_regreso: "", hora_regreso: "", hora_llegada_estimada: "", num_personas: "1", num_viajes: "1", tipo_vehiculo: categorias[0]?.tipo || "van", hora_salida: "", notas: "", modalidad_servicio: "dia", duracion_horas: "2" });
       setWizardStep(1);
       setVariosDias(false);
@@ -1156,7 +1156,7 @@ export default function ClienteCotizarPage() {
             {formMsg && (
               <div role="status" aria-live="polite" className="space-y-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
                 <p className="flex items-start gap-2 font-bold"><CheckCircle2 size={16} className="mt-0.5 shrink-0" />{formMsg}</p>
-                <p className="pl-6 text-xs leading-relaxed">Podrás seguir el estado y aceptar la cotización desde tu historial. No necesitas elegir una unidad ahora; se asignará después de confirmar el pago.</p>
+                <p className="pl-6 text-xs leading-relaxed">Administración revisará tu destino y datos, definirá el precio y te avisará cuando esté listo. Podrás aceptar la cotización y pagar el anticipo desde tu historial. Esta solicitud no confirma una reserva ni asigna un vehículo; la unidad se asignará después de confirmar el pago.</p>
                 <a href="/cliente/historial" className="ml-6 inline-flex font-black text-emerald-800 underline underline-offset-2 hover:text-emerald-950">Ir a mi historial</a>
               </div>
             )}
