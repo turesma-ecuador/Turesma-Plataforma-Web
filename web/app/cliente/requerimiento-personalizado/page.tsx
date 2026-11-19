@@ -40,6 +40,9 @@ export default function ClienteRequerimientoPersonalizadoPage() {
   const [detalles, setDetalles] = useState("");
   const [groups, setGroups] = useState<Group[]>([emptyGroup()]);
   const [requests, setRequests] = useState<Request[]>([]);
+  const [vehicleTypes, setVehicleTypes] = useState<string[]>([]);
+  const [vehicleTypesLoading, setVehicleTypesLoading] = useState(true);
+  const [vehicleTypesError, setVehicleTypesError] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
@@ -59,6 +62,30 @@ export default function ClienteRequerimientoPersonalizadoPage() {
     } finally { setLoading(false); }
   };
   useEffect(() => { if (!checkingSession) void load(); }, [checkingSession, user?.id]);
+
+  useEffect(() => {
+    let active = true;
+    const loadVehicleTypes = async () => {
+      try {
+        const response = await fetch(`${API}/api/usuarios/vehiculos`);
+        if (!response.ok) throw new Error("No se pudieron cargar las categorías de vehículos");
+        const data: unknown = await response.json();
+        if (!Array.isArray(data)) throw new Error("La respuesta de categorías de vehículos no es válida");
+        const types = Array.from(new Set(data.flatMap((vehicle: unknown) => {
+          if (typeof vehicle !== "object" || vehicle === null || !("tipo" in vehicle)) return [];
+          const type = String(vehicle.tipo || "").trim().toLowerCase();
+          return type ? [type] : [];
+        })));
+        if (active) setVehicleTypes(types);
+      } catch (reason) {
+        if (active) setVehicleTypesError(reason instanceof Error ? reason.message : "No se pudieron cargar las categorías de vehículos");
+      } finally {
+        if (active) setVehicleTypesLoading(false);
+      }
+    };
+    void loadVehicleTypes();
+    return () => { active = false; };
+  }, []);
 
   const updateGroup = (index: number, patch: Partial<Group>) =>
     setGroups(current => current.map((group, i) => i === index ? { ...group, ...patch } : group));
@@ -137,13 +164,14 @@ export default function ClienteRequerimientoPersonalizadoPage() {
       <form onSubmit={submit} className="space-y-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-xl sm:p-7">
         <div><label className="mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-500">Empresa u organización (opcional)</label>
           <input value={organizacion} maxLength={200} onChange={e => setOrganizacion(e.target.value)} className={INPUT} placeholder="Nombre de la empresa" /></div>
+        {vehicleTypesError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{vehicleTypesError}</p>}
         {groups.map((group, index) => <section key={index} className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between"><h2 className="text-xs font-black uppercase tracking-widest text-slate-700">Grupo {index + 1}</h2>
             {groups.length > 1 && <button type="button" onClick={() => setGroups(current => current.filter((_, i) => i !== index))} className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-red-600"><Trash2 size={13} /> Quitar</button>}</div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {([
               ["cantidad_vehiculos", "Cantidad de vehículos *", "number", "1"],
-              ["tipo_vehiculo", "Tipo de vehículo", "text", "Ej: bus, SUV"],
+              ["tipo_vehiculo", "Tipo de vehículo", "select", ""],
               ["pasajeros_por_vehiculo", "Pasajeros por vehículo", "number", "Ej: 40"],
               ["fecha_servicio", "Fecha de inicio", "date", ""],
               ["fecha_fin", "Fecha final", "date", ""],
@@ -152,10 +180,20 @@ export default function ClienteRequerimientoPersonalizadoPage() {
               ["destino", "Destino o destinos", "text", "Incluye todos los destinos"],
               ["paradas", "Paradas", "text", "Opcional"],
             ] as const).map(([field, label, type, placeholder]) => <div key={field} className="space-y-1.5 sm:col-span-1">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</label>
-              <input type={type} value={group[field]} placeholder={placeholder} min={type === "number" ? 1 : undefined}
-                required={["cantidad_vehiculos", "pasajeros_por_vehiculo", "fecha_servicio", "origen", "destino"].includes(field)}
-                onChange={e => updateGroup(index, { [field]: e.target.value })} className={INPUT} />
+              <label htmlFor={`custom-${field}-${index}`} className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</label>
+              {field === "tipo_vehiculo" ? (
+                <select id={`custom-${field}-${index}`} value={group.tipo_vehiculo}
+                  onChange={event => updateGroup(index, { tipo_vehiculo: event.target.value })} className={INPUT + " capitalize"}>
+                  <option value="">
+                    {vehicleTypesLoading ? "Cargando opciones..." : vehicleTypesError ? "Opciones no disponibles" : vehicleTypes.length ? "Selecciona una opción (opcional)" : "No hay categorías disponibles"}
+                  </option>
+                  {vehicleTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+              ) : (
+                <input id={`custom-${field}-${index}`} type={type} value={group[field]} placeholder={placeholder} min={type === "number" ? 1 : undefined}
+                  required={["cantidad_vehiculos", "pasajeros_por_vehiculo", "fecha_servicio", "origen", "destino"].includes(field)}
+                  onChange={e => updateGroup(index, { [field]: e.target.value })} className={INPUT} />
+              )}
             </div>)}
             <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 sm:col-span-2 lg:col-span-4"><input type="checkbox" checked={group.simultaneo} onChange={e => updateGroup(index, { simultaneo: e.target.checked })} className="accent-[#E31E24]" /> Los vehículos deben operar simultáneamente</label>
           </div>

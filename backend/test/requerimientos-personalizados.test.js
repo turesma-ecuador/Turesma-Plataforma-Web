@@ -275,7 +275,12 @@ test("acepta la propuesta de forma idempotente y crea una reserva maestra por el
   assert.equal(first.statusCode, 201);
   assert.equal(first.body.reserva_id, 900);
   assert.equal(savedRequest.estado, "pago_pendiente");
-  assert.equal(queries.some(item => item.query.startsWith("insert into reservas")), true);
+  const reservationInsert = queries.find(item => item.query.startsWith("insert into reservas"));
+  assert.ok(reservationInsert);
+  assert.match(reservationInsert.query, /fecha_servicio, fecha_salida\) values \(\$1, \$2, \$3, \$3, \$4, \$5, 'pendiente_pago', \$6, \$7, 'varios', \$8, 0, 'pendiente', \$9, \$10::timestamp\)/);
+  assert.equal(reservationInsert.params[1], "2026-11-10");
+  assert.equal(reservationInsert.params[8], "2026-11-10");
+  assert.equal(reservationInsert.params[9], "2026-11-10 08:30");
 
   const second = response();
   await aceptarPropuestaRequerimiento({ params: { id: "44" }, user: { id: 7 } }, second);

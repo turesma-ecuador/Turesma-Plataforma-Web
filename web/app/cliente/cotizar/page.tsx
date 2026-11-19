@@ -604,9 +604,12 @@ export default function ClienteCotizarPage() {
                       </div>
                       <div className="space-y-1.5">
                         <label htmlFor={`custom-type-${index}`} className="text-[10px] font-black uppercase tracking-widest text-slate-500">Tipo de vehículo</label>
-                        <input id={`custom-type-${index}`} maxLength={100} value={group.tipo_vehiculo}
+                        <select id={`custom-type-${index}`} value={group.tipo_vehiculo}
                           onChange={event => updateCustomServiceGroup(index, { tipo_vehiculo: event.target.value })}
-                          className={INPUT} placeholder="Ej: SUV, bus" />
+                          className={INPUT + " capitalize"}>
+                          <option value="">Selecciona una opción (opcional)</option>
+                          {categorias.map(({ tipo }) => <option key={tipo} value={tipo}>{tipo}</option>)}
+                        </select>
                       </div>
                       <div className="space-y-1.5">
                         <label htmlFor={`custom-passengers-${index}`} className="text-[10px] font-black uppercase tracking-widest text-slate-500">Pasajeros por vehículo</label>

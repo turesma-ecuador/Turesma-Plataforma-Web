@@ -408,7 +408,7 @@ const aceptarPropuestaRequerimiento = async (req: any, res: any) => {
       `INSERT INTO reservas
          (usuario_id, fecha_reserva, fecha_fin, fecha_regreso, num_personas, total, estado,
           origen, destino, tipo_vehiculo, notas, monto_pagado, estado_pago, fecha_servicio, fecha_salida)
-       VALUES ($1, $2, $3, $3, $4, $5, 'pendiente_pago', $6, $7, 'Varios', $8, 0, 'pendiente', $2, $9::timestamp)
+       VALUES ($1, $2, $3, $3, $4, $5, 'pendiente_pago', $6, $7, 'Varios', $8, 0, 'pendiente', $9, $10::timestamp)
        RETURNING id`,
       [
         usuarioId,
@@ -419,6 +419,7 @@ const aceptarPropuestaRequerimiento = async (req: any, res: any) => {
         "Ver grupos de servicio",
         "Ver grupos de servicio",
         notas,
+        fechaServicio,
         salida,
       ]
     );

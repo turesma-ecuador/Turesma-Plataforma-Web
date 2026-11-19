@@ -899,9 +899,10 @@ function AdminCotizacionesContent() {
                       Enviar respuesta
                     </button>
                     <button type="button" onClick={() => void saveCustomRequest(request, "send_proposal")} disabled={savingCustomId === request.id || Boolean(request.reserva_id)}
+                      title="Enviar al cliente el precio y la proforma"
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#E31E24] px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-red-700 disabled:opacity-60">
                       {savingCustomId === request.id ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                      Enviar propuesta y proforma
+                      Enviar
                     </button>
                     <button type="button" onClick={() => void saveCustomRequest(request, "update_status")}
                       disabled={savingCustomId === request.id || Boolean(request.reserva_id) || (customStatuses[request.id] || request.estado) === request.estado}
@@ -909,6 +910,7 @@ function AdminCotizacionesContent() {
                       Guardar estado
                     </button>
                   </div>
+                  <p className="text-xs text-slate-500">El botón «Enviar» entrega al cliente el precio y la proforma.</p>
                   {["propuesta_enviada", "pago_pendiente", "pagado"].includes(request.estado) && <button type="button" onClick={() => void downloadCustomProforma(request)} disabled={savingCustomId === request.id}
                     className="ml-2 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-700 disabled:opacity-60">
                     <Download size={14} /> Descargar proforma
