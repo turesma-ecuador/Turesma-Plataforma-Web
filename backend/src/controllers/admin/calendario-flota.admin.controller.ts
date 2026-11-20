@@ -38,8 +38,11 @@ const getCalendarioFlota = async (req: any, res: any) => {
                   ELSE o.tipo_servicio
                 END AS tipo_servicio,
                 o.hora_inicio::text AS hora_inicio, o.hora_fin::text AS hora_fin,
-                o.origen, o.destino, o.reserva_id
+                o.origen, o.destino, o.reserva_id,
+                concat_ws(' ', conductor.nombre, conductor.apellido) AS conductor_nombre
          FROM operaciones o
+         LEFT JOIN conductores c ON c.id = o.conductor_id
+         LEFT JOIN usuarios conductor ON conductor.id = c.usuario_id
          WHERE o.fecha_programada <= $2::date
            AND COALESCE(o.fecha_fin_programada, o.fecha_programada) >= $1::date
            AND o.estado <> 'cancelada'
@@ -54,8 +57,10 @@ const getCalendarioFlota = async (req: any, res: any) => {
                 r.estado, r.tipo_vehiculo AS tipo_servicio,
                 r.fecha_salida::time::text AS hora_inicio,
                 r.fecha_llegada::time::text AS hora_fin,
-                r.origen, r.destino, r.id AS reserva_id
+                r.origen, r.destino, r.id AS reserva_id,
+                concat_ws(' ', conductor.nombre, conductor.apellido) AS conductor_nombre
          FROM reservas r
+         LEFT JOIN usuarios conductor ON conductor.id = r.conductor_id
          WHERE r.vehiculo_id IS NOT NULL
            AND r.estado NOT IN ('cancelada', 'finalizada')
            AND COALESCE(r.fecha_salida::date, r.fecha_servicio::date, r.fecha_reserva) <= $2::date
@@ -71,8 +76,10 @@ const getCalendarioFlota = async (req: any, res: any) => {
                 r.estado, 'Regreso de reserva' AS tipo_servicio,
                 r.hora_regreso::time::text AS hora_inicio,
                 r.hora_regreso::time::text AS hora_fin,
-                r.destino AS origen, r.origen AS destino, r.id AS reserva_id
+                r.destino AS origen, r.origen AS destino, r.id AS reserva_id,
+                concat_ws(' ', conductor.nombre, conductor.apellido) AS conductor_nombre
          FROM reservas r
+         LEFT JOIN usuarios conductor ON conductor.id = r.conductor_id
          WHERE r.fecha_regreso BETWEEN $1::date AND $2::date
            AND r.vehiculo_id IS NOT NULL
            AND r.estado NOT IN ('cancelada', 'finalizada')

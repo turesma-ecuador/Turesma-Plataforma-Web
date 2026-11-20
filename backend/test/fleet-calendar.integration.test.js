@@ -12,7 +12,7 @@ const queryResults = [
     rows: [{ id: 21, placa: "TEST-021", tipo: "van", modelo: "Van de prueba", estado: "disponible" }],
   },
   {
-    match: "from operaciones o where o.fecha_programada",
+    match: "from operaciones o left join conductores c",
     rows: [{
       id: 31,
       vehiculo_id: 21,
@@ -22,6 +22,7 @@ const queryResults = [
       tipo_servicio: "viaje",
       origen: "Manta",
       destino: "Quito",
+      conductor_nombre: "Chofer asignado",
     }],
   },
   {
@@ -51,7 +52,7 @@ const queryResults = [
     }],
   },
   {
-    match: "from reservas r where r.vehiculo_id",
+    match: "from reservas r left join usuarios conductor on conductor.id = r.conductor_id where r.vehiculo_id",
     rows: [{
       id: 41,
       vehiculo_id: 21,
@@ -160,6 +161,7 @@ test("el calendario de flota solo permite acceso administrativo y devuelve ocupa
     assert.equal(response.status, 200);
     assert.equal(response.body.vehicles[0].placa, "TEST-021");
     assert.deepEqual(response.body.events.map((event) => event.tipo), ["operacion", "reserva", "mantenimiento", "mantenimiento", "externo"]);
+    assert.equal(response.body.events[0].conductor_nombre, "Chofer asignado");
     assert.equal(response.body.events[3].descripcion, "Cambio preventivo");
     assert.equal(response.body.unassignedReservations[0].id, 61);
   });

@@ -72,6 +72,12 @@ type CalendarEventLayout = FleetEvent & {
   visibleEnd: string;
 };
 
+type FleetConflict = {
+  vehicle: FleetVehicle;
+  first: FleetEvent;
+  second: FleetEvent;
+};
+
 const asIsoDate = (date: Date) => [
   date.getFullYear(),
   String(date.getMonth() + 1).padStart(2, "0"),
@@ -134,6 +140,29 @@ const eventStatusLabel = (event: FleetEvent) => {
   };
   return labels[event.estado] || "Viaje registrado";
 };
+
+const eventKey = (event: FleetEvent) => `event:${event.tipo}:${event.id}`;
+
+const eventTimeRange = (event: FleetEvent) => {
+  const start = fromIsoDate(event.fecha_inicio);
+  const [startHour = "00", startMinute = "00"] = event.hora_inicio?.slice(0, 5).split(":") || [];
+  start.setHours(Number(startHour), Number(startMinute), 0, 0);
+
+  const end = fromIsoDate(event.fecha_fin);
+  if (event.hora_fin) {
+    const [endHour, endMinute] = event.hora_fin.slice(0, 5).split(":");
+    end.setHours(Number(endHour), Number(endMinute), 0, 0);
+    if (event.fecha_fin === event.fecha_inicio && end <= start) end.setDate(end.getDate() + 1);
+  } else {
+    end.setDate(end.getDate() + 1);
+  }
+  return { start: start.getTime(), end: end.getTime() };
+};
+
+const sameReservation = (first: FleetEvent, second: FleetEvent) =>
+  first.tipo === "reserva"
+  && second.tipo === "reserva"
+  && String(first.id).replace(/-regreso$/, "") === String(second.id).replace(/-regreso$/, "");
 
 export default function CalendarioFlotaPage() {
   const { checkingSession, user } = useAdminGuard();
@@ -245,19 +274,51 @@ export default function CalendarioFlotaPage() {
     () => filteredEvents.filter((event) => event.fecha_inicio <= selectedDate && event.fecha_fin >= selectedDate),
     [filteredEvents, selectedDate]
   );
-  const selectedVehicleIds = useMemo(
-    () => new Set(selectedEvents.map((event) => event.vehiculo_id)),
-    [selectedEvents]
+  const selectedDayEvents = useMemo(
+    () => events.filter((event) => event.fecha_inicio <= selectedDate
+      && event.fecha_fin >= selectedDate
+      && filteredVehicleIds.has(event.vehiculo_id)),
+    [events, filteredVehicleIds, selectedDate]
   );
-  const outOfServiceCount = filteredVehicles.filter((vehicle) => ["mantenimiento", "inactivo"].includes(vehicle.estado.toLowerCase())).length;
-  const occupiedCount = filteredVehicles.filter((vehicle) => selectedVehicleIds.has(vehicle.id)).length;
-  const unavailableIds = new Set([
-    ...selectedVehicleIds,
+  const outOfServiceIds = new Set([
     ...filteredVehicles
       .filter((vehicle) => ["mantenimiento", "inactivo"].includes(vehicle.estado.toLowerCase()))
       .map((vehicle) => vehicle.id),
+    ...selectedDayEvents
+      .filter((event) => event.tipo === "mantenimiento" || event.tipo_servicio === "fuera_de_servicio")
+      .map((event) => event.vehiculo_id),
   ]);
-  const availableCount = Math.max(0, filteredVehicles.length - unavailableIds.size);
+  const busyVehicleIds = new Set(
+    selectedDayEvents
+      .filter((event) => event.tipo !== "mantenimiento" && event.tipo_servicio !== "fuera_de_servicio")
+      .map((event) => event.vehiculo_id)
+      .filter((vehicleId) => !outOfServiceIds.has(vehicleId))
+  );
+  const outOfServiceCount = outOfServiceIds.size;
+  const occupiedCount = busyVehicleIds.size;
+  const availableCount = Math.max(0, filteredVehicles.length - outOfServiceCount - occupiedCount);
+  const conflicts = useMemo(() => {
+    const conflictsForDay: FleetConflict[] = [];
+    const activeEvents = selectedDayEvents.filter((event) => !["completada", "finalizada"].includes(event.estado.toLowerCase()));
+    for (let firstIndex = 0; firstIndex < activeEvents.length; firstIndex += 1) {
+      const first = activeEvents[firstIndex];
+      for (let secondIndex = firstIndex + 1; secondIndex < activeEvents.length; secondIndex += 1) {
+        const second = activeEvents[secondIndex];
+        if (first.vehiculo_id !== second.vehiculo_id || sameReservation(first, second)) continue;
+        const firstRange = eventTimeRange(first);
+        const secondRange = eventTimeRange(second);
+        if (firstRange.start < secondRange.end && secondRange.start < firstRange.end) {
+          const vehicle = filteredVehicles.find((entry) => entry.id === first.vehiculo_id);
+          if (vehicle) conflictsForDay.push({ vehicle, first, second });
+        }
+      }
+    }
+    return conflictsForDay;
+  }, [filteredVehicles, selectedDayEvents]);
+  const conflictEventKeys = useMemo(
+    () => new Set(conflicts.flatMap(({ first, second }) => [eventKey(first), eventKey(second)])),
+    [conflicts]
+  );
   const selectedReservations = unassigned.filter((reservation) => {
     const start = (reservation.fecha_salida || reservation.fecha_servicio || reservation.fecha_reserva).slice(0, 10);
     const end = (reservation.fecha_llegada || reservation.fecha_fin || reservation.fecha_reserva).slice(0, 10);
@@ -356,12 +417,13 @@ export default function CalendarioFlotaPage() {
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-5">
         {[
           { label: `Disponibles · ${formatDate(selectedDate)}`, value: availableCount, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Vehículos ocupados", value: occupiedCount, icon: Bus, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "Con servicio asignado", value: occupiedCount, icon: Bus, color: "text-blue-600", bg: "bg-blue-50" },
           { label: "Fuera de servicio", value: outOfServiceCount, icon: Wrench, color: "text-amber-600", bg: "bg-amber-50" },
           { label: "Reservas sin vehículo", value: selectedReservations.length, icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50" },
+          { label: "Posibles cruces", value: conflicts.length, icon: AlertTriangle, color: conflicts.length ? "text-red-600" : "text-slate-400", bg: conflicts.length ? "bg-red-50" : "bg-slate-50" },
         ].map((item) => (
           <article key={item.label} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${item.bg} ${item.color}`}><item.icon size={20} /></span>
@@ -429,11 +491,48 @@ export default function CalendarioFlotaPage() {
               <option value="externo">Viaje externo</option>
               <option value="reserva">Reserva</option>
             </select>
+            {(typeFilter !== "todos" || vehicleFilter !== "todos" || statusFilter !== "todos") && (
+              <button
+                type="button"
+                onClick={() => { setTypeFilter("todos"); setVehicleFilter("todos"); setStatusFilter("todos"); setSelectedItemKey(null); }}
+                className="rounded-xl px-3 py-2 text-xs font-bold text-[#E31E24] hover:bg-red-50"
+              >
+                Limpiar filtros
+              </button>
+            )}
             <button type="button" onClick={() => void load()} disabled={loading} aria-label="Actualizar calendario" className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
             </button>
           </div>
         </div>
+
+        {conflicts.length > 0 && (
+          <div className="border-b border-red-100 bg-red-50/70 p-3 sm:p-4" role="status" aria-live="polite">
+            <div className="mb-2 flex items-start gap-2 text-red-800">
+              <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-black">{conflicts.length} posible{conflicts.length === 1 ? "" : "s"} cruce de horario el {formatDate(selectedDate)}</p>
+                <p className="text-xs text-red-700">Revisa que los servicios de cada vehículo no se superpongan. Si falta una hora, se considera ocupado todo el día.</p>
+              </div>
+            </div>
+            <ul className="grid gap-2 md:grid-cols-2">
+              {conflicts.map(({ vehicle, first, second }) => (
+                <li key={`${eventKey(first)}:${eventKey(second)}`}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedItemKey(eventKey(first))}
+                    className="w-full rounded-xl border border-red-200 bg-white p-3 text-left text-xs text-slate-700 transition hover:border-red-400 hover:bg-red-50"
+                  >
+                    <span className="block font-black text-red-800">{vehicle.placa} · {eventName(first)} y {eventName(second)}</span>
+                    <span className="mt-1 block">{eventSummary(first)}</span>
+                    <span className="block">{eventSummary(second)}</span>
+                    <span className="mt-1 block font-bold text-red-700">{eventStatusLabel(first)} · {eventStatusLabel(second)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="hidden lg:block">
           <div className="sticky top-0 z-30 bg-white">
@@ -524,17 +623,20 @@ export default function CalendarioFlotaPage() {
                                   setSelectedItemKey(itemKey);
                                 }}
                                 aria-pressed={selectedItemKey === itemKey}
-                                aria-label={`${vehicle.placa}, ${formatDate(event.visibleStart)}${event.visibleEnd !== event.visibleStart ? ` al ${formatDate(event.visibleEnd)}` : ""}, ${eventSummary(event)}, ${eventStatusLabel(event)}`}
+                                aria-label={`${vehicle.placa}, ${formatDate(event.visibleStart)}${event.visibleEnd !== event.visibleStart ? ` al ${formatDate(event.visibleEnd)}` : ""}, ${eventSummary(event)}, ${eventStatusLabel(event)}${conflictEventKeys.has(itemKey) ? ", posible cruce de horario" : ""}`}
                                 title={`${eventStatusLabel(event)} · ${formatDate(event.visibleStart)}${event.visibleEnd !== event.visibleStart ? ` al ${formatDate(event.visibleEnd)}` : ""} · ${eventSummary(event)}`}
                                 style={{
                                   gridColumn: `${event.gridStart + 1} / ${event.gridEnd + 2}`,
                                   gridRow: event.lane + 2,
                                 }}
-                                className={`z-[1] flex min-w-0 flex-col justify-center overflow-hidden rounded-lg border px-2 text-left transition hover:brightness-95 ${viewMode === "week" ? "gap-0.5 py-1 text-[10px]" : "truncate text-[9px]"} ${eventStyle(event)} ${selectedItemKey === itemKey ? "ring-2 ring-[#E31E24] ring-offset-1" : ""}`}
+                                className={`z-[1] flex min-w-0 flex-col justify-center overflow-hidden rounded-lg border px-2 text-left transition hover:brightness-95 ${viewMode === "week" ? "gap-0.5 py-1 text-[10px]" : "truncate text-[9px]"} ${eventStyle(event)} ${conflictEventKeys.has(itemKey) ? "ring-2 ring-red-500 ring-offset-1" : ""} ${selectedItemKey === itemKey ? "ring-2 ring-[#E31E24] ring-offset-1" : ""}`}
                               >
                                 <span className="flex min-w-0 items-center justify-between gap-1">
                                   <span className="truncate font-black">{event.tipo === "mantenimiento" ? "Mantenimiento" : eventName(event)}</span>
-                                  {event.hora_inicio && <span className="shrink-0 font-bold opacity-80">{event.hora_inicio.slice(0, 5)}</span>}
+                                  <span className="flex shrink-0 items-center gap-1">
+                                    {conflictEventKeys.has(itemKey) && <AlertTriangle size={11} aria-hidden="true" />}
+                                    {event.hora_inicio && <span className="font-bold opacity-80">{event.hora_inicio.slice(0, 5)}</span>}
+                                  </span>
                                 </span>
                                 {viewMode === "week" && (
                                   <span className="block truncate text-[9px] font-semibold opacity-80">
@@ -596,7 +698,10 @@ export default function CalendarioFlotaPage() {
                       >
                         <span className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs font-black">{vehicle ? `${vehicle.placa} · ${vehicle.modelo}` : eventName(event)}</span>
-                          <span className="text-[9px] font-bold">{eventStatusLabel(event)}</span>
+                          <span className="flex items-center gap-1 text-[9px] font-bold">
+                            {conflictEventKeys.has(itemKey) && <><AlertTriangle size={12} /> Posible cruce ·</>}
+                            {eventStatusLabel(event)}
+                          </span>
                         </span>
                         <span className="mt-1 block text-[11px] font-semibold">{eventSummary(event)}</span>
                       </button>
@@ -720,6 +825,14 @@ export default function CalendarioFlotaPage() {
               </span>
             </div>
             <p className="mt-3 text-xs font-semibold">{eventSummary(selectedEvent)}</p>
+            {conflictEventKeys.has(eventKey(selectedEvent)) && (
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-red-100 px-2.5 py-1.5 text-xs font-black text-red-800">
+                <AlertTriangle size={14} /> Este servicio coincide en horario con otro del mismo vehículo.
+              </p>
+            )}
+            {(selectedEvent.tipo === "operacion" || selectedEvent.tipo === "reserva" || selectedEvent.tipo === "externo") && (
+              <p className="mt-1 text-xs"><span className="font-bold">Conductor:</span> {selectedEvent.conductor_nombre || "Pendiente de asignación"}</p>
+            )}
             {selectedEvent.tipo === "mantenimiento" && selectedEvent.descripcion && <p className="mt-1 text-xs">{selectedEvent.descripcion}</p>}
             {selectedEvent.tipo === "externo" && (selectedEvent.cliente_empresa || selectedEvent.notas) && (
               <p className="mt-1 text-xs">{[selectedEvent.cliente_empresa, selectedEvent.notas].filter(Boolean).join(" · ")}</p>
