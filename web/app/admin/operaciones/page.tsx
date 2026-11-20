@@ -85,6 +85,7 @@ type GroupAssignmentItem = {
   operation: Operation;
   vehicleId: string;
   driverId: string;
+  showAlternativeVehicles: boolean;
   confirmVehicleSubstitution: boolean;
   error?: string;
 };
@@ -442,6 +443,7 @@ export default function OperacionesPage() {
   });
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [selectedDriverId, setSelectedDriverId] = useState("");
+  const [showAlternativeVehicles, setShowAlternativeVehicles] = useState(false);
   const [confirmVehicleSubstitution, setConfirmVehicleSubstitution] = useState(false);
   const [form, setForm] = useState({
     tipo_servicio: "viaje",
@@ -533,9 +535,15 @@ export default function OperacionesPage() {
   }
   const selectedAvailableVehicle = vehicles.find((vehicle) => String(vehicle.id) === selectedVehicleId);
   const requestedVehicleType = assignment?.tipo_vehiculo_solicitado?.trim() || "";
+  const matchingRequestedVehicles = requestedVehicleType
+    ? vehicles.filter((vehicle) => normalizeVehicleType(vehicle.tipo) === normalizeVehicleType(requestedVehicleType))
+    : vehicles;
+  const visibleAssignmentVehicles = showAlternativeVehicles || !requestedVehicleType
+    ? vehicles
+    : matchingRequestedVehicles;
   const hasRequestedVehicleTypeAvailable = Boolean(
     requestedVehicleType
-    && vehicles.some((vehicle) => normalizeVehicleType(vehicle.tipo) === normalizeVehicleType(requestedVehicleType))
+    && matchingRequestedVehicles.length
   );
   const selectedVehicleIsSubstitution = Boolean(
     requestedVehicleType && selectedAvailableVehicle
@@ -796,10 +804,18 @@ export default function OperacionesPage() {
     setAssignmentError("");
     setSelectedVehicleId("");
     setSelectedDriverId("");
+    setShowAlternativeVehicles(false);
     setConfirmVehicleSubstitution(false);
     setError("");
     try {
       const resources = await loadAvailableAssignmentResources(operation);
+      const currentVehicle = resources.availableVehicles.find((vehicle) => vehicle.id === operation.vehiculo_id);
+      const requestedType = resources.requestedType || operation.tipo_vehiculo_solicitado || "";
+      setShowAlternativeVehicles(Boolean(
+        currentVehicle
+        && requestedType
+        && normalizeVehicleType(currentVehicle.tipo) !== normalizeVehicleType(requestedType)
+      ));
       if (resources.requestedType && !operation.tipo_vehiculo_solicitado) {
         setAssignment({ ...operation, tipo_vehiculo_solicitado: resources.requestedType });
       }
@@ -845,6 +861,7 @@ export default function OperacionesPage() {
         operation,
         vehicleId: "",
         driverId: "",
+        showAlternativeVehicles: false,
         confirmVehicleSubstitution: false,
       })),
       requestedVehicleType: "",
@@ -1309,14 +1326,15 @@ export default function OperacionesPage() {
             )}
 
             <div className="space-y-4">
-              <label className="block text-sm font-bold text-slate-700">
-                <span className="mb-1.5 flex items-center justify-between gap-3">
+              <div className="block text-sm font-bold text-slate-700">
+                <label htmlFor="assignment-vehicle-select" className="mb-1.5 flex items-center justify-between gap-3">
                   <span>Vehículo</span>
                   <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">
-                    {assignmentResourcesLoading ? "Buscando..." : assignmentResourcesError ? "No consultado" : `${vehicles.length} disponible${vehicles.length === 1 ? "" : "s"}`}
+                    {assignmentResourcesLoading ? "Buscando..." : assignmentResourcesError ? "No consultado" : `${visibleAssignmentVehicles.length} disponible${visibleAssignmentVehicles.length === 1 ? "" : "s"}`}
                   </span>
-                </span>
+                </label>
                 <select
+                  id="assignment-vehicle-select"
                   name="vehiculo_id"
                   value={selectedVehicleId}
                   onChange={(event) => {
@@ -1332,9 +1350,13 @@ export default function OperacionesPage() {
                       ? "Buscando vehículos..."
                       : assignmentResourcesError
                         ? "Disponibilidad no consultada"
-                        : vehicles.length ? "Selecciona un vehículo" : "Sin vehículos disponibles"}
+                        : visibleAssignmentVehicles.length
+                          ? "Selecciona un vehículo"
+                          : requestedVehicleType && !showAlternativeVehicles
+                            ? `Sin ${requestedVehicleType} disponibles`
+                            : "Sin vehículos disponibles"}
                   </option>
-                  {vehicles.map((vehicle) => {
+                  {visibleAssignmentVehicles.map((vehicle) => {
                     const isAlternative = requestedVehicleType
                       && normalizeVehicleType(vehicle.tipo) !== normalizeVehicleType(requestedVehicleType);
                     return (
@@ -1345,9 +1367,32 @@ export default function OperacionesPage() {
                     );
                   })}
                 </select>
-                {!assignmentResourcesLoading && !assignmentResourcesError && vehicles.length === 0 && (
+                {requestedVehicleType && vehicles.some((vehicle) =>
+                  normalizeVehicleType(vehicle.tipo) !== normalizeVehicleType(requestedVehicleType)
+                ) && (
+                  <label className="mt-2 flex items-start gap-2 text-xs font-semibold text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={showAlternativeVehicles}
+                      disabled={assignmentResourcesLoading || Boolean(assignmentResourcesError)}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setShowAlternativeVehicles(checked);
+                        if (!checked && selectedVehicleIsSubstitution) {
+                          setSelectedVehicleId("");
+                          setConfirmVehicleSubstitution(false);
+                        }
+                      }}
+                      className="mt-0.5 accent-[#E31E24]"
+                    />
+                    Mostrar otras categorías por excepción
+                  </label>
+                )}
+                {!assignmentResourcesLoading && !assignmentResourcesError && visibleAssignmentVehicles.length === 0 && (
                   <span className="mt-1.5 block text-xs font-medium text-slate-500">
-                    No se encontraron vehículos disponibles para este servicio.
+                    {requestedVehicleType && !showAlternativeVehicles
+                      ? "No se encontraron vehículos disponibles con esta categoría."
+                      : "No se encontraron vehículos disponibles para este servicio."}
                   </span>
                 )}
                 {!assignmentResourcesLoading && !assignmentResourcesError && vehicles.length > 0
@@ -1373,7 +1418,7 @@ export default function OperacionesPage() {
                     </label>
                   </div>
                 )}
-              </label>
+              </div>
 
               <label className="block text-sm font-bold text-slate-700">
                 <span className="mb-1.5 flex items-center justify-between gap-3">
@@ -1502,7 +1547,7 @@ export default function OperacionesPage() {
                   requestedType && selectedVehicle
                   && normalizeVehicleType(selectedVehicle.tipo) !== normalizeVehicleType(requestedType)
                 );
-                const availableVehicles = groupAssignmentVehicles.filter((vehicle) => {
+                const selectableVehicles = groupAssignmentVehicles.filter((vehicle) => {
                   const id = String(vehicle.id);
                   const selectedByOtherUnit = groupAssignment.items.some(
                     (other) => other.operation.id !== item.operation.id && other.vehicleId === id
@@ -1510,6 +1555,14 @@ export default function OperacionesPage() {
                   return !groupAssignment.unavailableVehicleIds.includes(id)
                     && (!selectedByOtherUnit || item.vehicleId === id);
                 });
+                const availableVehicles = item.showAlternativeVehicles || !requestedType
+                  ? selectableVehicles
+                  : selectableVehicles.filter((vehicle) =>
+                    normalizeVehicleType(vehicle.tipo) === normalizeVehicleType(requestedType)
+                  );
+                const hasAlternativeVehicles = Boolean(requestedType && selectableVehicles.some((vehicle) =>
+                  normalizeVehicleType(vehicle.tipo) !== normalizeVehicleType(requestedType)
+                ));
                 const availableDrivers = groupAssignmentDrivers.filter((driver) => {
                   const id = String(driver.id);
                   const selectedByOtherUnit = groupAssignment.items.some(
@@ -1540,9 +1593,10 @@ export default function OperacionesPage() {
                     {item.error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs font-semibold leading-relaxed text-red-700">{item.error}</p>}
 
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="block text-xs font-black text-slate-700">
-                        Vehículo
+                      <div className="block text-xs font-black text-slate-700">
+                        <label htmlFor={`group-vehicle-${item.operation.id}`}>Vehículo</label>
                         <select
+                          id={`group-vehicle-${item.operation.id}`}
                           value={item.vehicleId}
                           onChange={(event) => updateGroupAssignmentItem(item.operation.id, { vehicleId: event.target.value, confirmVehicleSubstitution: false })}
                           disabled={groupAssignmentResourcesLoading || Boolean(groupAssignmentResourcesError) || saving}
@@ -1550,7 +1604,13 @@ export default function OperacionesPage() {
                           className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-800 focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:bg-slate-100"
                         >
                           <option value="">
-                            {groupAssignmentResourcesLoading ? "Buscando vehículos..." : availableVehicles.length ? "Selecciona un vehículo" : "Sin vehículos disponibles"}
+                            {groupAssignmentResourcesLoading
+                              ? "Buscando vehículos..."
+                              : availableVehicles.length
+                                ? "Selecciona un vehículo"
+                                : requestedType && !item.showAlternativeVehicles
+                                  ? `Sin ${requestedType} disponibles`
+                                  : "Sin vehículos disponibles"}
                           </option>
                           {availableVehicles.map((vehicle) => {
                             const isAlternative = requestedType
@@ -1563,7 +1623,30 @@ export default function OperacionesPage() {
                             );
                           })}
                         </select>
-                      </label>
+                        {hasAlternativeVehicles && (
+                          <label className="mt-2 flex items-start gap-2 font-semibold text-slate-600">
+                            <input
+                              type="checkbox"
+                              checked={item.showAlternativeVehicles}
+                              onChange={(event) => updateGroupAssignmentItem(item.operation.id, {
+                                showAlternativeVehicles: event.target.checked,
+                                ...(!event.target.checked && isSubstitution
+                                  ? { vehicleId: "", confirmVehicleSubstitution: false }
+                                  : {}),
+                              })}
+                              className="mt-0.5 accent-[#E31E24]"
+                            />
+                            Mostrar otras categorías por excepción
+                          </label>
+                        )}
+                        {!groupAssignmentResourcesLoading && !groupAssignmentResourcesError && availableVehicles.length === 0 && (
+                          <span className="mt-1.5 block font-medium text-slate-500">
+                            {requestedType && !item.showAlternativeVehicles
+                              ? "No hay vehículos disponibles de esta categoría. Puedes habilitar otras categorías si necesitas una excepción."
+                              : "No se encontraron vehículos disponibles para esta unidad."}
+                          </span>
+                        )}
+                      </div>
                       <label className="block text-xs font-black text-slate-700">
                         Conductor
                         <select
