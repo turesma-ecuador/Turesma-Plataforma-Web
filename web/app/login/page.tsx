@@ -26,6 +26,7 @@ import {
   type SessionUser,
 } from "../../lib/session";
 import AuthCarousel from "../../components/auth-carousel";
+import { LanguageSwitcher, LocalizedContent } from "../../lib/i18n";
 
 function LoginPageContent() {
   const searchParams = useSearchParams();
@@ -206,14 +207,16 @@ function LoginPageContent() {
 
   if (checkingSession) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-white p-6">
-        <Loader2 size={28} className="animate-spin text-[#E31E24]" />
-        <p className="text-sm font-semibold text-slate-500">Comprobando tu sesión...</p>
-      </main>
+      <LocalizedContent>
+        <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-white p-6">
+          <Loader2 size={28} className="animate-spin text-[#E31E24]" />
+          <p className="text-sm font-semibold text-slate-500">Comprobando tu sesión...</p>
+        </main>
+      </LocalizedContent>
     );
   }
 
-  return (
+  const page = (
     <main className="flex min-h-screen bg-slate-50 font-sans">
       <AuthCarousel />
 
@@ -224,7 +227,10 @@ function LoginPageContent() {
               <ArrowLeft size={17} className="transition-transform group-hover:-translate-x-1" />
               Volver al inicio
             </Link>
-            <span className="hidden text-xs font-bold uppercase tracking-[0.16em] text-slate-400 sm:inline">Acceso seguro</span>
+            <div className="flex items-center gap-3">
+              <LanguageSwitcher compactOnMobile />
+              <span className="hidden text-xs font-bold uppercase tracking-[0.16em] text-slate-400 sm:inline">Acceso seguro</span>
+            </div>
           </div>
 
           <div className="rounded-[2rem] border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-200/60 sm:p-8">
@@ -398,6 +404,7 @@ function LoginPageContent() {
       </div>
     </main>
   );
+  return <LocalizedContent>{page}</LocalizedContent>;
 }
 
 export default function LoginPage() {

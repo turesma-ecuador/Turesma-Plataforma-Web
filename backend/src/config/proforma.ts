@@ -284,7 +284,9 @@ const generarProformaMultigrupoPDF = (d: any): Promise<Buffer> => new Promise((r
     doc.text(`PROFORMA. ${d.numero}`, 340, titleY, { width: right - 340, align: "right" });
     doc.moveDown(0.6);
     const tipoIdentificacion = d.cliente.tipo_identificacion || (String(d.cliente.cedula || "").length === 13 ? "ruc" : "cedula");
-    const etiquetaIdentificacion = tipoIdentificacion === "pasaporte" ? "PASAPORTE" : tipoIdentificacion === "ruc" ? "RUC" : "CÉDULA";
+    const etiquetaIdentificacion = tipoIdentificacion === "exterior"
+      ? "IDENTIFICACIÓN DEL EXTERIOR"
+      : tipoIdentificacion === "pasaporte" ? "PASAPORTE" : tipoIdentificacion === "ruc" ? "RUC" : "CÉDULA";
     doc.font("Helvetica").fontSize(10).text(`${etiquetaIdentificacion}:   ${d.cliente.cedula || "—"}`, left);
     doc.text(`FECHA:   ${fmtFecha(d.fecha)}`, left);
     doc.moveDown(0.8);
@@ -426,7 +428,9 @@ const generarProformaPDF = (d: any): Promise<Buffer> => new Promise((resolve, re
     doc.font("Helvetica-Bold").fontSize(11).text(`PROFORMA. ${d.numero}`, 360, y, { width: width - 320, align: "right" });
     doc.moveDown(0.6);
     const tipoIdentificacion = d.cliente.tipo_identificacion || (String(d.cliente.cedula || "").length === 13 ? "ruc" : "cedula");
-    const etiquetaIdentificacion = tipoIdentificacion === "pasaporte" ? "PASAPORTE" : tipoIdentificacion === "ruc" ? "RUC" : "CÉDULA";
+    const etiquetaIdentificacion = tipoIdentificacion === "exterior"
+      ? "IDENTIFICACIÓN DEL EXTERIOR"
+      : tipoIdentificacion === "pasaporte" ? "PASAPORTE" : tipoIdentificacion === "ruc" ? "RUC" : "CÉDULA";
     doc.font("Helvetica").fontSize(10);
     doc.text(`${etiquetaIdentificacion}:   ${d.cliente.cedula || "—"}`, left);
     doc.text(`FECHA:   ${fmtFecha(d.fecha)}`, left);

@@ -155,9 +155,11 @@ const generarOrdenCompraPDF = (data: any): Promise<Buffer> => new Promise((resol
 
     const tipoIdentificacion = data.cliente.tipo_identificacion
       || (String(data.cliente.identificacion || "").length === 13 ? "ruc" : "cedula");
-    const etiquetaIdentificacion = tipoIdentificacion === "pasaporte"
-      ? "Pasaporte"
-      : tipoIdentificacion === "ruc" ? "RUC" : "Cédula";
+    const etiquetaIdentificacion = tipoIdentificacion === "exterior"
+      ? "Identificación del exterior"
+      : tipoIdentificacion === "pasaporte"
+        ? "Pasaporte"
+        : tipoIdentificacion === "ruc" ? "RUC" : "Cédula";
 
     drawSectionTitle("DATOS DEL CLIENTE", 4);
     drawRows([

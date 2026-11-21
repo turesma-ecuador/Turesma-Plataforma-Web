@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { Bus } from "lucide-react";
+import { LocalizedContent } from "../lib/i18n";
 
 export default function AuthCarousel() {
-  return (
+  const page = (
     <aside className="relative hidden h-screen w-[42%] shrink-0 overflow-hidden bg-[#081126] lg:block">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,#263b60,#081126_70%)]" />
 
@@ -38,4 +39,5 @@ export default function AuthCarousel() {
       </div>
     </aside>
   );
+  return <LocalizedContent>{page}</LocalizedContent>;
 }

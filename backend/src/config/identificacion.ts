@@ -45,11 +45,12 @@ const isValidRuc = (value: string) => {
 const normalizeIdentification = (type: unknown, value: unknown) => {
   const normalizedType = typeof type === "string" ? type.trim().toLowerCase() : "";
   const rawValue = typeof value === "string" ? value.trim() : "";
-  const normalizedValue = normalizedType === "pasaporte"
+  const isAlphanumericIdentification = normalizedType === "pasaporte" || normalizedType === "exterior";
+  const normalizedValue = isAlphanumericIdentification
     ? rawValue.replace(/[\s-]/g, "").toUpperCase()
     : rawValue.replace(/\s/g, "");
 
-  if (!["cedula", "pasaporte", "ruc"].includes(normalizedType)) {
+  if (!["cedula", "pasaporte", "ruc", "exterior"].includes(normalizedType)) {
     return { type: null, value: null, error: "Selecciona un tipo de identificación válido" };
   }
   if (!normalizedValue) {
@@ -59,8 +60,11 @@ const normalizeIdentification = (type: unknown, value: unknown) => {
   if (normalizedType === "cedula" && !isValidCedula(normalizedValue)) {
     return { type: null, value: null, error: "La cédula ecuatoriana no es válida" };
   }
-  if (normalizedType === "pasaporte" && !/^[A-Z0-9]{5,20}$/.test(normalizedValue)) {
-    return { type: null, value: null, error: "El pasaporte debe tener entre 5 y 20 letras o números" };
+  if (isAlphanumericIdentification && !/^[A-Z0-9]{5,20}$/.test(normalizedValue)) {
+    const error = normalizedType === "exterior"
+      ? "La identificación del exterior debe tener entre 5 y 20 letras o números"
+      : "El pasaporte debe tener entre 5 y 20 letras o números";
+    return { type: null, value: null, error };
   }
   if (normalizedType === "ruc" && !isValidRuc(normalizedValue)) {
     return { type: null, value: null, error: "El RUC ecuatoriano no es válido" };

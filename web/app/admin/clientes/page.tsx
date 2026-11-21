@@ -27,7 +27,7 @@ type Cliente = {
   email: string;
   telefono: string | null;
   cedula?: string | null;
-  tipo_identificacion?: "cedula" | "pasaporte" | "ruc" | null;
+  tipo_identificacion?: "cedula" | "pasaporte" | "ruc" | "exterior" | null;
   imagen_url?: string | null;
   pending_email?: string | null;
   email_verified_at?: string | null;
@@ -490,14 +490,21 @@ export default function AdminClientesPage() {
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">Tipo de identificación</label>
                 <select className={INPUT} value={form.tipo_identificacion ?? "cedula"} onChange={(e) => setForm({ ...form, tipo_identificacion: e.target.value as NonNullable<Cliente["tipo_identificacion"]>, cedula: "" })}>
-                  <option value="cedula">Cédula ecuatoriana</option>
+                  <option value="cedula">Cédula</option>
+                  <option value="ruc">RUC</option>
                   <option value="pasaporte">Pasaporte</option>
-                  <option value="ruc">RUC ecuatoriano</option>
+                  <option value="exterior">Identificación del exterior</option>
                 </select>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">
-                  {form.tipo_identificacion === "cedula" ? "Número de cédula" : form.tipo_identificacion === "ruc" ? "Número de RUC" : "Número de pasaporte"}
+                  {form.tipo_identificacion === "cedula"
+                    ? "Número de cédula"
+                    : form.tipo_identificacion === "ruc"
+                      ? "Número de RUC"
+                      : form.tipo_identificacion === "exterior"
+                        ? "Número de identificación del exterior"
+                        : "Número de pasaporte"}
                 </label>
-                <input className={INPUT} required maxLength={form.tipo_identificacion === "cedula" ? 10 : form.tipo_identificacion === "ruc" ? 13 : 20} inputMode={form.tipo_identificacion === "pasaporte" ? "text" : "numeric"} value={form.cedula ?? ""} onChange={(e) => setForm({ ...form, cedula: form.tipo_identificacion === "pasaporte" ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) : e.target.value.replace(/\D/g, "").slice(0, form.tipo_identificacion === "cedula" ? 10 : 13) })} placeholder={form.tipo_identificacion === "cedula" ? "10 dígitos" : form.tipo_identificacion === "ruc" ? "13 dígitos" : "5 a 20 letras o números"} />
+                <input className={INPUT} required maxLength={form.tipo_identificacion === "cedula" ? 10 : form.tipo_identificacion === "ruc" ? 13 : 20} inputMode={["pasaporte", "exterior"].includes(form.tipo_identificacion ?? "cedula") ? "text" : "numeric"} value={form.cedula ?? ""} onChange={(e) => setForm({ ...form, cedula: ["pasaporte", "exterior"].includes(form.tipo_identificacion ?? "cedula") ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) : e.target.value.replace(/\D/g, "").slice(0, form.tipo_identificacion === "cedula" ? 10 : 13) })} placeholder={form.tipo_identificacion === "cedula" ? "10 dígitos" : form.tipo_identificacion === "ruc" ? "13 dígitos" : "5 a 20 letras o números"} />
               </div>
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">Foto de perfil (opcional)</label>

@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Bus
 } from "lucide-react";
+import { LanguageSwitcher, LocalizedContent } from "../../lib/i18n";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -97,14 +98,17 @@ export default function RecuperarPasswordPage() {
     }
   };
 
-  return (
+  const page = (
     <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-5 py-8 font-sans sm:px-8">
       <div className="w-full max-w-[440px]">
       <section className="overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-200/60 sm:p-8">
-        <Link href="/login" className="mb-7 inline-flex items-center gap-2 rounded-lg text-sm font-bold text-slate-500 transition-colors hover:text-[#E31E24] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-100">
-          <ArrowLeft size={17} />
-          Volver al inicio de sesión
-        </Link>
+        <div className="mb-7 flex items-center justify-between gap-3">
+          <Link href="/login" className="inline-flex items-center gap-2 rounded-lg text-sm font-bold text-slate-500 transition-colors hover:text-[#E31E24] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-100">
+            <ArrowLeft size={17} />
+            Volver al inicio de sesión
+          </Link>
+          <LanguageSwitcher compactOnMobile />
+        </div>
 
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#E31E24] text-white shadow-md shadow-red-200">
@@ -247,4 +251,5 @@ export default function RecuperarPasswordPage() {
       </div>
     </main>
   );
+  return <LocalizedContent>{page}</LocalizedContent>;
 }

@@ -124,7 +124,9 @@ const buildInvoiceXml = (invoice: any, config = sriConfig()) => {
   const customerId = invoice.cliente_cedula || invoice.cliente_ruc || "9999999999999";
   const identificationType = invoice.cliente_tipo_identificacion
     || (customerId.length === 13 ? "ruc" : "cedula");
-  const sriIdentificationType = identificationType === "pasaporte" ? "06" : identificationType === "ruc" ? "04" : "05";
+  const sriIdentificationType = identificationType === "exterior"
+    ? "08"
+    : identificationType === "pasaporte" ? "06" : identificationType === "ruc" ? "04" : "05";
   const total = Number(invoice.total);
   const root = create({ version: "1.0", encoding: "UTF-8" })
     .ele("factura", { id: "comprobante", version: "1.1.0" })

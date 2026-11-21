@@ -215,15 +215,22 @@ export default function ClientePerfilPage() {
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-500">Tipo de identificación</label>
               <select value={tipoIdentificacion} onChange={e => setTipoIdentificacion(e.target.value)} className={INPUT}>
-                <option value="cedula">Cédula ecuatoriana</option>
+                <option value="cedula">Cédula</option>
+                <option value="ruc">RUC</option>
                 <option value="pasaporte">Pasaporte</option>
-                <option value="ruc">RUC ecuatoriano</option>
+                <option value="exterior">Identificación del exterior</option>
               </select>
               <label className="text-xs font-semibold text-slate-500">
-                {tipoIdentificacion === "cedula" ? "Número de cédula" : tipoIdentificacion === "ruc" ? "Número de RUC" : "Número de pasaporte"}
+                {tipoIdentificacion === "cedula"
+                  ? "Número de cédula"
+                  : tipoIdentificacion === "ruc"
+                    ? "Número de RUC"
+                    : tipoIdentificacion === "exterior"
+                      ? "Número de identificación del exterior"
+                      : "Número de pasaporte"}
               </label>
               <div className="relative"><IdCard size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-                <input value={cedula} onChange={e => setCedula(tipoIdentificacion === "pasaporte" ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) : e.target.value.replace(/\D/g, "").slice(0, tipoIdentificacion === "cedula" ? 10 : 13))} className={INPUT + " pl-9"} placeholder={tipoIdentificacion === "cedula" ? "10 dígitos" : tipoIdentificacion === "ruc" ? "13 dígitos" : "5 a 20 letras o números"} inputMode={tipoIdentificacion === "pasaporte" ? "text" : "numeric"} />
+                <input value={cedula} onChange={e => setCedula(["pasaporte", "exterior"].includes(tipoIdentificacion) ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) : e.target.value.replace(/\D/g, "").slice(0, tipoIdentificacion === "cedula" ? 10 : 13))} className={INPUT + " pl-9"} placeholder={tipoIdentificacion === "cedula" ? "10 dígitos" : tipoIdentificacion === "ruc" ? "13 dígitos" : "5 a 20 letras o números"} inputMode={["pasaporte", "exterior"].includes(tipoIdentificacion) ? "text" : "numeric"} />
               </div>
             </div>
 

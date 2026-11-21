@@ -22,6 +22,7 @@ import {
   Bus
 } from "lucide-react";
 import AuthCarousel from "../../components/auth-carousel";
+import { LanguageSwitcher, LocalizedContent } from "../../lib/i18n";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -112,7 +113,9 @@ export default function RegistroPage() {
         ? "La cédula debe tener 10 dígitos"
         : form.tipoIdentificacion === "ruc"
           ? "El RUC debe tener 13 dígitos"
-          : "El pasaporte debe tener entre 5 y 20 letras o números");
+          : form.tipoIdentificacion === "exterior"
+            ? "La identificación del exterior debe tener entre 5 y 20 letras o números"
+            : "El pasaporte debe tener entre 5 y 20 letras o números");
       return;
     }
 
@@ -159,7 +162,7 @@ export default function RegistroPage() {
     }
   };
 
-  return (
+  const page = (
     <main className="flex min-h-screen bg-slate-50 font-sans">
       <AuthCarousel />
 
@@ -170,7 +173,10 @@ export default function RegistroPage() {
               <ArrowLeft size={17} className="transition-transform group-hover:-translate-x-1" />
               Volver al inicio
             </Link>
-            <span className="hidden text-xs font-bold uppercase tracking-[0.16em] text-slate-400 sm:inline">Crear cuenta</span>
+            <div className="flex items-center gap-3">
+              <LanguageSwitcher compactOnMobile />
+              <span className="hidden text-xs font-bold uppercase tracking-[0.16em] text-slate-400 sm:inline">Crear cuenta</span>
+            </div>
           </div>
 
           <div className="rounded-[2rem] border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-200/60 sm:p-8">
@@ -274,17 +280,24 @@ export default function RegistroPage() {
                   }))}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm text-slate-900 outline-none focus:border-[#E31E24] focus:bg-white focus:ring-4 focus:ring-red-100"
                 >
-                  <option value="cedula">Cédula ecuatoriana</option>
+                  <option value="cedula">Cédula</option>
+                  <option value="ruc">RUC</option>
                   <option value="pasaporte">Pasaporte</option>
-                  <option value="ruc">RUC ecuatoriano</option>
+                  <option value="exterior">Identificación del exterior</option>
                 </select>
                 <label htmlFor="register-id" className="text-xs font-bold text-slate-700">
-                  {form.tipoIdentificacion === "cedula" ? "Número de cédula" : form.tipoIdentificacion === "ruc" ? "Número de RUC" : "Número de pasaporte"}
+                  {form.tipoIdentificacion === "cedula"
+                    ? "Número de cédula"
+                    : form.tipoIdentificacion === "ruc"
+                      ? "Número de RUC"
+                      : form.tipoIdentificacion === "exterior"
+                        ? "Número de identificación del exterior"
+                        : "Número de pasaporte"}
                 </label>
                 <div className="relative group">
                   <IdCard size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#E31E24] transition-colors" />
-                  <input id="register-id" type="text" required inputMode={form.tipoIdentificacion === "pasaporte" ? "text" : "numeric"} maxLength={form.tipoIdentificacion === "cedula" ? 10 : form.tipoIdentificacion === "ruc" ? 13 : 20} value={form.cedula}
-                    onChange={(e) => setForm((prev) => ({ ...prev, cedula: prev.tipoIdentificacion === "pasaporte" ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) : e.target.value.replace(/\D/g, "").slice(0, prev.tipoIdentificacion === "cedula" ? 10 : 13) }))}
+                  <input id="register-id" type="text" required inputMode={["pasaporte", "exterior"].includes(form.tipoIdentificacion) ? "text" : "numeric"} maxLength={form.tipoIdentificacion === "cedula" ? 10 : form.tipoIdentificacion === "ruc" ? 13 : 20} value={form.cedula}
+                    onChange={(e) => setForm((prev) => ({ ...prev, cedula: ["pasaporte", "exterior"].includes(prev.tipoIdentificacion) ? e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 20) : e.target.value.replace(/\D/g, "").slice(0, prev.tipoIdentificacion === "cedula" ? 10 : 13) }))}
                     placeholder={form.tipoIdentificacion === "cedula" ? "10 dígitos" : form.tipoIdentificacion === "ruc" ? "13 dígitos" : "5 a 20 letras o números"}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3.5 pl-12 pr-4 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 hover:border-slate-300 focus:border-[#E31E24] focus:bg-white focus:ring-4 focus:ring-red-100" />
                 </div>
@@ -407,4 +420,5 @@ export default function RegistroPage() {
       </div>
     </main>
   );
+  return <LocalizedContent>{page}</LocalizedContent>;
 }
