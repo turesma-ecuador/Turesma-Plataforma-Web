@@ -7,6 +7,7 @@ const { emitirFacturaPorReserva, obtenerFactura, reenviarFacturaPorReserva } = r
 const { prepararDespachoRequerimiento } = require("../../config/requerimientosDespacho");
 const { resolveStoredUploadPath } = require("../../config/storage");
 const { crearUrlAccesoComprobante } = require("../../config/comprobanteAcceso");
+const { obtenerPagoAprobado, enviarReciboPago } = require("../../config/reciboPago");
 const { aplicarCambioDestinoTrasPago } = require("../cambios-destino.controller");
 
 // Recalcula monto_pagado y estado_pago de una reserva a partir de sus pagos
@@ -310,26 +311,12 @@ const descargarReciboPagoAdmin = async (req: any, res: any) => {
   }
 
   try {
-    const pago = await pool.query(
-      `SELECT p.reserva_id
-       FROM pagos_reserva p
-       WHERE p.id = $1 AND p.estado = 'aprobado'
-       LIMIT 1`,
-      [pagoId]
-    );
-    if (!pago.rowCount) return res.status(404).json({ error: "Pago no encontrado o aún no aprobado" });
-
-    const factura = await obtenerFactura(pago.rows[0].reserva_id);
-    if (!factura || factura.estado !== "autorizada" || !factura.pdf_url) {
-      return res.status(404).json({ error: "La factura de esta reserva todavía no está autorizada" });
-    }
-
-    const filePath = resolveStoredUploadPath(factura.pdf_url);
-    if (!require("fs").existsSync(filePath)) return res.status(404).json({ error: "Archivo de factura no encontrado" });
-    return res.download(filePath, `factura_${factura.clave_acceso}.pdf`);
+    const pago = await obtenerPagoAprobado(pagoId);
+    if (!pago) return res.status(404).json({ error: "Recibo no encontrado o pago aún no aprobado" });
+    return await enviarReciboPago(res, pago);
   } catch (error) {
-    console.error("Error descargando factura desde pagos para administración:", error);
-    return res.status(500).json({ error: "No se pudo descargar la factura" });
+    console.error("Error descargando recibo desde pagos para administración:", error);
+    return res.status(500).json({ error: "No se pudo descargar el recibo de pago" });
   }
 };
 
