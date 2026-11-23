@@ -79,6 +79,11 @@ const { uploadVehiculoImagen, uploadViajeImagenes } = require("../controllers/ad
 const { serveComprobante } = require("../controllers/uploads.controller");
 const { listarPagosAdmin, descargarReciboPagoAdmin, descargarFacturaAdmin, emitirFacturaAdmin, reenviarFacturaAdmin, aprobarPago, rechazarPago, actualizarLinkPago, registrarPagoManual, registrarReembolso, completarReembolso } = require("../controllers/admin/pagos.admin.controller");
 const {
+  listarSolicitudesReprogramacionAdmin,
+  proponerReprogramacion,
+  rechazarSolicitudReprogramacion,
+} = require("../controllers/reprogramaciones.controller");
+const {
   listarSolicitudesCambioDestinoAdmin,
   proponerCambioDestino,
   rechazarSolicitudCambioDestino,
@@ -237,6 +242,9 @@ router.get("/solicitudes-cambio-destino", requireRole("admin"), listarSolicitude
 router.post("/solicitudes-cambio-destino/:solicitudId/propuesta", requireRole("admin"), proponerCambioDestino);
 router.post("/solicitudes-cambio-destino/:solicitudId/rechazar", requireRole("admin"), rechazarSolicitudCambioDestino);
 router.post("/solicitudes-cambio-destino/:solicitudId/devolucion", requireRole("admin"), registrarDevolucionCambioDestino);
+router.get("/solicitudes-reprogramacion", requireRole("admin"), listarSolicitudesReprogramacionAdmin);
+router.post("/solicitudes-reprogramacion/:solicitudId/propuesta", requireRole("admin"), proponerReprogramacion);
+router.post("/solicitudes-reprogramacion/:solicitudId/rechazar", requireRole("admin"), rechazarSolicitudReprogramacion);
 
 router.get("/vehiculos", listarVehiculos);
 router.post("/vehiculos", registrarVehiculo);

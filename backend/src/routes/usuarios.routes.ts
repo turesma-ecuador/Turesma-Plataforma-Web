@@ -11,7 +11,6 @@ const {
   verDisponibilidadVehiculoCliente,
   listarMisReservas,
   cancelarMiReserva,
-  reprogramarMiReserva,
   calificarMiReserva,
   seguimientoMiReserva,
   eliminarMiCuenta,
@@ -29,6 +28,12 @@ const {
   aceptarPropuestaCambioDestino,
   rechazarPropuestaCambioDestino,
 } = require("../controllers/cambios-destino.controller");
+const {
+  crearSolicitudReprogramacion,
+  listarSolicitudesReprogramacionCliente,
+  aceptarPropuestaReprogramacion,
+  rechazarPropuestaReprogramacion,
+} = require("../controllers/reprogramaciones.controller");
 
 const router = express.Router();
 
@@ -46,7 +51,10 @@ router.get("/viajes", listarViajesPublicos);
 router.get("/mis-reservas", verifyToken, listarMisReservas);
 router.post("/viajes/:id/reservar", verifyToken, reservarViajePublicado);
 router.patch("/mis-reservas/:id/cancelar", verifyToken, cancelarMiReserva);
-router.patch("/mis-reservas/:id/reprogramar", verifyToken, reprogramarMiReserva);
+router.post("/mis-reservas/:id/reprogramacion", verifyToken, crearSolicitudReprogramacion);
+router.get("/mis-reservas/:id/reprogramaciones", verifyToken, listarSolicitudesReprogramacionCliente);
+router.post("/mis-reservas/reprogramaciones/:solicitudId/aceptar", verifyToken, aceptarPropuestaReprogramacion);
+router.post("/mis-reservas/reprogramaciones/:solicitudId/rechazar", verifyToken, rechazarPropuestaReprogramacion);
 router.get("/mis-reservas/:id/cambio-destino", verifyToken, listarSolicitudesCambioDestinoCliente);
 router.post("/mis-reservas/:id/cambio-destino", verifyToken, crearSolicitudCambioDestino);
 router.post("/mis-reservas/cambio-destino/:solicitudId/aceptar", verifyToken, aceptarPropuestaCambioDestino);

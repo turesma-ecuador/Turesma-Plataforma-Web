@@ -15,6 +15,7 @@ import {
 import { MapPicker, Punto } from "../../../components/map-picker";
 import { VehiculoCalendario } from "../../../components/vehiculo-calendario";
 import { useConfirm } from "../../../components/confirm-dialog";
+import { CommunicationPanel } from "../../../components/communication-panel";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -85,6 +86,26 @@ type CambioDestinoAdmin = {
   bloqueo_propuesta: string | null;
 };
 type CambioDestinoFeedback = { type: "success" | "error"; message: string };
+type SolicitudReprogramacionAdmin = {
+  id: number;
+  reserva_id: number;
+  grupo_numero: number | null;
+  estado: string;
+  fecha_anterior: string;
+  hora_anterior: string | null;
+  fecha_solicitada: string;
+  hora_solicitada: string | null;
+  fecha_propuesta: string | null;
+  hora_propuesta: string | null;
+  nota_admin: string | null;
+  origen: string | null;
+  destino: string | null;
+  cliente_nombre: string;
+  cliente_email: string;
+  reserva_estado: string;
+  estado_pago: string;
+  operaciones: { id: number; estado: string; vehiculo_id: number | null; vehiculo_asociado_id: number | null; conductor_id: number | null }[];
+};
 
 const ESTADOS = ["pendiente", "pendiente_pago", "confirmada", "en_curso", "finalizada", "cancelada"];
 type ReservationView = "por_atender" | "en_curso" | "atendidos" | "todas";
@@ -260,24 +281,46 @@ export default function AdminReservasPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [focusedReservationId, setFocusedReservationId] = useState<number | null>(null);
+  const [conversationReservationId, setConversationReservationId] = useState<number | null>(null);
   const [solicitudesCambioDestino, setSolicitudesCambioDestino] = useState<CambioDestinoAdmin[]>([]);
   const [propuestasCambio, setPropuestasCambio] = useState<Record<number, { total: string; nota: string; referencia: string }>>({});
   const [savingChangeIds, setSavingChangeIds] = useState<Set<number>>(() => new Set());
   const savingChangeIdsRef = useRef(new Set<number>());
   const [cambioDestinoFeedback, setCambioDestinoFeedback] = useState<Record<number, CambioDestinoFeedback>>({});
+  const [solicitudesReprogramacion, setSolicitudesReprogramacion] = useState<SolicitudReprogramacionAdmin[]>([]);
+  const [respuestasReprogramacion, setRespuestasReprogramacion] = useState<Record<number, { fecha: string; hora: string; nota: string }>>({});
+  const [savingReprogramacionIds, setSavingReprogramacionIds] = useState<Set<number>>(() => new Set());
+  const [reprogramacionFeedback, setReprogramacionFeedback] = useState<Record<number, CambioDestinoFeedback>>({});
 
   const h = getAuthHeaders();
 
   useEffect(() => {
-    const clientId = new URLSearchParams(window.location.search).get("usuario_id");
+    const params = new URLSearchParams(window.location.search);
+    const clientId = params.get("usuario_id");
     if (clientId && /^\d+$/.test(clientId)) setPrefilledClientId(clientId);
-    const reservationId = Number(new URLSearchParams(window.location.search).get("id"));
+    const reservationId = Number(params.get("id"));
     if (Number.isInteger(reservationId) && reservationId > 0) {
       setFocusedReservationId(reservationId);
       setSearch(String(reservationId));
       setVistaReservas("todas");
     }
+    const chatMatch = /^reserva:(\d+)$/.exec(params.get("chat") || "");
+    if (chatMatch) {
+      const chatReservationId = Number(chatMatch[1]);
+      setConversationReservationId(chatReservationId);
+      setFocusedReservationId(chatReservationId);
+      setSearch(String(chatReservationId));
+      setVistaReservas("todas");
+    }
   }, []);
+
+  const openReservationConversation = (reservation: Reserva) => {
+    setFocusedReservationId(reservation.id);
+    setConversationReservationId(reservation.id);
+    setSearch(String(reservation.id));
+    setVistaReservas("todas");
+    setFiltroEstado("todos");
+  };
 
   useEffect(() => {
     if (!prefilledClientId || loading) return;
@@ -320,10 +363,11 @@ export default function AdminReservasPage() {
   const load = async (silencioso = false) => {
     if (!silencioso) setLoading(true);
     try {
-      const [rRes, uRes, cambiosRes] = await Promise.all([
+      const [rRes, uRes, cambiosRes, reprogramacionesRes] = await Promise.all([
         fetch(`${API_URL}/api/admin/reservas`, { headers: h }),
         fetch(`${API_URL}/api/admin/usuarios`, { headers: h }),
         isAdmin ? fetch(`${API_URL}/api/admin/solicitudes-cambio-destino`, { headers: h }) : Promise.resolve(null),
+        isAdmin ? fetch(`${API_URL}/api/admin/solicitudes-reprogramacion`, { headers: h }) : Promise.resolve(null),
       ]);
       if (rRes.ok) setReservas(await rRes.json());
       if (uRes.ok) {
@@ -337,6 +381,17 @@ export default function AdminReservasPage() {
           const next = { ...previous };
           for (const change of changes as CambioDestinoAdmin[]) {
             next[change.id] ||= { total: String(change.total_anterior || ""), nota: "", referencia: "" };
+          }
+          return next;
+        });
+      }
+      if (reprogramacionesRes?.ok) {
+        const requests = await reprogramacionesRes.json() as SolicitudReprogramacionAdmin[];
+        setSolicitudesReprogramacion(requests);
+        setRespuestasReprogramacion((previous) => {
+          const next = { ...previous };
+          for (const request of requests) {
+            next[request.id] ||= { fecha: request.fecha_solicitada?.slice(0, 10) || "", hora: request.hora_solicitada?.slice(0, 5) || "", nota: "" };
           }
           return next;
         });
@@ -602,6 +657,44 @@ export default function AdminReservasPage() {
     }
   };
 
+  const actualizarSolicitudReprogramacion = async (id: number, action: "propuesta" | "rechazar") => {
+    if (savingReprogramacionIds.has(id)) return;
+    setSavingReprogramacionIds((previous) => new Set(previous).add(id));
+    setErr("");
+    setMsg("");
+    setReprogramacionFeedback((previous) => {
+      const next = { ...previous };
+      delete next[id];
+      return next;
+    });
+    const form = respuestasReprogramacion[id] || { fecha: "", hora: "", nota: "" };
+    const payload = action === "propuesta"
+      ? { fecha_propuesta: form.fecha, hora_propuesta: form.hora, nota_admin: form.nota }
+      : { nota_admin: form.nota };
+    try {
+      const response = await fetch(`${API_URL}/api/admin/solicitudes-reprogramacion/${id}/${action}`, {
+        method: "POST",
+        headers: { ...h, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(30_000),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo responder a la solicitud");
+      setMsg(data.message || "Solicitud respondida");
+      await load(true);
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "No se pudo responder a la solicitud";
+      setErr(message);
+      setReprogramacionFeedback((previous) => ({ ...previous, [id]: { type: "error", message } }));
+    } finally {
+      setSavingReprogramacionIds((previous) => {
+        const next = new Set(previous);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
   const formatFecha = (v?: string | null) => {
     if (!v) return "—";
     const d = new Date(v);
@@ -674,6 +767,63 @@ export default function AdminReservasPage() {
           Nueva Reserva
         </button>
       </div>
+
+      {isAdmin && solicitudesReprogramacion.length > 0 && (
+        <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+          <div className="border-b border-amber-100 bg-amber-50 px-5 py-4">
+            <h2 className="font-black text-amber-950">Solicitudes de cambio de fecha u hora</h2>
+            <p className="mt-1 text-xs text-amber-800">La fecha original sigue confirmada. Si la fecha solicitada no tiene disponibilidad, propone una alternativa; el cambio solo se aplica si el cliente la acepta.</p>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {solicitudesReprogramacion.map((request) => {
+              const form = respuestasReprogramacion[request.id] || { fecha: "", hora: "", nota: "" };
+              return (
+                <article key={request.id} className="space-y-3 p-4 sm:p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-black text-slate-900">Reserva #{request.reserva_id}{request.grupo_numero ? ` · Grupo ${request.grupo_numero}` : ""} · {request.cliente_nombre}</p>
+                      <p className="text-xs text-slate-500">{request.cliente_email} · {request.origen || "—"} → {request.destino || "—"}</p>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase text-slate-600">{request.estado.replaceAll("_", " ")}</span>
+                  </div>
+                  {reprogramacionFeedback[request.id] && (
+                    <p role={reprogramacionFeedback[request.id].type === "error" ? "alert" : "status"} className={`rounded-lg p-3 text-sm font-semibold ${reprogramacionFeedback[request.id].type === "error" ? "border border-red-200 bg-red-50 text-red-700" : "border border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                      {reprogramacionFeedback[request.id].message}
+                    </p>
+                  )}
+                  <div className="grid gap-2 text-sm sm:grid-cols-2">
+                    <p className="rounded-lg bg-slate-50 p-3"><span className="text-xs font-bold text-slate-500">Fecha original (se conserva):</span><br />{formatFechaCorta(request.fecha_anterior)}{request.hora_anterior ? ` · ${request.hora_anterior.slice(0, 5)}` : ""}</p>
+                    <p className="rounded-lg bg-blue-50 p-3 text-blue-900"><span className="text-xs font-bold text-blue-700">Solicitada por el cliente:</span><br />{formatFechaCorta(request.fecha_solicitada)}{request.hora_solicitada ? ` · ${request.hora_solicitada.slice(0, 5)}` : ""}</p>
+                  </div>
+                  {request.estado === "pendiente_admin" && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-500">Confirma disponibilidad para todas las unidades del servicio. Si no está disponible, cambia la fecha/hora propuesta; el servidor validará los recursos antes de enviarla.</p>
+                      <div className="grid gap-2 sm:grid-cols-[minmax(150px,1fr)_minmax(130px,0.7fr)_minmax(0,2fr)_auto_auto]">
+                        <label className="text-[10px] font-black uppercase text-slate-500">Alternativa · fecha
+                          <input type="date" min={new Date().toISOString().slice(0, 10)} value={form.fecha} disabled={savingReprogramacionIds.has(request.id)} onChange={(event) => setRespuestasReprogramacion((previous) => ({ ...previous, [request.id]: { ...form, fecha: event.target.value } }))} className={`${INPUT_CLS} mt-1`} />
+                        </label>
+                        <label className="text-[10px] font-black uppercase text-slate-500">Hora
+                          <input type="time" value={form.hora} disabled={savingReprogramacionIds.has(request.id)} onChange={(event) => setRespuestasReprogramacion((previous) => ({ ...previous, [request.id]: { ...form, hora: event.target.value } }))} className={`${INPUT_CLS} mt-1`} />
+                        </label>
+                        <label className="text-[10px] font-black uppercase text-slate-500">Mensaje para el cliente
+                          <input maxLength={500} minLength={5} value={form.nota} disabled={savingReprogramacionIds.has(request.id)} onChange={(event) => setRespuestasReprogramacion((previous) => ({ ...previous, [request.id]: { ...form, nota: event.target.value } }))} className={`${INPUT_CLS} mt-1`} placeholder="Explica la alternativa propuesta" />
+                        </label>
+                        <button type="button" onClick={() => void actualizarSolicitudReprogramacion(request.id, "propuesta")} disabled={savingReprogramacionIds.has(request.id) || !form.fecha || form.nota.trim().length < 5} className="self-end rounded-xl bg-emerald-600 px-4 py-3 text-xs font-black uppercase text-white disabled:opacity-50">{savingReprogramacionIds.has(request.id) ? "Enviando..." : "Enviar alternativa"}</button>
+                        <button type="button" onClick={() => void actualizarSolicitudReprogramacion(request.id, "rechazar")} disabled={savingReprogramacionIds.has(request.id) || form.nota.trim().length < 5} className="self-end rounded-xl bg-red-50 px-4 py-3 text-xs font-black uppercase text-red-700 disabled:opacity-50">No disponible</button>
+                      </div>
+                    </div>
+                  )}
+                  {request.estado === "propuesta_cliente" && (
+                    <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-800">
+                      Alternativa enviada: {formatFechaCorta(request.fecha_propuesta)}{request.hora_propuesta ? ` · ${request.hora_propuesta.slice(0, 5)}` : ""}. Esperando que el cliente acepte o mantenga la fecha original.
+                    </p>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {isAdmin && solicitudesCambioDestino.length > 0 && (
         <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
@@ -806,6 +956,16 @@ export default function AdminReservasPage() {
         return (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
             <p className="text-sm font-bold text-blue-900">Reserva #{reservation.id} · Estado: {ESTADO_LABEL[reservation.estado] || reservation.estado.replace("_", " ")}.</p>
+            {conversationReservationId === reservation.id && (
+              <CommunicationPanel
+                contextType="reserva"
+                contextId={reservation.id}
+                contextTitle={`Reserva #${reservation.id} · ${reservation.cliente_nombre || `Cliente #${reservation.usuario_id}`}`}
+                initiallyOpen
+                hideTrigger
+                onClose={() => setConversationReservationId(null)}
+              />
+            )}
             {reservation.estado === "confirmada" && (
               <button type="button" onClick={() => router.push(`/admin/operaciones?reserva_id=${reservation.id}`)} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase tracking-widest text-white hover:bg-slate-700">
                 Continuar a despacho
@@ -906,6 +1066,7 @@ export default function AdminReservasPage() {
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
+                  <button type="button" onClick={() => openReservationConversation(r)} className="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] font-black uppercase text-blue-800 hover:bg-blue-100">Conversación</button>
                   <button onClick={() => void openHistory(r)} className="flex-1 rounded-lg bg-violet-50 px-3 py-2 text-[11px] font-black uppercase text-violet-700">Historial</button>
                   <button
                     onClick={() => { setEstadoModal(r); setNuevoEstado(TRANSICIONES_VALIDAS[r.estado]?.[0] || ""); }}
@@ -998,6 +1159,7 @@ export default function AdminReservasPage() {
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex gap-1 flex-wrap">
+                        <button type="button" onClick={() => openReservationConversation(r)} className="rounded-lg px-2 py-1.5 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-50">Conversación</button>
                         <button onClick={() => void openHistory(r)} className="rounded-lg p-1.5 text-violet-600 hover:bg-violet-50" title="Ver historial"><History size={14} /></button>
                         <button
                           onClick={() => {

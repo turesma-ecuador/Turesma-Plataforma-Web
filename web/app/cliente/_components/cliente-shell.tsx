@@ -247,7 +247,7 @@ export function ClienteShell({ children }: ClienteShellProps) {
           <div className="w-full max-w-7xl mx-auto space-y-5 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="flex flex-col gap-3 border-l-4 border-[#E31E24] pl-4 sm:pl-6 md:flex-row md:items-end md:justify-between">
               <div>
-                <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-[#1a1a1a] tracking-tighter uppercase italic">{currentSection}</h1>
+                <h1 data-tour-target={pathname === "/cliente/cotizar" ? "portal-cotizar-start" : undefined} className="text-2xl sm:text-3xl md:text-4xl font-black text-[#1a1a1a] tracking-tighter uppercase italic">{currentSection}</h1>
               </div>
               <ClientGuidedTour
                 variant="portal"

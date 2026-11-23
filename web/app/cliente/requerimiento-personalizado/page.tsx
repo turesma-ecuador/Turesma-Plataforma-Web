@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { CheckCircle2, CreditCard, Download, FileText, Loader2, Plus, Send, Trash2 } from "lucide-react";
 import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
 import { useClienteGuard } from "../../../lib/use-cliente-guard";
+import { CommunicationPanel } from "../../../components/communication-panel";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const INPUT = "w-full rounded-2xl border-2 border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-[#E31E24] focus:bg-white placeholder:text-slate-300";
@@ -261,6 +262,13 @@ export default function ClienteRequerimientoPersonalizadoPage() {
               <p className="text-[9px] font-black uppercase tracking-widest text-blue-700">Respuesta de Turesma</p>
               <p className="mt-1 whitespace-pre-wrap text-sm text-blue-950">{request.respuesta_admin}</p>
             </div>}
+            <div className="mt-4 border-t border-slate-100 pt-3">
+              <CommunicationPanel
+                contextType="requerimiento"
+                contextId={request.id}
+                contextTitle={`Requerimiento #${request.id}`}
+              />
+            </div>
           </article>;
         })}
       </section>

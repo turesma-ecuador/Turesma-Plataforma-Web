@@ -7,8 +7,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Bus,
+  CalendarDays,
   CheckCircle2,
-  CircleHelp,
+  Compass,
+  Clock3,
   FileText,
   History,
   LayoutDashboard,
@@ -72,7 +74,7 @@ const PORTAL_STEPS: TourStep[] = [
   },
   {
     title: "Cotizar",
-    description: "Solicita un servicio o reserva un viaje publicado. La guía de reserva te acompaña por el formulario.",
+    description: "En esta sección puedes solicitar un servicio o comprar un viaje publicado. Usa la guía de reserva para completar el formulario.",
     target: "portal-cotizar-start",
     href: "/cliente/cotizar",
     icon: FileText,
@@ -109,11 +111,18 @@ const BOOKING_STEPS: TourStep[] = [
     icon: MapPin,
   },
   {
-    title: "Elige fecha y pasajeros",
-    description: "Elige fecha, horario y pasajeros. La disponibilidad se confirma al revisar tu solicitud.",
-    target: "booking-schedule",
-    completionHint: "Completa fecha, hora y cantidad de pasajeros.",
-    icon: LayoutDashboard,
+    title: "Elige la fecha del viaje",
+    description: "Selecciona la fecha en el calendario. Si el servicio dura varios días o tiene fecha de regreso, indica también esas fechas.",
+    target: "booking-schedule-calendar",
+    completionHint: "Selecciona la fecha del servicio para continuar.",
+    icon: CalendarDays,
+  },
+  {
+    title: "Completa horario y pasajeros",
+    description: "Más abajo indica la hora de salida, la llegada estimada y cuántas personas viajarán.",
+    target: "booking-time-passengers",
+    completionHint: "Completa los horarios y la cantidad de personas para continuar.",
+    icon: Clock3,
   },
   {
     title: "Selecciona una categoría",
@@ -174,6 +183,7 @@ export function ClientGuidedTour({
   const showWelcome = variant === "portal" && autoStart && !portalTourSeen && !isOpen;
   const currentStep = steps[stepIndex];
   const StepIcon = currentStep.icon;
+  const TourButtonIcon = variant === "portal" ? Compass : MapPin;
 
   const markPortalTourSeen = useCallback(() => {
     if (variant !== "portal") return;
@@ -239,7 +249,14 @@ export function ClientGuidedTour({
         else setTargetBounds((current) => current?.selector === currentStep.target ? null : current);
         return;
       }
-      if (attempt === 0) target.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      if (attempt === 0) {
+        const alignBelowGuide = ["booking-schedule-calendar", "booking-time-passengers"].includes(currentStep.target);
+        target.scrollIntoView({
+          behavior: "smooth",
+          block: alignBelowGuide ? "start" : "center",
+          inline: "nearest",
+        });
+      }
       timeout = setTimeout(() => {
         if (active) refreshBounds();
       }, attempt === 0 ? 250 : 0);
@@ -301,7 +318,9 @@ export function ClientGuidedTour({
     const spaceAbove = bounds ? bounds.top - gap : 0;
     const spaceBelow = bounds ? window.innerHeight - bounds.bottom - gap : 0;
     let panelTop = window.innerHeight - panelHeight - gap;
-    if (bounds && variant === "booking" && currentStep.target === "booking-route") {
+    if (variant === "booking" && ["booking-schedule-calendar", "booking-time-passengers"].includes(currentStep.target)) {
+      panelTop = Math.min(84, window.innerHeight - panelHeight - gap);
+    } else if (bounds && variant === "booking" && currentStep.target === "booking-route") {
       if (spaceBelow >= panelHeight) {
         panelTop = bounds.bottom + gap;
       } else if (spaceAbove >= panelHeight) {
@@ -355,7 +374,7 @@ export function ClientGuidedTour({
               </span>
               <div>
                 <p className="text-[8px] font-black uppercase tracking-[0.14em] text-red-600">
-                  {variant === "portal" ? "Recorrido del portal" : `Paso ${stepIndex + 1} de ${steps.length}`}
+                  {variant === "portal" ? "Recorrido del portal" : `Guía de reserva · ${stepIndex + 1} de ${steps.length}`}
                 </p>
                 <h2 id="client-tour-title" className="text-[13px] font-black leading-tight text-slate-950">
                   {currentStep.title}
@@ -442,7 +461,7 @@ export function ClientGuidedTour({
         onClick={openTour}
         className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-red-700 transition hover:border-red-300 hover:bg-red-100 sm:text-xs"
       >
-        <CircleHelp size={16} aria-hidden="true" />
+        <TourButtonIcon size={16} aria-hidden="true" />
         {variant === "portal" ? "Recorrido del portal" : "Guíame para reservar"}
       </button>
       {variant === "portal" && showWelcome && (

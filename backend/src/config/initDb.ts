@@ -646,6 +646,34 @@ const initDatabase = async () => {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS solicitudes_reprogramacion (
+      id SERIAL PRIMARY KEY,
+      reserva_id INT NOT NULL REFERENCES reservas(id) ON DELETE CASCADE,
+      usuario_id INT NOT NULL REFERENCES usuarios(id),
+      grupo_numero INT,
+      fecha_anterior DATE NOT NULL,
+      hora_anterior TIME,
+      fecha_solicitada DATE NOT NULL,
+      hora_solicitada TIME,
+      fecha_propuesta DATE,
+      hora_propuesta TIME,
+      nota_admin TEXT,
+      estado VARCHAR(30) NOT NULL DEFAULT 'pendiente_admin'
+        CHECK (estado IN ('pendiente_admin', 'propuesta_cliente', 'rechazada_admin', 'rechazada_cliente', 'aplicada')),
+      respondido_por INT REFERENCES usuarios(id) ON DELETE SET NULL,
+      creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS solicitudes_reprogramacion_estado_idx
+      ON solicitudes_reprogramacion (estado, creado_en ASC);
+    CREATE INDEX IF NOT EXISTS solicitudes_reprogramacion_reserva_idx
+      ON solicitudes_reprogramacion (reserva_id, creado_en DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS solicitudes_reprogramacion_abierta_unique
+      ON solicitudes_reprogramacion (reserva_id, COALESCE(grupo_numero, 0))
+      WHERE estado IN ('pendiente_admin', 'propuesta_cliente');
+  `);
+
+  await pool.query(`
     CREATE INDEX IF NOT EXISTS operacion_historial_operacion_idx
     ON operacion_historial (operacion_id, creado_en DESC);
   `);
@@ -798,6 +826,11 @@ const initDatabase = async () => {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS mensajes_comunicacion_pair_idx
     ON mensajes_comunicacion (sender_user_id, recipient_user_id, creado_en DESC);
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS mensajes_comunicacion_context_idx
+    ON mensajes_comunicacion (link_type, link_id, creado_en ASC)
+    WHERE link_type IS NOT NULL AND link_id IS NOT NULL;
   `);
 
   // ============ MÓDULO DE MANTENIMIENTO VEHICULAR ============

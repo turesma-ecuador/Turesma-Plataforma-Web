@@ -8,6 +8,7 @@ import { escapeReportHtml, openPrintableReport } from "../../../lib/print-report
 import { useAutoRefresh } from "../../../lib/use-auto-refresh";
 import { WhatsAppButton } from "../../../components/whatsapp-button";
 import { useConfirm } from "../../../components/confirm-dialog";
+import { CommunicationPanel } from "../../../components/communication-panel";
 import {
   FileText, Check, X, Eye, Loader2,
   MapPin, Users, Calendar, DollarSign, Clock, Car,
@@ -128,6 +129,7 @@ function AdminCotizacionesContent() {
   const [customRequests, setCustomRequests] = useState<RequerimientoPersonalizado[]>([]);
   const [resumen, setResumen] = useState<Resumen | null>(null);
   const [loading, setLoading] = useState(true);
+  const [chatCotizacion, setChatCotizacion] = useState<Cotizacion | null>(null);
   const [activeSection, setActiveSection] = useState<"cotizaciones" | "requerimientos">("cotizaciones");
   const [customResponses, setCustomResponses] = useState<Record<number, string>>({});
   const [customGroupPrices, setCustomGroupPrices] = useState<Record<number, string[]>>({});
@@ -344,6 +346,7 @@ function AdminCotizacionesContent() {
   useEffect(() => {
     const requestParam = searchParams.get("requerimiento");
     if (requestParam) setActiveSection("requerimientos");
+    if (/^cotizacion:\d+$/.test(searchParams.get("chat") || "")) setFiltro("todas");
     const idParam = searchParams.get("id");
     if (!idParam) return;
     const id = Number(idParam);
@@ -352,6 +355,13 @@ function AdminCotizacionesContent() {
     setFiltro("todas");
      
   }, [searchParams]);
+
+  useEffect(() => {
+    const match = /^cotizacion:(\d+)$/.exec(searchParams.get("chat") || "");
+    if (!match) return;
+    const target = cotizaciones.find((cotizacion) => cotizacion.id === Number(match[1]));
+    if (target) setChatCotizacion(target);
+  }, [cotizaciones, searchParams]);
 
   // Una vez cargada la lista, si hay una cotización pendiente de enfocar, la abrimos.
   useEffect(() => {
@@ -650,6 +660,9 @@ function AdminCotizacionesContent() {
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    <button type="button" onClick={() => setChatCotizacion(c)} className="flex-1 rounded-xl border border-blue-200 bg-blue-50 py-2 text-[10px] font-black uppercase text-blue-800 hover:bg-blue-100">
+                      Conversación
+                    </button>
                     <button onClick={() => openModal(c, "view")} className="flex-1 py-2 text-[10px] font-black uppercase bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-600 transition-all flex items-center justify-center gap-1">
                       <Eye size={12} /> Ver
                     </button>
@@ -721,6 +734,9 @@ function AdminCotizacionesContent() {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex gap-1.5">
+                          <button type="button" onClick={() => setChatCotizacion(c)} className="rounded-xl px-2 py-1.5 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-50">
+                            Conversación
+                          </button>
                           <button onClick={() => openModal(c, "view")} className="p-2 hover:bg-slate-100 rounded-xl transition-all text-slate-500" title="Ver detalles">
                             <Eye size={15} />
                           </button>
@@ -970,6 +986,11 @@ function AdminCotizacionesContent() {
                     className="ml-2 inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-60">
                     <RefreshCw size={14} /> Reintentar despacho
                   </button>}
+                  <CommunicationPanel
+                    contextType="requerimiento"
+                    contextId={request.id}
+                    contextTitle={`Requerimiento #${request.id} · ${request.cliente_nombre}`}
+                  />
                 </div>
               </div>
             </article>
@@ -1194,6 +1215,17 @@ function AdminCotizacionesContent() {
             </div>
           </div>
         </div>
+      )}
+      {chatCotizacion && (
+        <CommunicationPanel
+          key={`cotizacion-${chatCotizacion.id}`}
+          contextType="cotizacion"
+          contextId={chatCotizacion.id}
+          contextTitle={`Cotización #${chatCotizacion.id} · ${chatCotizacion.cliente_nombre}`}
+          initiallyOpen
+          hideTrigger
+          onClose={() => setChatCotizacion(null)}
+        />
       )}
     </div>
   );

@@ -407,6 +407,17 @@ const listarMisReservas = async (req: any, res: any) => {
          ) AS cambio_destino,
          COALESCE((
            SELECT json_agg(json_build_object(
+             'id', sr.id, 'grupo_numero', sr.grupo_numero, 'estado', sr.estado,
+             'fecha_anterior', sr.fecha_anterior, 'hora_anterior', sr.hora_anterior,
+             'fecha_solicitada', sr.fecha_solicitada, 'hora_solicitada', sr.hora_solicitada,
+             'fecha_propuesta', sr.fecha_propuesta, 'hora_propuesta', sr.hora_propuesta,
+             'nota_admin', sr.nota_admin
+           ) ORDER BY sr.creado_en DESC, sr.id DESC)
+           FROM solicitudes_reprogramacion sr
+           WHERE sr.reserva_id = r.id
+         ), '[]'::json) AS solicitudes_reprogramacion,
+         COALESCE((
+           SELECT json_agg(json_build_object(
              'id', rr.id, 'monto', rr.monto, 'motivo', rr.motivo,
              'estado', rr.estado, 'referencia_externa', rr.referencia_externa,
              'creado_en', rr.creado_en, 'completado_en', rr.completado_en
@@ -418,6 +429,7 @@ const listarMisReservas = async (req: any, res: any) => {
            SELECT json_agg(json_build_object(
              'id', o.id, 'grupo_numero', o.grupo_numero, 'unidad_numero', o.unidad_numero,
              'fecha_programada', o.fecha_programada, 'fecha_fin_programada', o.fecha_fin_programada,
+             'hora_inicio', o.hora_inicio,
              'origen', o.origen, 'destino', o.destino, 'estado', o.estado,
              'vehiculo_placa', vop.placa, 'vehiculo_modelo', vop.modelo,
              'vehiculo_imagen_url', vop.imagen_url,

@@ -12,6 +12,7 @@ import { getAuthHeaders, getStoredToken, handleUnauthorized } from "../../../lib
 import { useClienteGuard } from "../../../lib/use-cliente-guard";
 import { useAutoRefresh } from "../../../lib/use-auto-refresh";
 import { WhatsAppButton } from "../../../components/whatsapp-button";
+import { CommunicationPanel } from "../../../components/communication-panel";
 import { descargarArchivo } from "../../../lib/download";
 import { formatLocalizedDate, LocalizedContent, useLocale } from "../../../lib/i18n";
 
@@ -53,6 +54,7 @@ type Reserva = {
     unidad_numero?: number | null;
     fecha_programada: string;
     fecha_fin_programada?: string | null;
+    hora_inicio?: string | null;
     origen: string;
     destino: string;
     estado: string;
@@ -75,6 +77,20 @@ type Reserva = {
     total_propuesto: number | null;
     nota_admin: string | null;
   } | null;
+  solicitudes_reprogramacion?: Reprogramacion[];
+};
+
+type Reprogramacion = {
+  id: number;
+  grupo_numero: number | null;
+  estado: string;
+  fecha_anterior: string;
+  hora_anterior?: string | null;
+  fecha_solicitada: string;
+  hora_solicitada?: string | null;
+  fecha_propuesta?: string | null;
+  hora_propuesta?: string | null;
+  nota_admin?: string | null;
 };
 
 type Pago = {
@@ -356,6 +372,7 @@ export default function ClienteHistorialPage() {
   const [comentario, setComentario] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [reprogramacionResponseError, setReprogramacionResponseError] = useState("");
   const [trackId, setTrackId] = useState<number | null>(null);
   const [pagoReserva, setPagoReserva] = useState<Reserva | null>(null);
   const [downloadingOrderId, setDownloadingOrderId] = useState<number | null>(null);
@@ -369,15 +386,18 @@ export default function ClienteHistorialPage() {
 
   // Reprogramar (cambiar fecha/hora de salida) de una reserva confirmada
   const [reprogReserva, setReprogReserva] = useState<Reserva | null>(null);
+  const [reprogGrupoNumero, setReprogGrupoNumero] = useState<number | null>(null);
   const [reprogFecha, setReprogFecha] = useState("");
   const [reprogHora, setReprogHora] = useState("");
   const [reprogSaving, setReprogSaving] = useState(false);
   const [reprogMsg, setReprogMsg] = useState("");
 
-  const abrirReprogramar = (r: Reserva) => {
+  const abrirReprogramar = (r: Reserva, grupoNumero: number | null = null) => {
+    const operation = r.operaciones?.find((item) => item.grupo_numero === grupoNumero);
     setReprogReserva(r);
-    setReprogFecha(r.fecha_reserva ? String(r.fecha_reserva).slice(0, 10) : "");
-    setReprogHora(r.hora_salida || "");
+    setReprogGrupoNumero(grupoNumero);
+    setReprogFecha(operation?.fecha_programada?.slice(0, 10) || (r.fecha_reserva ? String(r.fecha_reserva).slice(0, 10) : ""));
+    setReprogHora(operation?.hora_inicio?.slice(0, 5) || r.hora_salida || "");
     setReprogMsg("");
   };
 
@@ -408,18 +428,39 @@ export default function ClienteHistorialPage() {
     if (!reprogFecha) { setReprogMsg("Selecciona una fecha."); return; }
     setReprogSaving(true); setReprogMsg("");
     try {
-      const res = await fetch(`${API}/api/usuarios/mis-reservas/${reprogReserva.id}/reprogramar`, {
-        method: "PATCH", headers: getAuthHeaders(),
-        body: JSON.stringify({ fecha: reprogFecha, hora: reprogHora }),
+      const res = await fetch(`${API}/api/usuarios/mis-reservas/${reprogReserva.id}/reprogramacion`, {
+        method: "POST", headers: getAuthHeaders(),
+        body: JSON.stringify({ fecha: reprogFecha, hora: reprogHora, grupo_numero: reprogGrupoNumero }),
       });
       if (handleUnauthorized(res.status)) return;
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "No se pudo cambiar la fecha/hora");
+      if (!res.ok) throw new Error(data.error || "No se pudo enviar la solicitud");
       setReprogReserva(null);
-      setMsg(data.message || "Fecha/hora actualizada. Avisamos al administrador y al conductor.");
-      load();
+      setMsg(data.message || "Solicitud enviada. La fecha original se mantiene mientras Turesma la revisa.");
+      await load(true);
     } catch (e) { setReprogMsg(e instanceof Error ? e.message : "Error inesperado"); }
     finally { setReprogSaving(false); }
+  };
+
+  const responderPropuestaReprogramacion = async (solicitudId: number, decision: "aceptar" | "rechazar") => {
+    setSaving(true);
+    setMsg("");
+    setReprogramacionResponseError("");
+    try {
+      const response = await fetch(`${API}/api/usuarios/mis-reservas/reprogramaciones/${solicitudId}/${decision}`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      const data = await response.json();
+      if (handleUnauthorized(response.status)) return;
+      if (!response.ok) throw new Error(data.error || "No se pudo responder a la propuesta");
+      setMsg(data.message || "Respuesta guardada");
+      await load(true);
+    } catch (error) {
+      setReprogramacionResponseError(error instanceof Error ? error.message : "No se pudo responder a la propuesta");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const abrirSolicitudCambioDestino = (reserva: Reserva) => {
@@ -560,6 +601,7 @@ export default function ClienteHistorialPage() {
         <h1 data-tour-target="portal-travel-history" className="text-xl font-black italic tracking-tighter uppercase text-slate-900">Historial de Viajes</h1>
       </div>
 
+      {reprogramacionResponseError && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{reprogramacionResponseError}</div>}
       {msg && <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-sm text-emerald-700 font-bold flex items-center gap-2"><CheckCircle2 size={16} />{msg}</div>}
       {fileError && <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700 font-bold flex items-center gap-2"><AlertTriangle size={16} />{fileError}</div>}
 
@@ -589,6 +631,9 @@ export default function ClienteHistorialPage() {
               : montoPagado > 0
                 ? ESTADO_PAGO_STYLE.parcial
                 : ESTADO_PAGO_STYLE.pendiente;
+            const standaloneReschedule = r.solicitudes_reprogramacion?.find((request) => request.grupo_numero == null);
+            const standaloneRequestOpen = standaloneReschedule && ["pendiente_admin", "propuesta_cliente"].includes(standaloneReschedule.estado);
+            const primaryOperation = r.operaciones?.find((operation) => operation.grupo_numero === 1) || r.operaciones?.[0];
             return (
               <div key={r.id} className="bg-white rounded-2xl border-2 border-slate-200 shadow-sm p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-3 mb-3">
@@ -602,7 +647,7 @@ export default function ClienteHistorialPage() {
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                  <div className="bg-slate-50 rounded-xl p-2.5"><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Fecha</p><p className="font-bold text-slate-700">{formatLocalizedDate(r.fecha_reserva, language)}{r.fecha_fin && r.fecha_fin !== r.fecha_reserva ? ` → ${formatLocalizedDate(r.fecha_fin, language)}` : ""}{r.fecha_regreso ? ` · Regreso: ${formatLocalizedDate(r.fecha_regreso, language)}${r.hora_regreso ? ` ${r.hora_regreso}` : ""}` : ""}</p></div>
+                  <div className="bg-slate-50 rounded-xl p-2.5"><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Fecha</p><p className="font-bold text-slate-700">{formatLocalizedDate(primaryOperation?.fecha_programada || r.fecha_reserva, language)}{primaryOperation?.hora_inicio ? ` · ${primaryOperation.hora_inicio.slice(0, 5)}` : ""}{r.operaciones?.length ? "" : r.fecha_fin && r.fecha_fin !== r.fecha_reserva ? ` → ${formatLocalizedDate(r.fecha_fin, language)}` : ""}{!r.operaciones?.length && r.fecha_regreso ? ` · Regreso: ${formatLocalizedDate(r.fecha_regreso, language)}${r.hora_regreso ? ` ${r.hora_regreso}` : ""}` : ""}</p></div>
                   <div className="bg-slate-50 rounded-xl p-2.5"><p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Personas</p><p className="font-bold text-slate-700">{r.num_personas}</p></div>
                   <div className="bg-slate-50 rounded-xl p-2.5">
                     <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Vehículo asignado</p>
@@ -636,8 +681,15 @@ export default function ClienteHistorialPage() {
                 {(r.operaciones || []).length > 0 && (
                   <div className="mt-3 space-y-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
                     <p className="text-[10px] font-black uppercase tracking-widest text-blue-900">Seguimiento de unidades</p>
-                    {r.operaciones?.map((operation) => (
-                      <div key={operation.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/80 p-3">
+                    {r.operaciones?.map((operation) => {
+                      const groupRequest = r.solicitudes_reprogramacion?.find((request) => request.grupo_numero === operation.grupo_numero);
+                      const requestOpen = groupRequest && ["pendiente_admin", "propuesta_cliente"].includes(groupRequest.estado);
+                      const groupOperations = r.operaciones?.filter((item) => item.grupo_numero === operation.grupo_numero && item.estado !== "cancelada") || [];
+                      const showGroupActions = groupOperations[0]?.id === operation.id
+                        && !groupOperations.some((item) => ["en_curso", "completada"].includes(item.estado));
+                      return (
+                      <div key={operation.id} className="rounded-lg bg-white/80 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-2">
                           {operation.vehiculo_imagen_url ? (
                             <Image
@@ -660,6 +712,9 @@ export default function ClienteHistorialPage() {
                             <p data-no-translate className="truncate text-[10px] font-semibold text-slate-700">
                               {operation.origen} → {operation.destino}
                             </p>
+                            <p className="text-[10px] text-slate-500">
+                              {formatLocalizedDate(operation.fecha_programada, language)}{operation.hora_inicio ? ` · ${operation.hora_inicio.slice(0, 5)}` : ""}
+                            </p>
                             <p className="text-[10px] text-slate-600">
                               {operation.vehiculo_placa || "Vehículo por asignar"}
                               {operation.vehiculo_modelo ? ` · ${operation.vehiculo_modelo}` : ""}
@@ -674,8 +729,45 @@ export default function ClienteHistorialPage() {
                             mensaje={`Hola, soy el cliente de la reserva #${r.id}, grupo ${operation.grupo_numero} unidad ${operation.unidad_numero}.`}
                           />
                         )}
+                        </div>
+                        {showGroupActions && r.estado === "confirmada" && (
+                          <div className="mt-2 border-t border-blue-100 pt-2">
+                            {groupRequest?.estado === "pendiente_admin" && (
+                              <p className="text-xs font-semibold text-amber-800">
+                                Solicitud enviada para revisión. La fecha actual se mantiene.
+                              </p>
+                            )}
+                            {groupRequest?.estado === "propuesta_cliente" && (
+                              <div className="space-y-2">
+                                <p className="text-xs font-semibold text-blue-900">
+                                  Turesma propone {formatLocalizedDate(groupRequest.fecha_propuesta || "", language)}
+                                  {groupRequest.hora_propuesta ? ` · ${groupRequest.hora_propuesta.slice(0, 5)}` : ""}. La fecha actual no cambiará hasta que aceptes.
+                                </p>
+                                {groupRequest.nota_admin && <p className="text-xs text-blue-800">{groupRequest.nota_admin}</p>}
+                                <div className="flex flex-wrap gap-2">
+                                  <button type="button" onClick={() => void responderPropuestaReprogramacion(groupRequest.id, "aceptar")} disabled={saving} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase text-white disabled:opacity-50">Aceptar alternativa</button>
+                                  <button type="button" onClick={() => void responderPropuestaReprogramacion(groupRequest.id, "rechazar")} disabled={saving} className="rounded-lg bg-slate-100 px-3 py-2 text-[10px] font-black uppercase text-slate-600 disabled:opacity-50">Mantener fecha original</button>
+                                </div>
+                              </div>
+                            )}
+                            {groupRequest?.estado === "rechazada_admin" && (
+                              <p className="text-xs text-slate-700">No hay disponibilidad para la fecha solicitada. El servicio conserva su fecha original. {groupRequest.nota_admin}</p>
+                            )}
+                            {groupRequest?.estado === "rechazada_cliente" && (
+                              <p className="text-xs text-slate-700">Se mantiene la fecha original; rechazaste la alternativa.</p>
+                            )}
+                            {groupRequest?.estado === "aplicada" && (
+                              <p className="mb-2 text-xs font-semibold text-emerald-800">La alternativa fue aplicada a este grupo.</p>
+                            )}
+                            {!requestOpen && (
+                              <button type="button" onClick={() => abrirReprogramar(r, operation.grupo_numero ?? null)} className="mt-1 inline-flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[10px] font-black uppercase text-amber-700 hover:bg-amber-100">
+                                <Clock size={13} /> Solicitar cambio de fecha u hora
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    );})}
                   </div>
                 )}
 
@@ -811,10 +903,30 @@ export default function ClienteHistorialPage() {
                 {/* CAMBIAR FECHA/HORA (solo reservas confirmadas) */}
                 {r.estado === "confirmada" && (
                   <>
-                    <button onClick={() => abrirReprogramar(r)}
-                      className="w-full mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
-                      <Clock size={14} /> Cambiar fecha u hora de salida
-                    </button>
+                    {(r.operaciones || []).length === 0 && (
+                      <div className="mt-2">
+                        {standaloneReschedule?.estado === "pendiente_admin" && <p className="rounded-lg bg-amber-50 p-3 text-xs font-semibold text-amber-800">Solicitud enviada para revisión. La fecha actual se mantiene.</p>}
+                        {standaloneReschedule?.estado === "propuesta_cliente" && (
+                          <div className="space-y-2 rounded-lg bg-blue-50 p-3">
+                            <p className="text-xs font-semibold text-blue-900">Turesma propone {formatLocalizedDate(standaloneReschedule.fecha_propuesta || "", language)}{standaloneReschedule.hora_propuesta ? ` · ${standaloneReschedule.hora_propuesta.slice(0, 5)}` : ""}. La fecha actual no cambiará hasta que aceptes.</p>
+                            {standaloneReschedule.nota_admin && <p className="text-xs text-blue-800">{standaloneReschedule.nota_admin}</p>}
+                            <div className="flex flex-wrap gap-2">
+                              <button type="button" onClick={() => void responderPropuestaReprogramacion(standaloneReschedule.id, "aceptar")} disabled={saving} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase text-white disabled:opacity-50">Aceptar alternativa</button>
+                              <button type="button" onClick={() => void responderPropuestaReprogramacion(standaloneReschedule.id, "rechazar")} disabled={saving} className="rounded-lg bg-slate-100 px-3 py-2 text-[10px] font-black uppercase text-slate-600 disabled:opacity-50">Mantener fecha original</button>
+                            </div>
+                          </div>
+                        )}
+                        {standaloneReschedule?.estado === "rechazada_admin" && <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-700">No hay disponibilidad para la fecha solicitada. El servicio conserva su fecha original. {standaloneReschedule.nota_admin}</p>}
+                        {standaloneReschedule?.estado === "rechazada_cliente" && <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-700">Se mantiene la fecha original; rechazaste la alternativa.</p>}
+                        {standaloneReschedule?.estado === "aplicada" && <p className="mb-2 rounded-lg bg-emerald-50 p-3 text-xs font-semibold text-emerald-800">La alternativa fue aplicada.</p>}
+                        {!standaloneRequestOpen && (
+                          <button onClick={() => abrirReprogramar(r)}
+                            className="w-full mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
+                            <Clock size={14} /> Solicitar cambio de fecha u hora
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {pagoCompleto && !["pendiente_admin", "propuesta_cliente", "pago_pendiente", "devolucion_pendiente"].includes(r.cambio_destino?.estado || "") && (
                       <button onClick={() => abrirSolicitudCambioDestino(r)}
                         className="w-full mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100">
@@ -854,6 +966,13 @@ export default function ClienteHistorialPage() {
                     </button>
                   )
                 ) : null}
+                <div className="mt-4 border-t border-slate-100 pt-3">
+                  <CommunicationPanel
+                    contextType="reserva"
+                    contextId={r.id}
+                    contextTitle={`Reserva #${r.id}`}
+                  />
+                </div>
               </div>
             );
           })}
@@ -893,28 +1012,30 @@ export default function ClienteHistorialPage() {
         </div>
       )}
 
-      {/* MODAL: cambiar fecha/hora de una reserva confirmada */}
+      {/* MODAL: solicitar cambio de fecha/hora */}
       {reprogReserva && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0b0f1a]/80 backdrop-blur-sm p-4 overflow-y-auto"
           onClick={() => !reprogSaving && setReprogReserva(null)}>
           <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <Clock size={18} className="text-amber-500" /> Cambiar fecha u hora
+                <Clock size={18} className="text-amber-500" /> Solicitar cambio de fecha u hora
               </h3>
               <button onClick={() => !reprogSaving && setReprogReserva(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
             </div>
             <p className="text-[12px] text-slate-500 mb-5">
-              Reserva #{reprogReserva.id} · {reprogReserva.origen || "—"} → {reprogReserva.destino || "—"}.
-              Se avisará por correo al cliente y se actualizará al administrador y al conductor.
+              Reserva #{reprogReserva.id}{reprogGrupoNumero ? ` · Grupo ${reprogGrupoNumero}` : ""} · {reprogGrupoNumero
+                ? `${reprogReserva.operaciones?.find((operation) => operation.grupo_numero === reprogGrupoNumero)?.origen || "—"} → ${reprogReserva.operaciones?.find((operation) => operation.grupo_numero === reprogGrupoNumero)?.destino || "—"}`
+                : `${reprogReserva.origen || "—"} → ${reprogReserva.destino || "—"}`}.
+              La fecha actual se mantiene hasta que revises y aceptes una alternativa de Turesma.
             </p>
 
-            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Nueva fecha de salida</label>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Fecha solicitada</label>
             <input type="date" value={reprogFecha} min={new Date().toISOString().slice(0, 10)}
               onChange={(e) => setReprogFecha(e.target.value)}
               className="w-full mb-4 px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 focus:outline-none focus:border-amber-400" />
 
-            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Nueva hora de salida</label>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Hora solicitada</label>
             <input type="time" value={reprogHora}
               onChange={(e) => setReprogHora(e.target.value)}
               className="w-full mb-2 px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 focus:outline-none focus:border-amber-400" />
@@ -927,7 +1048,7 @@ export default function ClienteHistorialPage() {
                 className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-500 text-[11px] font-black uppercase tracking-widest disabled:opacity-50">Cancelar</button>
               <button onClick={guardarReprogramacion} disabled={reprogSaving || !reprogFecha}
                 className="flex-1 py-3 rounded-xl bg-[#E31E24] hover:bg-black text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-50">
-                {reprogSaving ? <><Loader2 size={14} className="animate-spin" /> Guardando…</> : <>Guardar cambio</>}
+                {reprogSaving ? <><Loader2 size={14} className="animate-spin" /> Enviando…</> : <>Enviar solicitud</>}
               </button>
             </div>
           </div>

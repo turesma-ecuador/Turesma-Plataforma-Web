@@ -115,6 +115,7 @@ const eventStyle = (event: FleetEvent) => {
   if (event.estado === "en_curso") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (event.estado === "incidencia") return "border-red-200 bg-red-50 text-red-700";
   if (event.estado === "completada") return "border-slate-200 bg-slate-100 text-slate-600";
+  if (event.tipo === "reserva") return "border-cyan-200 bg-cyan-50 text-cyan-800";
   return "border-blue-200 bg-blue-50 text-blue-800";
 };
 
@@ -122,6 +123,13 @@ const eventSummary = (event: FleetEvent) => {
   const time = event.hora_inicio ? ` · ${event.hora_inicio.slice(0, 5)}${event.hora_fin ? `–${event.hora_fin.slice(0, 5)}` : ""}` : "";
   const route = [event.origen, event.destino].filter(Boolean).join(" → ");
   return `${eventName(event)}${time}${route ? ` · ${route}` : ""}`;
+};
+
+const eventTimeLabel = (event: FleetEvent) => {
+  const start = event.hora_inicio?.slice(0, 5);
+  const end = event.hora_fin?.slice(0, 5);
+  if (!start) return end ? `Hasta ${end}` : null;
+  return end ? `${start}–${end}` : start;
 };
 
 const eventStatusLabel = (event: FleetEvent) => {
@@ -597,23 +605,21 @@ export default function CalendarioFlotaPage() {
                           className="grid gap-x-1 gap-y-1 py-1"
                           style={{
                             gridTemplateColumns: `repeat(${days.length}, ${dayColumnWidth}px)`,
-                            gridTemplateRows: `22px repeat(${laneCount}, ${viewMode === "week" ? "52px" : "30px"})`,
+                            gridTemplateRows: `6px repeat(${laneCount}, ${viewMode === "week" ? "64px" : "34px"})`,
                             minWidth: `${days.length * dayColumnWidth}px`,
                           }}
                         >
                           {days.map((day, index) => day ? (
-                            <button
+                            <span
                               key={day}
-                              type="button"
-                              onClick={() => { setSelectedDate(day); setSelectedItemKey(null); }}
-                              aria-label={`Ver disponibilidad del ${formatDate(day)}`}
-                              aria-pressed={selectedDate === day}
+                              aria-hidden="true"
                               style={{ gridColumn: index + 1, gridRow: 1 }}
-                              className={`rounded-md border-l border-slate-100 text-[9px] ${selectedDate === day ? "bg-red-50 ring-1 ring-inset ring-red-200" : "hover:bg-slate-50"}`}
+                              className={`border-l border-slate-100 ${selectedDate === day ? "border-b-2 border-b-[#E31E24] bg-red-50/50" : day === asIsoDate(new Date()) ? "bg-slate-50/70" : ""}`}
                             />
-                          ) : <span key={`blank-${index}`} style={{ gridColumn: index + 1, gridRow: 1 }} />)}
+                          ) : <span key={`blank-${index}`} aria-hidden="true" style={{ gridColumn: index + 1, gridRow: 1 }} />)}
                           {vehicleEvents.map((event) => {
                             const itemKey = `event:${event.tipo}:${event.id}`;
+                            const timeLabel = eventTimeLabel(event);
                             return (
                               <button
                                 key={itemKey}
@@ -629,17 +635,19 @@ export default function CalendarioFlotaPage() {
                                   gridColumn: `${event.gridStart + 1} / ${event.gridEnd + 2}`,
                                   gridRow: event.lane + 2,
                                 }}
-                                className={`z-[1] flex min-w-0 flex-col justify-center overflow-hidden rounded-lg border px-2 text-left transition hover:brightness-95 ${viewMode === "week" ? "gap-0.5 py-1 text-[10px]" : "truncate text-[9px]"} ${eventStyle(event)} ${conflictEventKeys.has(itemKey) ? "ring-2 ring-red-500 ring-offset-1" : ""} ${selectedItemKey === itemKey ? "ring-2 ring-[#E31E24] ring-offset-1" : ""}`}
+                                className={`z-[1] flex min-w-0 flex-col justify-center overflow-hidden rounded-lg border px-2 text-left transition hover:brightness-95 ${viewMode === "week" ? "gap-1 py-1 text-[10px]" : "truncate text-[9px]"} ${eventStyle(event)} ${conflictEventKeys.has(itemKey) ? "ring-2 ring-red-500 ring-offset-1" : ""} ${selectedItemKey === itemKey ? "ring-2 ring-[#E31E24] ring-offset-1" : ""}`}
                               >
                                 <span className="flex min-w-0 items-center justify-between gap-1">
                                   <span className="truncate font-black">{event.tipo === "mantenimiento" ? "Mantenimiento" : eventName(event)}</span>
                                   <span className="flex shrink-0 items-center gap-1">
                                     {conflictEventKeys.has(itemKey) && <AlertTriangle size={11} aria-hidden="true" />}
-                                    {event.hora_inicio && <span className="font-bold opacity-80">{event.hora_inicio.slice(0, 5)}</span>}
+                                    {viewMode === "week" && timeLabel && (
+                                      <span className="rounded bg-white/70 px-1 font-black tabular-nums">{timeLabel}</span>
+                                    )}
                                   </span>
                                 </span>
                                 {viewMode === "week" && (
-                                  <span className="block truncate text-[9px] font-semibold opacity-80">
+                                  <span className="line-clamp-2 block min-w-0 whitespace-normal break-words text-[9px] leading-3 font-semibold opacity-80">
                                     {event.tipo === "mantenimiento" || event.tipo === "externo"
                                       ? eventStatusLabel(event)
                                       : [event.origen, event.destino].filter(Boolean).join(" → ") || eventStatusLabel(event)}
@@ -659,11 +667,14 @@ export default function CalendarioFlotaPage() {
           </div>
         </div>
 
-        <div className="hidden flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 px-4 py-3 text-[10px] font-semibold text-slate-600 sm:px-5 lg:flex">
-          <span className="inline-flex items-center gap-1.5"><i className="h-3 w-3 rounded border border-blue-200 bg-blue-50" /> Viaje o reserva</span>
-          <span className="inline-flex items-center gap-1.5"><i className="h-3 w-3 rounded border border-emerald-200 bg-emerald-50" /> En curso</span>
-          <span className="inline-flex items-center gap-1.5"><i className="h-3 w-3 rounded border border-amber-200 bg-amber-50" /> Mantenimiento</span>
-          <span className="inline-flex items-center gap-1.5"><i className="h-3 w-3 rounded border border-slate-200 bg-slate-100" /> Finalizado</span>
+        <div className="flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-100 px-4 py-3 text-[10px] font-semibold text-slate-600 sm:px-5">
+          <span className="inline-flex items-center gap-1.5"><i aria-hidden="true" className="h-3 w-3 rounded border border-blue-200 bg-blue-50" /> Viaje</span>
+          <span className="inline-flex items-center gap-1.5"><i aria-hidden="true" className="h-3 w-3 rounded border border-cyan-200 bg-cyan-50" /> Reserva</span>
+          <span className="inline-flex items-center gap-1.5"><i aria-hidden="true" className="h-3 w-3 rounded border border-emerald-200 bg-emerald-50" /> En curso</span>
+          <span className="inline-flex items-center gap-1.5"><i aria-hidden="true" className="h-3 w-3 rounded border border-red-200 bg-red-50" /> Incidencia</span>
+          <span className="inline-flex items-center gap-1.5"><i aria-hidden="true" className="h-3 w-3 rounded border border-amber-200 bg-amber-50" /> Mantenimiento</span>
+          <span className="inline-flex items-center gap-1.5"><i aria-hidden="true" className="h-3 w-3 rounded border border-violet-200 bg-violet-50" /> Bloqueo externo</span>
+          <span className="inline-flex items-center gap-1.5"><i aria-hidden="true" className="h-3 w-3 rounded border border-slate-200 bg-slate-100" /> Finalizado</span>
         </div>
 
         <div className="divide-y divide-slate-100 lg:hidden">

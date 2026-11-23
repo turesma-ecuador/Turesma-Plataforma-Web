@@ -32,28 +32,32 @@ type Props = {
   portal?: Portal;
 };
 
-// Resuelve la ruta según el tipo de recurso enlazado; ?id= identifica el registro.
+// Cada mensaje contextual lleva al hilo asociado al servicio.
 const resolveLinkPath = (portal: Portal | undefined, linkType?: string | null, linkId?: number | null): string | null => {
   if (!portal || !linkType) return null;
   const withId = (base: string) => (linkId ? `${base}?id=${linkId}` : base);
+  const withChat = (base: string, type: string) => (
+    linkId ? `${base}${base.includes("?") ? "&" : "?"}chat=${encodeURIComponent(`${type}:${linkId}`)}` : base
+  );
   if (linkType === "cotizacion") {
-    if (portal === "admin") return withId("/admin/cotizaciones");
-    if (portal === "cliente") return "/cliente/cotizar";
+    if (portal === "admin") return withChat("/admin/cotizaciones", linkType);
+    if (portal === "cliente") return withChat("/cliente/cotizar", linkType);
     return null;
   }
   if (linkType === "reserva") {
-    if (portal === "admin") return "/admin/reservas";
-    if (portal === "cliente") return "/cliente/historial";
+    if (portal === "admin") return withChat(withId("/admin/reservas"), linkType);
+    if (portal === "cliente") return withChat("/cliente/historial", linkType);
     if (portal === "vehiculo") return "/vehiculo/activas";
   }
   if (linkType === "pago" && portal === "admin") {
     return withId("/admin/pagos");
   }
   if (linkType === "requerimiento" && portal === "admin") {
-    return linkId ? `/admin/cotizaciones?requerimiento=${linkId}` : "/admin/cotizaciones";
+    const base = linkId ? `/admin/cotizaciones?requerimiento=${linkId}` : "/admin/cotizaciones";
+    return withChat(base, linkType);
   }
   if (linkType === "requerimiento" && portal === "cliente") {
-    return "/cliente/requerimiento-personalizado";
+    return withChat("/cliente/requerimiento-personalizado", linkType);
   }
   return null;
 };

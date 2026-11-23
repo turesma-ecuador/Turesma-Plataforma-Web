@@ -16,6 +16,7 @@ import { VehiculoCalendario } from "../../../components/vehiculo-calendario";
 import { calcularRuta, formatDuracion, reverseGeocode, RutaCalculada } from "../../../lib/leaflet";
 import { formatLocalizedDate, LocalizedContent, useLocale } from "../../../lib/i18n";
 import { ClientGuidedTour } from "../_components/client-guided-tour";
+import { CommunicationPanel } from "../../../components/communication-panel";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -100,10 +101,10 @@ const createEmptyServiceGroup = (): CustomServiceGroup => ({
   simultaneo: false,
 });
 const WIZARD_STEPS = [
-  { label: "Ruta", title: "¿A dónde necesitas viajar?", guidance: "Indica tu punto de salida y destino. Puedes buscar una dirección o ajustar el marcador en el mapa." },
-  { label: "Fechas", title: "¿Cuándo será tu viaje?", guidance: "Elige la fecha, horario y pasajeros. Si necesitas varios días o regresar después, selecciona la opción correspondiente." },
-  { label: "Vehículo", title: "Elige una categoría", guidance: "Selecciona la categoría que prefieres. La unidad específica se asignará después de confirmar el pago." },
-  { label: "Resumen", title: "Revisa antes de enviar", guidance: "Confirma que los datos del viaje sean correctos. Administración revisará tu solicitud y te enviará el precio." },
+  { label: "Ruta", icon: MapPin, title: "¿A dónde necesitas viajar?", guidance: "Indica tu punto de salida y destino. Puedes buscar una dirección o ajustar el marcador en el mapa." },
+  { label: "Fechas", icon: Calendar, title: "¿Cuándo será tu viaje?", guidance: "Elige la fecha y luego completa el horario y los pasajeros. Si necesitas varios días o regresar después, selecciona la opción correspondiente." },
+  { label: "Vehículo", icon: Car, title: "Elige una categoría", guidance: "Selecciona la categoría que prefieres. La unidad específica se asignará después de confirmar el pago." },
+  { label: "Resumen", icon: FileText, title: "Revisa antes de enviar", guidance: "Confirma que los datos del viaje sean correctos. Administración revisará tu solicitud y te enviará el precio." },
 ];
 
 // Cantidad de días que abarca un rango (ambos extremos incluidos).
@@ -394,26 +395,33 @@ export default function ClienteCotizarPage() {
     loadCustomRequests();
   }, { enabled: !checkingSession && !!userId, intervalMs: 5000, immediate: false });
 
+  const getDateStepError = () => {
+    if (!form.fecha_servicio) return "Selecciona la fecha de inicio del servicio.";
+    if (variosDias && !form.fecha_fin) return "Toca también el último día del viaje en el calendario.";
+    if (regresoOtraFecha && !form.fecha_regreso) return "Selecciona la fecha de recogida para el regreso.";
+    if (regresoOtraFecha && form.fecha_regreso <= form.fecha_servicio) {
+      return "La fecha de regreso debe ser posterior a la fecha de salida.";
+    }
+    if (variosDias && form.fecha_fin && diasEntre(form.fecha_servicio, form.fecha_fin) > MAX_DIAS) {
+      return `El servicio no puede superar los ${MAX_DIAS} días seguidos.`;
+    }
+    return "";
+  };
+
   const getStepError = (stepNumber: number) => {
     if (stepNumber === 1 && (!origin || !destination)) {
       return "Marca el punto de salida y el destino en el mapa.";
     }
     if (stepNumber === 2) {
-      if (!form.fecha_servicio) return "Selecciona la fecha de inicio del servicio.";
-      if (variosDias && !form.fecha_fin) return "Toca también el último día del viaje en el calendario.";
+      const dateError = getDateStepError();
+      if (dateError) return dateError;
       if (!form.hora_salida) return "Indica la hora de salida que prefieres.";
       if (!form.hora_llegada_estimada) return "Indica una hora estimada de llegada.";
       if (duracionEntreHoras(form.hora_salida, form.hora_llegada_estimada) <= 0) {
         return "La llegada estimada debe ser posterior a la salida.";
       }
-      if (regresoOtraFecha && (!form.fecha_regreso || !form.hora_regreso)) {
-        return "Indica la fecha y hora para recoger al regreso.";
-      }
-      if (regresoOtraFecha && form.fecha_regreso <= form.fecha_servicio) {
-        return "La fecha de regreso debe ser posterior a la fecha de salida.";
-      }
-      if (variosDias && form.fecha_fin && diasEntre(form.fecha_servicio, form.fecha_fin) > MAX_DIAS) {
-        return `El servicio no puede superar los ${MAX_DIAS} días seguidos.`;
+      if (regresoOtraFecha && !form.hora_regreso) {
+        return "Indica la hora de recogida para el regreso.";
       }
     }
     if (stepNumber === 3) {
@@ -427,9 +435,10 @@ export default function ClienteCotizarPage() {
   };
 
   const handleBookingTourStepChange = useCallback((stepIndex: number) => {
+    const formStep = [1, 2, 2, 3, 4][stepIndex] || 1;
     setBookingTourStep(stepIndex);
     setShowForm(true);
-    setWizardStep(stepIndex + 1);
+    setWizardStep(formStep);
     setFormErr("");
     setFormMsg("");
   }, []);
@@ -526,9 +535,10 @@ export default function ClienteCotizarPage() {
           onStepChange={handleBookingTourStepChange}
           stepComplete={
             bookingTourStep === 0 ? !getStepError(1)
-              : bookingTourStep === 1 ? !getStepError(2)
-                : bookingTourStep === 2 ? !getStepError(3)
-                  : Boolean(formMsg)
+              : bookingTourStep === 1 ? !getDateStepError()
+                : bookingTourStep === 2 ? !getStepError(2)
+                  : bookingTourStep === 3 ? !getStepError(3)
+                    : Boolean(formMsg)
           }
         />
       </div>
@@ -758,7 +768,7 @@ export default function ClienteCotizarPage() {
       </section>}
 
       {/* TOGGLE FORM */}
-      <button data-tour-target="portal-cotizar-start" onClick={() => { setShowForm(f => !f); setFormErr(""); setFormMsg(""); }}
+      <button onClick={() => { setShowForm(f => !f); setFormErr(""); setFormMsg(""); }}
         className={`w-full flex items-center justify-between p-5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-lg ${showForm ? "bg-slate-800 text-white" : "bg-[#E31E24] text-white hover:bg-red-700"}`}>
         <span className="flex items-center gap-3"><div className="bg-white/20 p-2 rounded-xl"><FileText size={18} /></div>{showForm ? "Ocultar formulario" : "Nueva solicitud de servicio"}</span>
         {showForm ? <ChevronUp size={18} /> : <ArrowRight size={18} />}
@@ -775,7 +785,7 @@ export default function ClienteCotizarPage() {
                 <p className="text-[10px] font-bold text-slate-400">{wizardStep === 2 ? "Fecha y pasajeros" : WIZARD_STEPS[wizardStep - 1].label}</p>
               </div>
               <ol className="grid grid-cols-4 gap-2" aria-label="Pasos de la solicitud">
-                {WIZARD_STEPS.map(({ label }, index) => {
+                {WIZARD_STEPS.map(({ label, icon: StepIcon }, index) => {
                   const stepNumber = index + 1;
                   const completed = stepNumber < wizardStep;
                   const current = stepNumber === wizardStep;
@@ -785,7 +795,7 @@ export default function ClienteCotizarPage() {
                         aria-current={current ? "step" : undefined}
                         className={`w-full rounded-xl px-1 py-2 text-[10px] font-black transition sm:text-xs ${current ? "bg-red-50 text-[#E31E24]" : completed ? "text-slate-600 hover:bg-white" : "cursor-default text-slate-400"}`}>
                         <span className={`mx-auto mb-1 flex h-6 w-6 items-center justify-center rounded-full text-[10px] ${current ? "bg-[#E31E24] text-white" : completed ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>
-                          {completed ? <CheckCircle2 size={14} /> : stepNumber}
+                          {completed ? <CheckCircle2 size={14} /> : <StepIcon size={14} aria-hidden="true" />}
                         </span>
                         {label}
                       </button>
@@ -806,7 +816,7 @@ export default function ClienteCotizarPage() {
 
             <div data-tour-target="booking-category" className={`space-y-6 ${wizardStep === 3 ? "" : "hidden"}`}>
             {/* PASO 1: PREFERENCIA DE CATEGORÍA */}
-            <div className="space-y-2">
+            <div data-tour-target="booking-schedule-calendar" className="space-y-2 scroll-mt-[15rem]">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Car size={12} /> 3. Elige una categoría de vehículo</p>
               <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
                 <AlertCircle size={16} className="mt-0.5 shrink-0 text-blue-700" />
@@ -864,7 +874,7 @@ export default function ClienteCotizarPage() {
 
             {/* PASO 2: FECHA (calendario con días reservados bloqueados) */}
             <div className={`space-y-4 ${wizardStep === 2 ? "" : "hidden"}`}>
-              <div data-tour-target="booking-schedule" className="space-y-2 scroll-mt-24">
+              <div className="space-y-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Calendar size={12} /> 2. Fecha del servicio</p>
               <p className="text-xs text-slate-500">
                 {variosDias
@@ -948,34 +958,36 @@ export default function ClienteCotizarPage() {
                 </div>
               )}
 
-              <VehiculoCalendario
-                localized
-                vehiculoId={null}
-                value={regresoOtraFecha && fechaCalendarioActiva === "regreso" ? form.fecha_regreso : form.fecha_servicio}
-                onSelect={(f) => {
-                  if (regresoOtraFecha && fechaCalendarioActiva === "regreso") {
-                    setForm(p => ({ ...p, fecha_regreso: f }));
-                    return;
-                  }
-                  setForm(p => ({
-                    ...p,
-                    fecha_servicio: f,
-                    ...(p.fecha_regreso && p.fecha_regreso <= f ? { fecha_regreso: "", hora_regreso: "" } : {}),
-                  }));
-                  if (regresoOtraFecha && (!form.fecha_servicio || form.fecha_regreso && form.fecha_regreso <= f)) {
-                    setFechaCalendarioActiva("regreso");
-                  }
-                }}
-                range={variosDias}
-                endValue={form.fecha_fin}
-                onSelectEnd={(f) => setForm(p => ({ ...p, fecha_fin: f }))}
-                maxDays={MAX_DIAS}
-                allowUnassigned
-                minDate={regresoOtraFecha && fechaCalendarioActiva === "regreso" && form.fecha_servicio ? siguienteFecha(form.fecha_servicio) : ""}
-                selectionLabel={regresoOtraFecha ? fechaCalendarioActiva === "salida" ? "Fecha de salida" : "Fecha de recogida" : ""}
-                secondaryValue={regresoOtraFecha ? fechaCalendarioActiva === "salida" ? form.fecha_regreso : form.fecha_servicio : ""}
-                secondaryLabel={regresoOtraFecha ? fechaCalendarioActiva === "salida" ? "Regreso" : "Salida del viaje" : ""}
-              />
+              <div>
+                <VehiculoCalendario
+                  localized
+                  vehiculoId={null}
+                  value={regresoOtraFecha && fechaCalendarioActiva === "regreso" ? form.fecha_regreso : form.fecha_servicio}
+                  onSelect={(f) => {
+                    if (regresoOtraFecha && fechaCalendarioActiva === "regreso") {
+                      setForm(p => ({ ...p, fecha_regreso: f }));
+                      return;
+                    }
+                    setForm(p => ({
+                      ...p,
+                      fecha_servicio: f,
+                      ...(p.fecha_regreso && p.fecha_regreso <= f ? { fecha_regreso: "", hora_regreso: "" } : {}),
+                    }));
+                    if (regresoOtraFecha && (!form.fecha_servicio || form.fecha_regreso && form.fecha_regreso <= f)) {
+                      setFechaCalendarioActiva("regreso");
+                    }
+                  }}
+                  range={variosDias}
+                  endValue={form.fecha_fin}
+                  onSelectEnd={(f) => setForm(p => ({ ...p, fecha_fin: f }))}
+                  maxDays={MAX_DIAS}
+                  allowUnassigned
+                  minDate={regresoOtraFecha && fechaCalendarioActiva === "regreso" && form.fecha_servicio ? siguienteFecha(form.fecha_servicio) : ""}
+                  selectionLabel={regresoOtraFecha ? fechaCalendarioActiva === "salida" ? "Fecha de salida" : "Fecha de recogida" : ""}
+                  secondaryValue={regresoOtraFecha ? fechaCalendarioActiva === "salida" ? form.fecha_regreso : form.fecha_servicio : ""}
+                  secondaryLabel={regresoOtraFecha ? fechaCalendarioActiva === "salida" ? "Regreso" : "Salida del viaje" : ""}
+                />
+              </div>
 
               {/* Resumen del rango elegido */}
               {form.fecha_servicio && (
@@ -991,6 +1003,7 @@ export default function ClienteCotizarPage() {
                 </div>
               )}
               </div>
+              <div data-tour-target="booking-time-passengers" className="space-y-4 scroll-mt-[15rem]">
               <div className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <label htmlFor="hora-salida" className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
@@ -1043,6 +1056,7 @@ export default function ClienteCotizarPage() {
                   <span className="w-6 text-center font-black text-slate-800">{form.num_personas}</span>
                   <button type="button" onClick={() => step("num_personas", 1, 1)} className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600"><Plus size={14} /></button>
                 </div>
+              </div>
               </div>
             </div>
 
@@ -1324,6 +1338,13 @@ export default function ClienteCotizarPage() {
                       )}
                     </div>
                   )}
+                  <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+                    <CommunicationPanel
+                      contextType="cotizacion"
+                      contextId={cot.id}
+                      contextTitle={`Cotización #${cot.id}`}
+                    />
+                  </div>
                 </div>
               );
             })}
