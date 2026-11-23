@@ -288,3 +288,58 @@ test("acepta la propuesta de forma idempotente y crea una reserva maestra por el
   assert.equal(second.body.reserva_id, 900);
   assert.equal(queries.filter(item => item.query.startsWith("insert into reservas")).length, 1);
 });
+
+test("permite ofertar solo algunos grupos y conserva los no incluidos sin precio", async () => {
+  const original = { ...savedRequest, service_groups: savedRequest.service_groups };
+  savedRequest.reserva_id = null;
+  savedRequest.estado = "pendiente";
+
+  const updateRes = response();
+  await actualizarRequerimientoAdmin({
+    params: { id: "44" },
+    user: { id: 2 },
+    body: {
+      action: "send_proposal",
+      grupos_incluidos: [2],
+      precios_grupo: [2500, 900],
+      motivos_grupos_no_incluidos: { "1": "No hay disponibilidad para esas fechas" },
+      respuesta_admin: "Podemos atender el segundo grupo.",
+    },
+  }, updateRes);
+
+  assert.equal(updateRes.statusCode, 200);
+  assert.equal(updateRes.body.precio_final, 900);
+  assert.equal(updateRes.body.service_groups[0].incluido_en_propuesta, false);
+  assert.equal(updateRes.body.service_groups[0].precio_total, null);
+  assert.equal(updateRes.body.service_groups[0].motivo_no_inclusion, "No hay disponibilidad para esas fechas");
+  assert.equal(updateRes.body.service_groups[1].incluido_en_propuesta, true);
+  assert.equal(updateRes.body.service_groups[1].precio_total, 900);
+  savedRequest = original;
+});
+
+test("al aceptar una propuesta parcial prepara el pago solo para los grupos incluidos", async () => {
+  const original = savedRequest;
+  savedRequest = {
+    ...original,
+    reserva_id: null,
+    estado: "propuesta_enviada",
+    precio_final: 900,
+    service_groups: [
+      { ...original.service_groups[0], incluido_en_propuesta: false, precio_total: null },
+      { ...original.service_groups[1], incluido_en_propuesta: true, precio_total: 900 },
+    ],
+  };
+  nextReservationId = 950;
+
+  const acceptRes = response();
+  await aceptarPropuestaRequerimiento({ params: { id: "44" }, user: { id: 7 } }, acceptRes);
+
+  assert.equal(acceptRes.statusCode, 201);
+  assert.equal(acceptRes.body.reserva_id, 950);
+  const reservationInsert = queries.find(item => item.query.startsWith("insert into reservas") && item.params[4] === 900);
+  assert.ok(reservationInsert);
+  assert.equal(reservationInsert.params[3], 4);
+  assert.equal(reservationInsert.params[8], "2026-11-10");
+  assert.equal(reservationInsert.params[9], "2026-11-10 09:00");
+  savedRequest = original;
+});

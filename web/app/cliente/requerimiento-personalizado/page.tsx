@@ -21,6 +21,7 @@ type Request = {
     cantidad_vehiculos: number; tipo_vehiculo?: string | null; pasajeros_por_vehiculo?: number | null;
     fecha_servicio?: string | null; fecha_fin?: string | null; hora_salida?: string | null;
     origen?: string | null; destino?: string | null; precio_total?: number | null;
+    incluido_en_propuesta?: boolean; motivo_no_inclusion?: string | null;
   }>;
   unidades_despacho?: Array<{
     grupo_numero: number; unidad_numero: number; estado: string;
@@ -211,6 +212,7 @@ export default function ClienteRequerimientoPersonalizadoPage() {
         {loading ? <Loader2 className="animate-spin text-[#E31E24]" size={24} /> : requests.map(request => {
           const hasProposal = ["propuesta_enviada", "pago_pendiente", "pagado"].includes(request.estado);
           const groups = request.service_groups || [];
+          const excludedGroupCount = groups.filter(group => group.incluido_en_propuesta === false).length;
           return <article key={request.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap justify-between gap-2">
               <p className="font-black text-slate-800">Requerimiento #{request.id}{request.organizacion ? ` · ${request.organizacion}` : ""}</p>
@@ -218,17 +220,24 @@ export default function ClienteRequerimientoPersonalizadoPage() {
             </div>
             {hasProposal && <div className="mt-3 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-black text-emerald-700">Total de la propuesta: ${Number(request.precio_final || 0).toFixed(2)}</p>
+                <p className="text-sm font-black text-emerald-700">Total de la propuesta{excludedGroupCount ? " parcial" : ""}: ${Number(request.precio_final || 0).toFixed(2)}</p>
                 <button type="button" onClick={() => void downloadProforma(request)} disabled={payingId === request.id}
                   className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-800 disabled:opacity-60">
                   {payingId === request.id ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Proforma PDF
                 </button>
               </div>
               {groups.map((group, index) => <div key={index} className="rounded-lg bg-white/80 p-3 text-xs text-slate-700">
-                <p className="font-black">Grupo {index + 1} · {group.cantidad_vehiculos} vehículo(s){group.tipo_vehiculo ? ` · ${group.tipo_vehiculo}` : ""}</p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-black">Grupo {index + 1} · {group.cantidad_vehiculos} vehículo(s){group.tipo_vehiculo ? ` · ${group.tipo_vehiculo}` : ""}</p>
+                  <span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${group.incluido_en_propuesta === false ? "bg-slate-100 text-slate-600" : "bg-emerald-100 text-emerald-700"}`}>
+                    {group.incluido_en_propuesta === false ? "No incluido" : "Incluido"}
+                  </span>
+                </div>
                 <p className="mt-1">{group.origen || "Salida"} → {group.destino || "Destino"}{group.fecha_servicio ? ` · ${group.fecha_servicio.slice(0, 10)}` : ""}{group.hora_salida ? ` · ${group.hora_salida}` : ""}</p>
-                <p className="mt-1 font-bold text-emerald-700">Subtotal del grupo: ${Number(group.precio_total || 0).toFixed(2)}</p>
-                {!!request.unidades_despacho?.filter(unit => unit.grupo_numero === index + 1).length && <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                {group.incluido_en_propuesta === false
+                  ? <p className="mt-1 font-semibold text-slate-500">{group.motivo_no_inclusion || "Este grupo no forma parte de la propuesta ni de la reserva."}</p>
+                  : <p className="mt-1 font-bold text-emerald-700">Subtotal del grupo: ${Number(group.precio_total || 0).toFixed(2)}</p>}
+                {group.incluido_en_propuesta !== false && !!request.unidades_despacho?.filter(unit => unit.grupo_numero === index + 1).length && <div className="mt-2 grid gap-1 sm:grid-cols-2">
                   {request.unidades_despacho.filter(unit => unit.grupo_numero === index + 1).map(unit => (
                     <p key={unit.unidad_numero} className="rounded-lg border border-slate-100 bg-white px-2.5 py-2 text-[10px] font-semibold text-slate-600">
                       Unidad {unit.unidad_numero}: <span className="font-black text-slate-800">{unit.estado.replace(/_/g, " ")}</span>
@@ -243,7 +252,7 @@ export default function ClienteRequerimientoPersonalizadoPage() {
               </a>}
               {!request.reserva_id && request.estado === "propuesta_enviada" && <button type="button" onClick={() => void acceptProposal(request)} disabled={payingId === request.id}
                 className="inline-flex items-center gap-2 rounded-xl bg-[#E31E24] px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-red-700 disabled:opacity-60">
-                {payingId === request.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Aceptar y continuar al pago
+                {payingId === request.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} {excludedGroupCount ? "Aceptar propuesta parcial y continuar al pago" : "Aceptar y continuar al pago"}
               </button>}
               {request.estado === "pagado" && <p className="inline-flex items-center gap-2 text-xs font-black text-emerald-700"><CheckCircle2 size={15} /> Pago confirmado · Despacho: {request.estado_despacho || "pendiente"}</p>}
             </div>}

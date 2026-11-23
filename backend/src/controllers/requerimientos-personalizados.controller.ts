@@ -241,29 +241,75 @@ const actualizarRequerimientoAdmin = async (req: any, res: any) => {
     }
     let price: number | null = current.precio_final == null ? null : Number(current.precio_final);
     if (req.body?.precios_grupo !== undefined) {
-      const prices: unknown[] = req.body.precios_grupo;
+      if (!Array.isArray(req.body.precios_grupo) || req.body.precios_grupo.length !== updatedGroups.length) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "Asigna un precio válido a cada grupo de servicio" });
+      }
+    }
+    if (action === "send_proposal") {
+      const requestedIncluded: unknown = req.body?.grupos_incluidos;
+      const rawIncluded = requestedIncluded === undefined
+        ? updatedGroups.map((_group: Record<string, unknown>, index: number) => index + 1)
+        : requestedIncluded;
+      if (!Array.isArray(rawIncluded) || !rawIncluded.length
+        || rawIncluded.some(groupNumber => !Number.isInteger(groupNumber) || Number(groupNumber) < 1 || Number(groupNumber) > updatedGroups.length)
+        || new Set(rawIncluded).size !== rawIncluded.length) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "Selecciona al menos un grupo para incluir en la propuesta" });
+      }
+      const includedGroupNumbers = rawIncluded as number[];
+      const includedSet = new Set(includedGroupNumbers);
+      const prices = req.body?.precios_grupo === undefined
+        ? updatedGroups.map((group: Record<string, unknown>) => group.precio_total)
+        : req.body.precios_grupo;
       if (!Array.isArray(prices) || prices.length !== updatedGroups.length) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "Asigna un precio válido a cada grupo de servicio" });
       }
-      const parsedPrices = prices.map(value => typeof value === "string" && value.trim() === "" ? NaN : Number(value));
-      if (parsedPrices.some(value => !Number.isFinite(value) || value <= 0 || value > 100000000)) {
+      const parsedPrices = prices.map((value: unknown) =>
+        typeof value === "string" && value.trim() === "" ? NaN : Number(value)
+      );
+      if (includedGroupNumbers.some(groupNumber => {
+        const groupPrice = parsedPrices[groupNumber - 1];
+        return !Number.isFinite(groupPrice) || groupPrice <= 0 || groupPrice > 100000000;
+      })) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ error: "Cada grupo debe tener un precio mayor a cero" });
+        return res.status(400).json({ error: "Cada grupo incluido debe tener un precio mayor a cero" });
       }
-      const sum = parsedPrices.reduce((total, value) => total + Math.round(value * 100) / 100, 0);
+      const sum = includedGroupNumbers.reduce((total, groupNumber) =>
+        total + Math.round(parsedPrices[groupNumber - 1] * 100), 0
+      ) / 100;
       if (sum > 100000000) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "El total de la propuesta supera el límite permitido" });
       }
-      updatedGroups = updatedGroups.map((group: Record<string, unknown>, index: number) => ({
-        ...group,
-        precio_total: Math.round(parsedPrices[index] * 100) / 100,
-      }));
-      price = Math.round(sum * 100) / 100;
-    }
-    if (action === "send_proposal") {
-      if (price === null || !updatedGroups.length || updatedGroups.some((group: Record<string, unknown>) => {
+
+      const rawReasons = req.body?.motivos_grupos_no_incluidos;
+      if (rawReasons !== undefined && (!rawReasons || typeof rawReasons !== "object" || Array.isArray(rawReasons))) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "Los motivos de exclusión de grupo no son válidos" });
+      }
+      const reasons = (rawReasons || {}) as Record<string, unknown>;
+      const parsedReasons = updatedGroups.map((_group: Record<string, unknown>, index: number) => {
+        const groupNumber = index + 1;
+        return includedSet.has(groupNumber) ? null : optionalText(reasons[String(groupNumber)], 500);
+      });
+      if (parsedReasons.some((reason, index) => !includedSet.has(index + 1) && reason === undefined)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "Revisa los motivos de los grupos no incluidos" });
+      }
+      updatedGroups = updatedGroups.map((group: Record<string, unknown>, index: number) => {
+        const groupNumber = index + 1;
+        const included = includedSet.has(groupNumber);
+        return {
+          ...group,
+          precio_total: included ? Math.round(parsedPrices[index] * 100) / 100 : null,
+          incluido_en_propuesta: included,
+          ...(included ? {} : { motivo_no_inclusion: parsedReasons[index] }),
+        };
+      });
+      const offeredGroups = updatedGroups.filter((group: Record<string, unknown>) => group.incluido_en_propuesta === true);
+      if (offeredGroups.some((group: Record<string, unknown>) => {
         const startDate = validDate(group.fecha_servicio);
         const endDate = validDate(group.fecha_fin);
         return Number(group.precio_total) <= 0
@@ -273,8 +319,9 @@ const actualizarRequerimientoAdmin = async (req: any, res: any) => {
           || endDate === undefined || Boolean(endDate && startDate && endDate < startDate);
       })) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ error: "Completa un precio y los datos de ruta, fecha y pasajeros de cada grupo antes de enviar la propuesta" });
+        return res.status(400).json({ error: "Completa el precio y los datos de ruta, fecha y pasajeros de cada grupo incluido" });
       }
+      price = Math.round(sum * 100) / 100;
     }
     const result = await client.query(
       `UPDATE requerimientos_personalizados
@@ -378,22 +425,26 @@ const aceptarPropuestaRequerimiento = async (req: any, res: any) => {
       return res.status(400).json({ error: "La propuesta todavía no tiene un precio válido" });
     }
     const groups = Array.isArray(request.service_groups) ? request.service_groups : [];
-    if (!groups.length || groups.some((group: Record<string, unknown>) =>
+    const includedGroups = groups
+      .map((group: Record<string, unknown>, index: number) => ({ group, index }))
+      .filter(({ group }) => group.incluido_en_propuesta !== false);
+    if (!includedGroups.length || includedGroups.some(({ group }) =>
       !Number.isFinite(Number(group.precio_total)) || Number(group.precio_total) <= 0
     )) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: "La propuesta no contiene precios válidos para todos los grupos" });
+      return res.status(400).json({ error: "La propuesta no contiene precios válidos para todos los grupos incluidos" });
     }
-    const fechaServicio = groups.map((group: Record<string, unknown>) => validDate(group.fecha_servicio))
+    const offeredGroups = includedGroups.map(({ group }) => group);
+    const fechaServicio = offeredGroups.map((group: Record<string, unknown>) => validDate(group.fecha_servicio))
       .filter(Boolean).sort()[0] || new Date().toISOString().slice(0, 10);
-    const fechaFin = groups.map((group: Record<string, unknown>) => validDate(group.fecha_fin) || validDate(group.fecha_servicio))
+    const fechaFin = offeredGroups.map((group: Record<string, unknown>) => validDate(group.fecha_fin) || validDate(group.fecha_servicio))
       .filter(Boolean).sort().at(-1) || fechaServicio;
-    const pasajerosTotal = groups.reduce((total: number, group: Record<string, unknown>) =>
+    const pasajerosTotal = offeredGroups.reduce((total: number, group: Record<string, unknown>) =>
       total + Number(group.cantidad_vehiculos || 0) * Number(group.pasajeros_por_vehiculo || 1), 0);
-    const firstGroup = groups[0];
+    const firstGroup = offeredGroups[0];
     const firstGroupDate = validDate(firstGroup.fecha_servicio) || fechaServicio;
     const salida = firstGroup.hora_salida ? `${firstGroupDate} ${firstGroup.hora_salida}` : null;
-    const groupPriceTotal = groups.reduce((sum: number, group: Record<string, unknown>) =>
+    const groupPriceTotal = offeredGroups.reduce((sum: number, group: Record<string, unknown>) =>
       sum + Math.round(Number(group.precio_total) * 100), 0);
     if (Math.abs(groupPriceTotal - Math.round(precio * 100)) > 1) {
       await client.query("ROLLBACK");
@@ -402,7 +453,7 @@ const aceptarPropuestaRequerimiento = async (req: any, res: any) => {
     const notas = [
       `Requerimiento personalizado #${requerimientoId}`,
       request.detalles,
-      "Pago único por el requerimiento completo. Las unidades se prepararán individualmente en Despacho tras confirmar el pago.",
+      `Pago único por los ${offeredGroups.length} grupos incluidos en la propuesta. Los grupos no incluidos no forman parte de esta reserva. Las unidades se prepararán individualmente en Despacho tras confirmar el pago.`,
     ].filter(Boolean).join("\n\n");
     const reservation = await client.query(
       `INSERT INTO reservas

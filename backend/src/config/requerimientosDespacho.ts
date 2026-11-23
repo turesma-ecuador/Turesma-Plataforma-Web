@@ -36,11 +36,13 @@ const prepararDespachoRequerimiento = async (reservaId: number, usuarioId?: numb
     }
 
     const groups = Array.isArray(request.service_groups) ? request.service_groups : [];
-    if (!groups.length) throw new Error("El requerimiento no contiene grupos de servicio");
+    const includedGroups = groups
+      .map((group: Record<string, unknown>, index: number) => ({ group, index }))
+      .filter(({ group }) => group.incluido_en_propuesta !== false);
+    if (!includedGroups.length) throw new Error("La propuesta no contiene grupos incluidos para despacho");
 
     let created = 0;
-    for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
-      const group = groups[groupIndex];
+    for (const { group, index: groupIndex } of includedGroups) {
       const count = Number(group.cantidad_vehiculos);
       const passengers = Number(group.pasajeros_por_vehiculo);
       const startDate = typeof group.fecha_servicio === "string" ? group.fecha_servicio : "";
@@ -111,7 +113,7 @@ const prepararDespachoRequerimiento = async (reservaId: number, usuarioId?: numb
       "SELECT COUNT(*)::int AS total FROM operaciones WHERE requerimiento_id = $1",
       [requerimientoId]
     );
-    const expected = groups.reduce((sum: number, group: any) => sum + Number(group.cantidad_vehiculos || 0), 0);
+    const expected = includedGroups.reduce((sum: number, { group }) => sum + Number(group.cantidad_vehiculos || 0), 0);
     if (Number(total.rows[0].total) !== expected) {
       throw new Error("El número de operaciones generadas no coincide con los vehículos solicitados");
     }

@@ -515,6 +515,45 @@ export default function OperacionesPage() {
     if (dispatchView === "proximos") return isUpcomingOperation(operation);
     return needsAssignment(operation);
   });
+  const visibleOperationBlocks: {
+    key: string;
+    requerimientoId: number | null;
+    groups: { numero: number | null; operations: Operation[] }[];
+  }[] = [];
+  const visibleRequirementBlocks = new Map<number, (typeof visibleOperationBlocks)[number]>();
+  for (const operation of visibleOperations) {
+    if (!operation.requerimiento_id) {
+      visibleOperationBlocks.push({
+        key: `operation-${operation.id}`,
+        requerimientoId: null,
+        groups: [{ numero: null, operations: [operation] }],
+      });
+      continue;
+    }
+
+    let requirementBlock = visibleRequirementBlocks.get(operation.requerimiento_id);
+    if (!requirementBlock) {
+      requirementBlock = {
+        key: `requirement-${operation.requerimiento_id}`,
+        requerimientoId: operation.requerimiento_id,
+        groups: [],
+      };
+      visibleRequirementBlocks.set(operation.requerimiento_id, requirementBlock);
+      visibleOperationBlocks.push(requirementBlock);
+    }
+    let groupBlock = requirementBlock.groups.find(group => group.numero === operation.grupo_numero);
+    if (!groupBlock) {
+      groupBlock = { numero: operation.grupo_numero || null, operations: [] };
+      requirementBlock.groups.push(groupBlock);
+    }
+    groupBlock.operations.push(operation);
+  }
+  for (const block of visibleOperationBlocks) {
+    for (const group of block.groups) {
+      group.operations.sort((a, b) => (a.unidad_numero || 0) - (b.unidad_numero || 0) || a.id - b.id);
+    }
+    block.groups.sort((a, b) => (a.numero || 0) - (b.numero || 0));
+  }
   const specialOperationGroups = new Map<string, Operation[]>();
   for (const operation of operations) {
     if (!operation.requerimiento_id || !operation.grupo_numero) continue;
@@ -530,6 +569,14 @@ export default function OperacionesPage() {
   const visibleAssignableSpecialGroups = dispatchView === "por_asignar" || dispatchView === "todos"
     ? assignableSpecialGroups
     : [];
+  const assignableSpecialRequirements = new Map<number, Operation[][]>();
+  for (const group of visibleAssignableSpecialGroups) {
+    const requirementId = group[0]?.requerimiento_id;
+    if (!requirementId) continue;
+    const requirementGroups = assignableSpecialRequirements.get(requirementId) || [];
+    requirementGroups.push(group);
+    assignableSpecialRequirements.set(requirementId, requirementGroups);
+  }
   for (const group of specialOperationGroups.values()) {
     for (const operation of group) specialGroupByOperationId.set(operation.id, group);
   }
@@ -1104,32 +1151,38 @@ export default function OperacionesPage() {
           </div>
           <button onClick={() => void load()} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Actualizar operaciones"><RefreshCw size={17} /></button>
         </div>
-        {visibleAssignableSpecialGroups.length > 0 && (
+        {assignableSpecialRequirements.size > 0 && (
           <div className="space-y-3 border-b border-slate-100 bg-slate-50/70 p-4">
-            {visibleAssignableSpecialGroups.map((group) => {
-              const pendingCount = group.filter(needsAssignment).length;
-              const first = group[0];
+            {Array.from(assignableSpecialRequirements.entries()).map(([requirementId, groups]) => {
+              const pendingCount = groups.reduce((count, group) => count + group.filter(needsAssignment).length, 0);
               return (
-                <article key={`${first.requerimiento_id}-${first.grupo_numero}`} className="flex flex-col gap-3 rounded-2xl border border-violet-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
+                <article key={requirementId} className="space-y-3 rounded-2xl border border-violet-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-[10px] font-black uppercase tracking-widest text-violet-700">
-                      Requerimiento #{first.requerimiento_id} · Grupo {first.grupo_numero}
+                      Requerimiento #{requirementId}
                     </p>
-                    <p className="mt-1 text-sm font-black text-slate-900">
-                      {pendingCount} de {group.length} unidades por asignar
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Cada unidad tendrá su propio vehículo y conductor; se validará la disponibilidad al guardar.
-                    </p>
+                    <p className="text-xs font-black text-slate-700">{groups.length} grupos · {pendingCount} unidades por asignar</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void openGroupAssignment(group)}
-                    disabled={saving}
-                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-3 text-xs font-black text-white transition hover:bg-violet-800 disabled:opacity-50"
-                  >
-                    <CheckCircle2 size={15} /> Asignar grupo
-                  </button>
+                  {groups.map((group) => {
+                    const groupPendingCount = group.filter(needsAssignment).length;
+                    const first = group[0];
+                    return (
+                      <div key={`${first.requerimiento_id}-${first.grupo_numero}`} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-black text-slate-900">Grupo {first.grupo_numero} · {groupPendingCount} de {group.length} unidades por asignar</p>
+                          <p className="mt-1 text-[11px] text-slate-500">Cada unidad conserva su asignación individual.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void openGroupAssignment(group)}
+                          disabled={saving}
+                          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-black text-white transition hover:bg-violet-800 disabled:opacity-50"
+                        >
+                          <CheckCircle2 size={15} /> Asignar grupo
+                        </button>
+                      </div>
+                    );
+                  })}
                 </article>
               );
             })}
@@ -1151,7 +1204,28 @@ export default function OperacionesPage() {
           </p>
         </div> : (
           <div className="space-y-3 p-3 sm:p-5">
-            {visibleOperations.map((operation) => {
+            {visibleOperationBlocks.map((block) => (
+              <section key={block.key} className={block.requerimientoId
+                ? "space-y-3 rounded-2xl border border-violet-200 bg-violet-50 p-3 sm:p-4"
+                : "space-y-3"}>
+                {block.requerimientoId && (
+                  <header className="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <h3 className="text-sm font-black text-violet-950">Requerimiento #{block.requerimientoId}</h3>
+                    <span className="text-xs font-bold text-violet-800">
+                      {block.groups.length} grupos · {block.groups.reduce((total, group) => total + group.operations.length, 0)} unidades
+                    </span>
+                  </header>
+                )}
+                {block.groups.map((group) => (
+                  <div key={`group-${group.numero ?? "single"}`} className={block.requerimientoId
+                    ? "space-y-2 rounded-xl border border-violet-100 bg-white p-3"
+                    : "space-y-2"}>
+                    {block.requerimientoId && (
+                      <h4 className="px-1 text-xs font-black uppercase tracking-wide text-violet-800">
+                        Grupo {group.numero} · {group.operations.length} {group.operations.length === 1 ? "unidad" : "unidades"}
+                      </h4>
+                    )}
+                    {group.operations.map((operation) => {
               const startTime = formatTime(operation.hora_inicio);
               const endTime = formatTime(operation.hora_fin);
               const scheduledDate = dateKey(operation.fecha_programada);
@@ -1166,7 +1240,7 @@ export default function OperacionesPage() {
                 ? `${formatDate(scheduledDate)} - ${formatDate(dateKey(operation.fecha_fin_programada))}`
                 : formatDate(scheduledDate);
               const serviceTitle = operation.requerimiento_id
-                ? `Requerimiento #${operation.requerimiento_id} · Grupo ${operation.grupo_numero} · Unidad ${operation.unidad_numero}`
+                ? `Unidad ${operation.unidad_numero}`
                 : operation.reserva_id ? `Reserva #${operation.reserva_id}` : operation.tipo_servicio;
               return (
                 <article key={operation.id} data-reservation-id={operation.reserva_id || undefined} className={`rounded-2xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm ${focusedReservationId === operation.reserva_id ? "border-red-500 bg-red-50/40 ring-2 ring-red-100" : overdue ? "border-l-red-400 bg-red-50/30" : "border-l-red-500"}`}>
@@ -1241,7 +1315,11 @@ export default function OperacionesPage() {
                   </div>
                 </article>
               );
-            })}
+                    })}
+                  </div>
+                ))}
+              </section>
+            ))}
           </div>
         )}
       </section>

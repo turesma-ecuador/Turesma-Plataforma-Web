@@ -105,7 +105,7 @@ const renderBrandedEmail = ({
               <td height="5" bgcolor="#E31E24" style="height:5px;font-size:0;line-height:0">&nbsp;</td>
             </tr>
             <tr>
-              <td align="center" bgcolor="#0b0f1a" style="padding:20px 16px">
+              <td align="center" bgcolor="#ffffff" style="padding:20px 16px">
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="max-width:100%;border-radius:6px">
                   <tr>
                     <td align="center" style="padding:4px 8px">

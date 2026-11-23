@@ -197,7 +197,19 @@ const buildProformaDataRequerimiento = async (requerimientoId: number, usuarioId
 
   const request = result.rows[0];
   const groups = Array.isArray(request.service_groups) ? request.service_groups : [];
-  const items = groups.map((group: Record<string, unknown>, index: number) => {
+  const includedGroups = groups
+    .map((group: Record<string, unknown>, index: number) => ({ group, index }))
+    .filter(({ group }) => group.incluido_en_propuesta !== false);
+  const excludedGroups = groups
+    .map((group: Record<string, unknown>, index: number) => ({ group, index }))
+    .filter(({ group }) => group.incluido_en_propuesta === false)
+    .map(({ group, index }) => ({
+      numero: index + 1,
+      origen: group.origen,
+      destino: group.destino,
+      motivo: group.motivo_no_inclusion,
+    }));
+  const items = includedGroups.map(({ group, index }) => {
     const quantity = Number(group.cantidad_vehiculos) || 1;
     const total = Number(group.precio_total) || 0;
     const details = [
@@ -240,6 +252,7 @@ const buildProformaDataRequerimiento = async (requerimientoId: number, usuarioId
     },
     precio: Number(request.precio_final) || 0,
     proformaItems: items,
+    gruposNoIncluidos: excludedGroups,
   };
 };
 
@@ -290,6 +303,17 @@ const generarProformaMultigrupoPDF = (d: any): Promise<Buffer> => new Promise((r
     doc.font("Helvetica").fontSize(10).text(`${etiquetaIdentificacion}:   ${d.cliente.cedula || "—"}`, left);
     doc.text(`FECHA:   ${fmtFecha(d.fecha)}`, left);
     doc.moveDown(0.8);
+    if (Array.isArray(d.gruposNoIncluidos) && d.gruposNoIncluidos.length > 0) {
+      doc.fillColor("#b45309").font("Helvetica-Bold").fontSize(9)
+        .text("GRUPOS NO INCLUIDOS EN ESTA PROPUESTA", left, doc.y, { width });
+      doc.fillColor("#475569").font("Helvetica").fontSize(8);
+      for (const group of d.gruposNoIncluidos) {
+        const route = [group.origen, group.destino].filter(Boolean).join(" → ");
+        const line = [`Grupo ${group.numero}`, route, group.motivo || "No incluido en esta propuesta"].filter(Boolean).join(" · ");
+        doc.text(line, left + 6, doc.y + 3, { width: width - 12 });
+      }
+      doc.fillColor("#000000").moveDown(0.6);
+    }
 
     const colW = { cant: 52, desc: 273, uni: 95, tot: 95 };
     const cols = {

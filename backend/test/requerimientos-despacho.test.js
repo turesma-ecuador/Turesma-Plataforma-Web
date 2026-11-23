@@ -87,9 +87,26 @@ test("crea una operación por unidad y repite sin duplicar operaciones", async (
   assert.equal(insertedOperations.length, 3);
 });
 
+test("despacha solo grupos incluidos y conserva el número original del grupo", async () => {
+  insertedOperations.length = 0;
+  dispatchStatus = "pendiente";
+  requestGroups = [
+    { ...groups[0], incluido_en_propuesta: false },
+    { ...groups[1], incluido_en_propuesta: true },
+  ];
+
+  const result = await prepararDespachoRequerimiento(900, 2);
+
+  assert.deepEqual(result, { found: true, created: 1, total: 1 });
+  assert.equal(insertedOperations.length, 1);
+  assert.equal(insertedOperations[0][2], 2);
+  assert.equal(insertedOperations[0][3], 1);
+});
+
 test("rechaza datos de grupo insuficientes para despacho", async () => {
   dispatchStatus = "pendiente";
+  insertedOperations.length = 0;
   requestGroups = [{ ...groups[0], fecha_servicio: "" }];
   await assert.rejects(() => prepararDespachoRequerimiento(900, 2), /grupo 1 no tiene fecha/);
-  assert.equal(insertedOperations.length, 3);
+  assert.equal(insertedOperations.length, 0);
 });

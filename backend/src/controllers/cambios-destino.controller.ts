@@ -318,12 +318,40 @@ const listarSolicitudesCambioDestinoAdmin = async (_req: any, res: any) => {
     const result = await pool.query(
       `SELECT s.*, u.nombre AS cliente_nombre, u.email AS cliente_email,
               r.estado AS reserva_estado, r.estado_pago, r.monto_pagado,
+              EXISTS (
+                SELECT 1 FROM operaciones o
+                WHERE o.reserva_id = r.id AND o.estado NOT IN ('cancelada', 'completada')
+              ) AS despacho_preparado,
+              operacion_despacho.id AS despacho_operacion_id,
+              operacion_despacho.estado AS despacho_estado,
+              CASE
+                WHEN r.estado <> 'confirmada' THEN 'La reserva ya no está confirmada.'
+                WHEN r.estado_pago <> 'pagado' THEN 'El pago de la reserva ya no está confirmado.'
+                WHEN ABS(COALESCE(r.total, 0) - COALESCE(r.monto_pagado, 0)) > 0.01 THEN 'El monto pagado no coincide con el total de la reserva. Revisa la conciliación.'
+                WHEN r.estado_operativo = 'en_curso' OR COALESCE(r.recogido, false)
+                  OR EXISTS (
+                    SELECT 1 FROM operaciones o
+                    WHERE o.reserva_id = r.id AND o.estado IN ('en_curso', 'completada')
+                  ) THEN 'El viaje ya comenzó o fue completado; no se puede cotizar el cambio desde aquí.'
+                WHEN EXISTS (
+                  SELECT 1 FROM operaciones o
+                  WHERE o.reserva_id = r.id AND o.estado NOT IN ('cancelada', 'completada')
+                ) THEN 'La reserva tiene un despacho preparado. Revísalo o resuélvelo antes de cotizar el cambio.'
+                ELSE NULL
+              END AS bloqueo_propuesta,
               (SELECT p.id FROM pagos_reserva p
                WHERE p.reserva_id = r.id AND p.estado = 'aprobado'
                ORDER BY p.creado_en DESC, p.id DESC LIMIT 1) AS pago_id
        FROM solicitudes_cambio_destino s
        JOIN reservas r ON r.id = s.reserva_id
        JOIN usuarios u ON u.id = s.usuario_id
+       LEFT JOIN LATERAL (
+         SELECT o.id, o.estado
+         FROM operaciones o
+         WHERE o.reserva_id = r.id AND o.estado NOT IN ('cancelada', 'completada')
+         ORDER BY o.id DESC
+         LIMIT 1
+       ) operacion_despacho ON TRUE
        WHERE s.estado IN ('pendiente_admin', 'propuesta_cliente', 'pago_pendiente', 'devolucion_pendiente')
        ORDER BY s.creado_en ASC, s.id ASC`
     );
@@ -361,12 +389,18 @@ const proponerCambioDestino = async (req: any, res: any) => {
       return res.status(409).json({ error: "La solicitud ya fue atendida" });
     }
     if (item.reserva_estado !== "confirmada" || item.estado_pago !== "pagado"
-      || Math.abs(Number(item.total_anterior) - Number(item.monto_pagado)) > 0.01
-      || item.estado_operativo === "en_curso" || item.recogido
-      || await esOperacionIniciada(client, Number(item.reserva_id))
-      || await hayOperacionesPreparadas(client, Number(item.reserva_id))) {
+      || Math.abs(Number(item.total_anterior) - Number(item.monto_pagado)) > 0.01) {
       await client.query("ROLLBACK");
-      return res.status(409).json({ error: "La reserva ya cambió o tiene despacho preparado. Resuelve Despacho antes de cotizar el cambio" });
+      return res.status(409).json({ error: "La reserva o el pago cambió desde que se solicitó el cambio. Revisa su estado antes de cotizar." });
+    }
+    if (item.estado_operativo === "en_curso" || item.recogido
+      || await esOperacionIniciada(client, Number(item.reserva_id))) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "El viaje ya comenzó o fue completado. No se puede cotizar un cambio de ruta desde aquí." });
+    }
+    if (await hayOperacionesPreparadas(client, Number(item.reserva_id))) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "La reserva tiene un despacho preparado. Revísalo o resuélvelo antes de cotizar el cambio." });
     }
     await client.query(
       `UPDATE solicitudes_cambio_destino

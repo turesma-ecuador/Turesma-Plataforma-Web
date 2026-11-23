@@ -84,6 +84,8 @@ type RequerimientoPersonalizado = {
     detalles?: string | null;
     simultaneo?: boolean;
     precio_total?: number | null;
+    incluido_en_propuesta?: boolean;
+    motivo_no_inclusion?: string | null;
   }>;
   fecha_servicio?: string | null;
   fecha_fin?: string | null;
@@ -424,6 +426,27 @@ function AdminCotizacionesContent() {
         group.precio_total == null ? "" : String(group.precio_total)
       ) || [];
       const groupPrices = customGroupPrices[request.id] || storedGroupPrices;
+      const proposalGroups = customServiceGroups[request.id] || request.service_groups || [];
+      const includedGroupNumbers = proposalGroups.flatMap((group, index) =>
+        group.incluido_en_propuesta === false ? [] : [index + 1]
+      );
+      if (action === "send_proposal" && includedGroupNumbers.length === 0) {
+        setErr("Incluye al menos un grupo para enviar la propuesta.");
+        return;
+      }
+      if (action === "send_proposal" && includedGroupNumbers.some(groupNumber => {
+        const groupIndex = groupNumber - 1;
+        const price = Number(groupPrices[groupIndex]);
+        return !Number.isFinite(price) || price <= 0;
+      })) {
+        setErr("Indica un precio mayor a cero para cada grupo incluido.");
+        return;
+      }
+      const exclusionReasons = Object.fromEntries(proposalGroups.flatMap((group, index) =>
+        group.incluido_en_propuesta === false
+          ? [[String(index + 1), group.motivo_no_inclusion?.trim() || "No incluido en esta propuesta"]]
+          : []
+      ));
       const res = await fetch(`${API_URL}/api/admin/requerimientos-personalizados/${request.id}`, {
         method: "PATCH",
         headers: getAuthHeaders(),
@@ -433,6 +456,8 @@ function AdminCotizacionesContent() {
           ...(action === "send_proposal" ? {
             grupos_servicio: customServiceGroups[request.id] || request.service_groups || [],
             precios_grupo: groupPrices,
+            grupos_incluidos: includedGroupNumbers,
+            motivos_grupos_no_incluidos: exclusionReasons,
             respuesta_admin: responseText,
           } : {}),
           ...(action === "send_response" ? { respuesta_admin: responseText } : {}),
@@ -480,6 +505,13 @@ function AdminCotizacionesContent() {
       [request.id]: groups.map((group, index) => index === groupIndex ? { ...group, ...patch } : group),
     };
   });
+
+  const canSendCustomProposal = (request: RequerimientoPersonalizado) => {
+    const groups = customServiceGroups[request.id] || request.service_groups || [];
+    const prices = customGroupPrices[request.id] || groups.map(group => group.precio_total == null ? "" : String(group.precio_total));
+    const included = groups.flatMap((group, index) => group.incluido_en_propuesta === false ? [] : [index]);
+    return included.length > 0 && included.every(index => Number.isFinite(Number(prices[index])) && Number(prices[index]) > 0);
+  };
 
   const downloadCustomProforma = async (request: RequerimientoPersonalizado) => {
     setSavingCustomId(request.id);
@@ -727,7 +759,7 @@ function AdminCotizacionesContent() {
         <section className="space-y-4">
           <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
             <h2 className="text-sm font-black text-violet-950">Solicitudes que requieren coordinación especial</h2>
-            <p className="mt-1 text-xs leading-relaxed text-violet-800">Revisa la necesidad completa, evalúa disponibilidad propia o externa y deja una respuesta para que el cliente pueda verla en su cuenta.</p>
+            <p className="mt-1 text-xs leading-relaxed text-violet-800">Revisa la necesidad completa y marca los grupos que puedes atender. La proforma, el pago y el despacho cubrirán solo los grupos incluidos.</p>
           </div>
           {loading ? (
             <div className="flex h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white">
@@ -783,8 +815,17 @@ function AdminCotizacionesContent() {
                   simultaneo: false,
                   precio_total: request.precio_final,
                 }]).map((group, groupIndex) => (
-                  <div key={groupIndex} className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-violet-700">Grupo {groupIndex + 1}</p>
+                  <div key={groupIndex} className={`rounded-xl border p-3 sm:col-span-2 ${customServiceGroups[request.id]?.[groupIndex]?.incluido_en_propuesta === false ? "border-slate-200 bg-slate-100" : "border-slate-200 bg-slate-50"}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-violet-700">Grupo {groupIndex + 1}</p>
+                      <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-700">
+                        <input type="checkbox" checked={customServiceGroups[request.id]?.[groupIndex]?.incluido_en_propuesta !== false}
+                          disabled={Boolean(request.reserva_id)}
+                          onChange={event => updateCustomServiceGroup(request, groupIndex, { incluido_en_propuesta: event.target.checked })}
+                          className="accent-violet-700" />
+                        Incluir en la propuesta
+                      </label>
+                    </div>
                     <p className="mt-1 text-sm font-bold text-slate-800">
                       {group.cantidad_vehiculos} vehículo(s)
                       {group.tipo_vehiculo ? ` · ${group.tipo_vehiculo}` : ""}
@@ -835,7 +876,7 @@ function AdminCotizacionesContent() {
                     {group.simultaneo && <p className="mt-1 text-[10px] font-black text-violet-700">Operación simultánea solicitada</p>}
                     <label className="mt-3 block max-w-xs text-[9px] font-black uppercase tracking-widest text-slate-500">
                       Precio total del grupo ($)
-                      <input type="number" min="0.01" step="0.01" disabled={Boolean(request.reserva_id)}
+                      <input type="number" min="0.01" step="0.01" disabled={Boolean(request.reserva_id) || customServiceGroups[request.id]?.[groupIndex]?.incluido_en_propuesta === false}
                         value={customGroupPrices[request.id]?.[groupIndex] ?? (group.precio_total == null ? "" : String(group.precio_total))}
                         onChange={event => setCustomGroupPrices(current => {
                           const base = request.service_groups?.length
@@ -848,6 +889,16 @@ function AdminCotizacionesContent() {
                         })}
                         placeholder="Ej: 1500.00" className={`${INPUT_CLS} mt-1`} />
                     </label>
+                    {customServiceGroups[request.id]?.[groupIndex]?.incluido_en_propuesta === false && (
+                      <label className="mt-3 block max-w-xl text-[9px] font-black uppercase tracking-widest text-slate-500">
+                        Motivo (opcional)
+                        <input maxLength={500} disabled={Boolean(request.reserva_id)}
+                          value={customServiceGroups[request.id]?.[groupIndex]?.motivo_no_inclusion ?? ""}
+                          onChange={event => updateCustomServiceGroup(request, groupIndex, { motivo_no_inclusion: event.target.value })}
+                          placeholder="Ej: No contamos con disponibilidad para estas fechas"
+                          className={`${INPUT_CLS} mt-1`} />
+                      </label>
+                    )}
                   </div>
                 ))}
                 <div className="rounded-xl border border-violet-100 bg-violet-50 p-3 sm:col-span-2">
@@ -898,7 +949,7 @@ function AdminCotizacionesContent() {
                       {savingCustomId === request.id ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                       Enviar respuesta
                     </button>
-                    <button type="button" onClick={() => void saveCustomRequest(request, "send_proposal")} disabled={savingCustomId === request.id || Boolean(request.reserva_id)}
+                    <button type="button" onClick={() => void saveCustomRequest(request, "send_proposal")} disabled={savingCustomId === request.id || Boolean(request.reserva_id) || !canSendCustomProposal(request)}
                       title="Enviar al cliente el precio y la proforma"
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#E31E24] px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-red-700 disabled:opacity-60">
                       {savingCustomId === request.id ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}

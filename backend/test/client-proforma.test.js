@@ -105,3 +105,29 @@ test("genera una proforma multigrupo con subtotales por grupo y protege la propi
   assert.equal(reservationProforma.proformaItems.length, 2);
   reservationRequestId = null;
 });
+
+test("la proforma parcial incluye solo los grupos cotizados e identifica los excluidos", async () => {
+  const originalGroups = customRequest.service_groups;
+  const originalPrice = customRequest.precio_final;
+  try {
+    customRequest.service_groups = [
+      { ...originalGroups[0], incluido_en_propuesta: true },
+      { ...originalGroups[1], incluido_en_propuesta: false, motivo_no_inclusion: "Sin disponibilidad" },
+    ];
+    customRequest.precio_final = "1100.00";
+
+    const data = await buildProformaDataRequerimiento(44, 7);
+    assert.equal(data.precio, 1100);
+    assert.equal(data.proformaItems.length, 1);
+    assert.match(data.proformaItems[0].descripcion, /Grupo 1/);
+    assert.deepEqual(data.gruposNoIncluidos, [{
+      numero: 2,
+      origen: "Manta",
+      destino: "Montecristi",
+      motivo: "Sin disponibilidad",
+    }]);
+  } finally {
+    customRequest.service_groups = originalGroups;
+    customRequest.precio_final = originalPrice;
+  }
+});

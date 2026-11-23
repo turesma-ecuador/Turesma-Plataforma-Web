@@ -39,12 +39,12 @@ installMock("../dist/config/emailTemplate", {
 });
 installMock("../dist/config/proforma", {
   async buildProformaDataRequerimiento(id, usuarioId) {
-    assert.equal(id, 44);
+    assert.ok([44, 45].includes(id));
     assert.equal(usuarioId, 7);
-    return { numero: "REQ-44" };
+    return { numero: `REQ-${id}` };
   },
   async generarProformaPDF(data) {
-    assert.equal(data.numero, "REQ-44");
+    assert.match(data.numero, /^REQ-\d+$/);
     return proformaPdf;
   },
 });
@@ -111,4 +111,38 @@ test("envía al cliente el total y los subtotales de su propuesta personalizada"
   assert.equal(sentEmails[1].attachments[1].filename, "Proforma-REQ-44.pdf");
   assert.deepEqual(sentEmails[1].attachments[1].content, proformaPdf);
   assert.match(sentEmails[1].text, /Total de la propuesta: \$3400\.00/);
+});
+
+test("el correo aclara qué grupos se incluyeron y cuáles quedaron fuera", async () => {
+  const result = await notificarPropuestaRequerimiento({
+    id: 45,
+    usuario_id: 7,
+    precio_final: 900,
+    service_groups: [
+      {
+        cantidad_vehiculos: 2,
+        origen: "Manta",
+        destino: "Quito",
+        precio_total: null,
+        incluido_en_propuesta: false,
+        motivo_no_inclusion: "Sin disponibilidad",
+      },
+      {
+        cantidad_vehiculos: 1,
+        origen: "Manta",
+        destino: "Montecristi",
+        precio_total: 900,
+        incluido_en_propuesta: true,
+      },
+    ],
+  });
+
+  assert.deepEqual(result, { sent: true });
+  const email = sentEmails.at(-1);
+  assert.match(email.html, /Grupo 2/);
+  assert.match(email.html, /Grupos no incluidos en esta propuesta/);
+  assert.match(email.html, /Grupo 1: Sin disponibilidad/);
+  assert.doesNotMatch(email.html, /Manta → Quito/);
+  assert.match(email.text, /Grupo 1: No incluido en esta propuesta — Sin disponibilidad/);
+  assert.match(email.text, /Grupo 2: Manta → Montecristi — \$900\.00/);
 });

@@ -92,14 +92,15 @@ const notificarPropuestaRequerimiento = async (request: any) => {
     const groups = Array.isArray(request.service_groups) ? request.service_groups : [];
     const total = Number(request.precio_final);
     const formattedTotal = Number.isFinite(total) ? total.toFixed(2) : "0.00";
-    const groupRows = groups.map((group: any, index: number) => {
+    const groupRows = groups.flatMap((group: any, index: number) => {
+      if (group.incluido_en_propuesta === false) return [];
       const subtotal = Number(group.precio_total);
       const formattedSubtotal = Number.isFinite(subtotal) ? subtotal.toFixed(2) : "0.00";
       const route = [group.origen, group.destino].filter(Boolean).map(safe).join(" → ") || "Ruta por confirmar";
       const serviceDate = group.fecha_fin && group.fecha_fin !== group.fecha_servicio
         ? `${formatDate(group.fecha_servicio)} – ${formatDate(group.fecha_fin)}`
         : formatDate(group.fecha_servicio);
-      return `
+      return [`
         <tr>
           <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;color:#334155;font-size:13px">
             <strong>Grupo ${index + 1}</strong><br>
@@ -110,8 +111,16 @@ const notificarPropuestaRequerimiento = async (request: any) => {
           <td style="padding:10px 8px;border-bottom:1px solid #e2e8f0;color:#111827;font-size:13px;font-weight:700;text-align:right;white-space:nowrap">
             $${formattedSubtotal}
           </td>
-        </tr>`;
+        </tr>`];
     }).join("");
+    const excludedGroups = groups
+      .map((group: any, index: number) => ({ group, index }))
+      .filter(({ group }: any) => group.incluido_en_propuesta === false);
+    const excludedGroupsHtml = excludedGroups.length
+      ? `<p style="margin:18px 0 6px"><strong>Grupos no incluidos en esta propuesta:</strong></p><ul style="margin:0;padding-left:22px">${excludedGroups.map(({ group, index }: any) =>
+        `<li style="margin:4px 0">Grupo ${index + 1}${group.motivo_no_inclusion ? `: ${safe(group.motivo_no_inclusion)}` : ""}</li>`
+      ).join("")}</ul>`
+      : "";
     const responseNote = request.respuesta_admin
       ? `<p style="margin:18px 0 0;white-space:pre-line"><strong>Mensaje de Turesma:</strong><br>${safe(request.respuesta_admin)}</p>`
       : "";
@@ -133,13 +142,16 @@ const notificarPropuestaRequerimiento = async (request: any) => {
             <td style="padding:12px 8px;color:#047857;font-size:16px;font-weight:800;text-align:right;white-space:nowrap">$${formattedTotal}</td>
           </tr></tfoot>
         </table>
+        ${excludedGroupsHtml}
         ${responseNote}`,
       actionLabel: "Revisar propuesta",
       actionUrl: webUrl,
       contactEmail: CONTACTO_EMAIL,
     });
-    const groupText = groups.map((group: any, index: number) =>
-      `Grupo ${index + 1}: ${group.origen || "Ruta por confirmar"} → ${group.destino || "Ruta por confirmar"} — $${Number(group.precio_total || 0).toFixed(2)}`
+    const groupText = groups.flatMap((group: any, index: number) =>
+      group.incluido_en_propuesta === false
+        ? [`Grupo ${index + 1}: No incluido en esta propuesta${group.motivo_no_inclusion ? ` — ${group.motivo_no_inclusion}` : ""}`]
+        : [`Grupo ${index + 1}: ${group.origen || "Ruta por confirmar"} → ${group.destino || "Ruta por confirmar"} — $${Number(group.precio_total || 0).toFixed(2)}`]
     ).join("\n");
     const text = [
       `Hola ${recipient.nombre || "cliente"}, Turesma preparó la propuesta de tu requerimiento personalizado #${request.id}.`,

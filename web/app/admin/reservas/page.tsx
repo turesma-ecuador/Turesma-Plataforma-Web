@@ -5,6 +5,7 @@ import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders, normalizeRole } from "../../../lib/session";
 import { useAutoRefresh } from "../../../lib/use-auto-refresh";
 import { descargarExcel } from "../../../lib/download";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Calendar, Plus, Edit3, Trash2, X, Search,
@@ -78,6 +79,10 @@ type CambioDestinoAdmin = {
   cliente_nombre: string;
   cliente_email: string;
   pago_id: number | null;
+  despacho_preparado: boolean;
+  despacho_operacion_id?: number | null;
+  despacho_estado?: string | null;
+  bloqueo_propuesta: string | null;
 };
 type CambioDestinoFeedback = { type: "success" | "error"; message: string };
 
@@ -687,7 +692,14 @@ export default function AdminReservasPage() {
                       <p className="font-black text-slate-900">Reserva #{change.reserva_id} · {change.cliente_nombre}</p>
                       <p className="text-xs text-slate-500">{change.cliente_email}</p>
                     </div>
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase text-slate-600">{change.estado.replaceAll("_", " ")}</span>
+                    <div className="flex flex-wrap gap-2">
+                      {change.despacho_operacion_id && change.despacho_estado && (
+                        <span className="rounded-full bg-orange-100 px-3 py-1 text-[10px] font-black uppercase text-orange-800">
+                          Operación #{change.despacho_operacion_id} · {change.despacho_estado.replaceAll("_", " ")}
+                        </span>
+                      )}
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase text-slate-600">{change.estado.replaceAll("_", " ")}</span>
+                    </div>
                   </div>
                   {cambioDestinoFeedback[change.id] && (
                     <p
@@ -705,6 +717,18 @@ export default function AdminReservasPage() {
                     <p className="rounded-lg bg-slate-50 p-3"><span className="text-xs font-bold text-slate-500">Ruta actual:</span><br />{change.origen_anterior || "—"} → {change.destino_anterior || "—"}</p>
                     <p className="rounded-lg bg-blue-50 p-3 text-blue-900"><span className="text-xs font-bold text-blue-700">Solicitada:</span><br />{change.origen_solicitado} → {change.destino_solicitado}</p>
                   </div>
+                  {change.estado === "pendiente_admin" && change.bloqueo_propuesta && (
+                    <p role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+                      {change.despacho_estado === "en_curso"
+                        ? `La Operación #${change.despacho_operacion_id} de esta reserva está en curso. No se puede cotizar un cambio de ruta mientras el viaje esté activo.`
+                        : change.bloqueo_propuesta}
+                      {change.despacho_preparado && (
+                        <Link href="/admin/operaciones" className="inline-flex items-center gap-1 font-black underline underline-offset-2">
+                          Revisar despacho <ArrowRight size={14} />
+                        </Link>
+                      )}
+                    </p>
+                  )}
                   {change.estado === "pendiente_admin" && (
                     <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)_auto_auto]">
                       <label className="text-[10px] font-black uppercase text-slate-500">Nuevo total ($)
@@ -726,7 +750,7 @@ export default function AdminReservasPage() {
                           Escribe al menos 5 caracteres para habilitar el envío.
                         </span>
                       </label>
-                      <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "propuesta")} disabled={savingChangeIds.has(change.id) || Number(proposalForm.total) <= 0 || proposalForm.nota.trim().length < 5} className="self-end rounded-xl bg-emerald-600 px-4 py-3 text-xs font-black uppercase text-white disabled:opacity-50">{savingChangeIds.has(change.id) ? "Enviando..." : "Enviar propuesta"}</button>
+                      <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "propuesta")} disabled={savingChangeIds.has(change.id) || Boolean(change.bloqueo_propuesta) || Number(proposalForm.total) <= 0 || proposalForm.nota.trim().length < 5} className="self-end rounded-xl bg-emerald-600 px-4 py-3 text-xs font-black uppercase text-white disabled:opacity-50">{savingChangeIds.has(change.id) ? "Enviando..." : "Enviar propuesta"}</button>
                       <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "rechazar")} disabled={savingChangeIds.has(change.id) || proposalForm.nota.trim().length < 5} className="self-end rounded-xl bg-red-50 px-4 py-3 text-xs font-black uppercase text-red-700 disabled:opacity-50">{savingChangeIds.has(change.id) ? "Procesando..." : "Rechazar"}</button>
                     </div>
                   )}

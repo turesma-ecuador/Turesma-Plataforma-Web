@@ -20,6 +20,8 @@ test("renderiza el correo de marca con logo incrustado y contenido seguro", () =
     assert.match(html, /src="cid:turesma-logo"/);
     assert.doesNotMatch(html, /https:\/\/turesma\.example\/logo\.png/);
     assert.match(html, /alt="Turesma S\.A\. - Transporte turístico"/);
+    assert.match(html, /<td align="center" bgcolor="#ffffff" style="padding:20px 16px">/);
+    assert.doesNotMatch(html, /#0b0f1a/i);
     assert.match(html, /href="https:\/\/turesma\.example\/verificar\?token=abc&amp;next=home"/);
     assert.match(html, /Mensaje de prueba/);
   } finally {
