@@ -119,6 +119,88 @@ const ESTADO_LABEL: Record<string, string> = {
   pendiente_pago: "Pendiente de pago",
 };
 
+const HISTORIAL_ACCION_LABEL: Record<string, string> = {
+  reprogramacion_cliente: "Reprogramación realizada por el cliente",
+};
+
+const HISTORIAL_CAMPO_LABEL: Record<string, string> = {
+  fecha: "Fecha de salida",
+  fecha_fin: "Fecha final",
+  hora: "Hora de salida",
+  hora_inicio: "Hora de inicio",
+  hora_fin: "Hora de fin",
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getHistoryDetail(detail: ReservaHistoryEntry["detalle"]): Record<string, unknown> | null {
+  if (typeof detail !== "string") return isRecord(detail) ? detail : null;
+  try {
+    const parsed: unknown = JSON.parse(detail);
+    return isRecord(parsed) ? parsed : { detalle: parsed };
+  } catch {
+    return { detalle: detail };
+  }
+}
+
+function getHistoryDetailRows(detail: ReservaHistoryEntry["detalle"]) {
+  const parsed = getHistoryDetail(detail);
+  if (!parsed) return [];
+
+  const rows: { label: string; previous?: string; current?: string; value?: string }[] = [];
+  const consumed = new Set<string>();
+
+  const formatValue = (value: unknown, key: string) => {
+    if (value === null || value === undefined || value === "") return "—";
+    if (typeof value !== "string") {
+      return isRecord(value) || Array.isArray(value) ? JSON.stringify(value) : String(value);
+    }
+    if (key.startsWith("fecha") && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [year, month, day] = value.split("-").map(Number);
+      return new Intl.DateTimeFormat("es-EC", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(new Date(Date.UTC(year, month - 1, day)));
+    }
+    if (key.startsWith("hora") && /^\d{2}:\d{2}(:\d{2})?$/.test(value)) return value.slice(0, 5);
+    return value;
+  };
+
+  const formatLabel = (key: string) => {
+    const label = HISTORIAL_CAMPO_LABEL[key] || key.replaceAll("_", " ");
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  };
+
+  for (const [key, value] of Object.entries(parsed)) {
+    if (consumed.has(key)) continue;
+    if (key.endsWith("_anterior")) {
+      const prefix = key.slice(0, -"_anterior".length);
+      const nextKey: string = `${prefix}_nueva` in parsed ? `${prefix}_nueva` : `${prefix}_nuevo`;
+      if (nextKey in parsed) {
+        rows.push({
+          label: formatLabel(prefix),
+          previous: formatValue(value, key),
+          current: formatValue(parsed[nextKey], nextKey),
+        });
+        consumed.add(nextKey);
+        continue;
+      }
+    }
+    if (key.endsWith("_nueva") || key.endsWith("_nuevo")) {
+      const prefix = key.replace(/_(nueva|nuevo)$/, "");
+      const previousKey = `${prefix}_anterior`;
+      if (previousKey in parsed) continue;
+    }
+    rows.push({ label: formatLabel(key), value: formatValue(value, key) });
+  }
+
+  return rows;
+}
+
 const ESTADO_ICON: Record<string, React.ReactNode> = {
   pendiente: <Clock size={11} />,
   pendiente_pago: <CreditCard size={11} />,
@@ -934,10 +1016,24 @@ export default function AdminReservasPage() {
                   : <ol className="mt-5 space-y-3">{reservationHistory.map((entry) => (
                     <li key={entry.id} className="rounded-xl border border-slate-200 p-4">
                       <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div><p className="font-black text-slate-800">{entry.accion.replaceAll("_", " ")}</p><p className="mt-1 text-xs text-slate-500">{entry.estado_anterior || "—"} → {entry.estado_nuevo || "—"} · {entry.usuario_nombre || "Usuario eliminado"} {entry.usuario_apellido || ""}</p></div>
+                        <div><p className="font-black text-slate-800">{HISTORIAL_ACCION_LABEL[entry.accion] || entry.accion.replaceAll("_", " ")}</p><p className="mt-1 text-xs text-slate-500">{entry.estado_anterior || "—"} → {entry.estado_nuevo || "—"} · {entry.usuario_nombre || "Usuario eliminado"} {entry.usuario_apellido || ""}</p></div>
                         <time className="text-xs font-semibold text-slate-400">{new Date(entry.creado_en).toLocaleString("es-EC")}</time>
                       </div>
-                      {entry.detalle && <pre className="mt-3 whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-xs text-slate-600">{JSON.stringify(typeof entry.detalle === "string" ? JSON.parse(entry.detalle) : entry.detalle, null, 2)}</pre>}
+                      {entry.detalle && (
+                        <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                          <p className="mb-2 text-[10px] font-black uppercase tracking-wide text-slate-500">Detalle del cambio</p>
+                          <dl className="space-y-2">
+                            {getHistoryDetailRows(entry.detalle).map((row, index) => (
+                              <div key={`${row.label}-${index}`} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                <dt className="font-semibold text-slate-600">{row.label}</dt>
+                                <dd className="font-bold text-slate-800">
+                                  {row.previous !== undefined ? <>{row.previous} <ArrowRight className="mx-1 inline-block" size={12} /> {row.current}</> : row.value}
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </div>
+                      )}
                     </li>
                   ))}</ol>}
           </section>

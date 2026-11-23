@@ -89,6 +89,7 @@ test("genera una proforma multigrupo con subtotales por grupo y protege la propi
   const data = await buildProformaDataRequerimiento(44, 7);
   assert.equal(data.precio, 1550);
   assert.equal(data.proformaItems.length, 2);
+  assert.match(data.proformaItems[0].descripcion, /Desde: Quito \/ Hasta: Manta/);
   assert.equal(data.proformaItems[0].precio_unitario, 550);
   assert.equal(data.proformaItems[1].total, 450);
   assert.equal(await buildProformaDataRequerimiento(44, 8), null);

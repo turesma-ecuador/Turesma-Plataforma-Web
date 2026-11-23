@@ -47,6 +47,7 @@ type Analitica = {
   proyeccion: { ingresosMes: number; proyeccionMes: number; promedioHistorico: number };
   conversion: { total: number; aprobadas: number; tasa: number };
   recomendaciones: string[];
+  accionesRecomendaciones?: Array<{ etiqueta: string; href: string } | null>;
 };
 
 const CARD = "bg-white rounded-2xl p-5 shadow-sm border border-gray-100";
@@ -131,12 +132,22 @@ export const IntelligenceDashboard = () => {
               <p className="text-[11px] font-black uppercase tracking-[0.2em] text-gray-400">Recomendaciones del sistema</p>
             </div>
             <div className="space-y-2">
-              {analitica.recomendaciones.map((rec, i) => (
+              {analitica.recomendaciones.map((rec, i) => {
+                const action = analitica.accionesRecomendaciones?.[i];
+                return (
                 <div key={i} className="flex items-start gap-2.5 bg-white/5 rounded-xl px-3.5 py-2.5 border border-white/5">
                   <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0" />
-                  <p className="text-sm text-gray-200 leading-snug">{rec}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-gray-200 leading-snug">{rec}</p>
+                    {action && (
+                      <Link href={action.href} className="mt-2 inline-flex items-center gap-1 text-xs font-black text-yellow-300 hover:text-yellow-200">
+                        {action.etiqueta} <ArrowUpRight size={13} />
+                      </Link>
+                    )}
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

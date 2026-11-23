@@ -26,8 +26,10 @@ const pool = {
     if (query.startsWith("select coalesce(sum(monto_pagado), 0)::numeric as total")) return result([{ total: "60" }]);
     if (query.startsWith("select coalesce(avg(m.total), 0)::numeric as prom")) return result([{ prom: "50" }]);
     if (query.startsWith("select count(*)::int as total, count(*) filter")) return result([{ total: 1, aprobadas: 1 }]);
-    if (query.startsWith("select origen, destino, count(*)::int as total")) return result([]);
-    if (query.startsWith("select v.placa, (current_date - max(r.fecha_reserva)::date)")) return result([]);
+    if (query.startsWith("with rutas_limpias as")) return result([{ origen: "Jipijapa", destino: "Manta", total: 8 }]);
+    if (query.startsWith("select v.placa, (current_date - max(coalesce(r.fecha_servicio")) {
+      return result([{ placa: "TST-1234", dias_sin_servicio: 27 }]);
+    }
     if (query.startsWith("select id from operaciones where reserva_id is distinct from")) {
       return result(state.hasOperationConflict ? [{ id: 700 }] : []);
     }
@@ -195,8 +197,10 @@ test("los informes mensual e inteligente usan ingresos netos cobrados", async ()
     }
     if (query.startsWith("select coalesce(avg(m.total), 0)::numeric as prom")) return result([{ prom: "50" }]);
     if (query.startsWith("select count(*)::int as total, count(*) filter")) return result([{ total: 1, aprobadas: 1 }]);
-    if (query.startsWith("select origen, destino, count(*)::int as total")) return result([]);
-    if (query.startsWith("select v.placa, (current_date - max(r.fecha_reserva)::date)")) return result([]);
+    if (query.startsWith("with rutas_limpias as")) return result([{ origen: "Jipijapa", destino: "Manta", total: 8 }]);
+    if (query.startsWith("select v.placa, (current_date - max(coalesce(r.fecha_servicio")) {
+      return result([{ placa: "TST-1234", dias_sin_servicio: 27 }]);
+    }
     if (query.startsWith("select id from operaciones where reserva_id is distinct from")) {
       return result(state.hasOperationConflict ? [{ id: 700 }] : []);
     }
@@ -220,6 +224,16 @@ test("los informes mensual e inteligente usan ingresos netos cobrados", async ()
   assert.equal(intelligenceResponse.statusCode, 200);
   assert.equal(intelligenceResponse.body.proyeccion.ingresosMes, 60);
   assert.equal(intelligenceResponse.body.proyeccion.promedioHistorico, 50);
+  const idleVehicleRecommendationIndex = intelligenceResponse.body.recomendaciones.findIndex((item) => item.includes("TST-1234"));
+  assert.match(intelligenceResponse.body.recomendaciones[idleVehicleRecommendationIndex], /no registra servicios desde hace 27 días/);
+  assert.match(intelligenceResponse.body.recomendaciones[idleVehicleRecommendationIndex], /Jipijapa → Manta \(8 reservas\)/);
+  assert.equal(intelligenceResponse.body.accionesRecomendaciones[idleVehicleRecommendationIndex].href, "/admin/operaciones");
+  const routeQuery = state.queries.find((query) => query.startsWith("with rutas_limpias as"));
+  assert.match(routeQuery, /ver grupos de servicio/);
+  assert.match(routeQuery, /current_date - interval '6 months'/);
+  const idleVehicleQuery = state.queries.find((query) => query.startsWith("select v.placa, (current_date - max(coalesce(r.fecha_servicio"));
+  assert.match(idleVehicleQuery, /fecha_servicio/);
+  assert.match(idleVehicleQuery, /fecha_salida/);
   const revenueQueries = state.queries.filter((query) => query.includes("sum("));
   assert.equal(revenueQueries.length, 2);
   assert.ok(revenueQueries.every((query) => /sum\(monto_pagado\)/.test(query)));

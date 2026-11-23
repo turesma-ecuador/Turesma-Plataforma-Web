@@ -489,20 +489,37 @@ const getAnaliticaInteligente = async (_req: any, res: any) => {
         FROM cotizaciones WHERE creado_en >= CURRENT_DATE - INTERVAL '90 days'
       `),
       pool.query(`
+        WITH rutas_limpias AS (
+          SELECT
+            INITCAP(LOWER(TRIM(origen))) AS origen,
+            INITCAP(LOWER(TRIM(destino))) AS destino
+          FROM reservas
+          WHERE estado <> 'cancelada'
+            AND fecha_reserva >= CURRENT_DATE - INTERVAL '6 months'
+            AND NULLIF(TRIM(origen), '') IS NOT NULL
+            AND NULLIF(TRIM(destino), '') IS NOT NULL
+            AND LOWER(TRIM(origen)) NOT IN ('ver grupos de servicio', 'varios grupos de servicio', 'sin origen', 'salida por definir', 'por definir')
+            AND LOWER(TRIM(destino)) NOT IN ('ver grupos de servicio', 'varios grupos de servicio', 'sin destino', 'destino por definir', 'por definir')
+            AND LOWER(TRIM(origen)) <> LOWER(TRIM(destino))
+        )
         SELECT origen, destino, COUNT(*)::int AS total
-        FROM reservas
-        WHERE estado <> 'cancelada' AND origen IS NOT NULL AND destino IS NOT NULL
-          AND fecha_reserva >= CURRENT_DATE - INTERVAL '6 months'
-        GROUP BY origen, destino ORDER BY total DESC LIMIT 1
+        FROM rutas_limpias
+        GROUP BY origen, destino
+        ORDER BY total DESC, origen, destino
+        LIMIT 1
       `),
       pool.query(`
-        SELECT v.placa, (CURRENT_DATE - MAX(r.fecha_reserva)::date) AS dias_ocioso
+        SELECT v.placa,
+          (CURRENT_DATE - MAX(COALESCE(r.fecha_servicio, r.fecha_salida, r.fecha_reserva::timestamp))::date) AS dias_sin_servicio
         FROM vehiculos v
-        LEFT JOIN reservas r ON r.vehiculo_id = v.id AND r.estado <> 'cancelada'
+        LEFT JOIN reservas r ON r.vehiculo_id = v.id
+          AND r.estado <> 'cancelada'
+          AND COALESCE(r.fecha_servicio, r.fecha_salida, r.fecha_reserva::timestamp)::date < CURRENT_DATE
         WHERE v.activo = true AND v.placa IS NOT NULL
         GROUP BY v.id, v.placa
-        HAVING MAX(r.fecha_reserva) IS NULL OR MAX(r.fecha_reserva)::date < CURRENT_DATE - 20
-        ORDER BY dias_ocioso DESC NULLS FIRST LIMIT 3
+        HAVING MAX(COALESCE(r.fecha_servicio, r.fecha_salida, r.fecha_reserva::timestamp)) IS NULL
+          OR MAX(COALESCE(r.fecha_servicio, r.fecha_salida, r.fecha_reserva::timestamp))::date < CURRENT_DATE - 20
+        ORDER BY dias_sin_servicio DESC NULLS FIRST LIMIT 3
       `),
     ]);
 
@@ -530,19 +547,37 @@ const getAnaliticaInteligente = async (_req: any, res: any) => {
     const aprobadas = Number(conv.rows[0]?.aprobadas || 0);
     const tasa = totalCot > 0 ? Math.round((aprobadas / totalCot) * 100) : 0;
 
-    const rutaMasPedida = rutaTop.rows[0] ? `${rutaTop.rows[0].origen} → ${rutaTop.rows[0].destino}` : null;
+    const rutaMasPedida = rutaTop.rows[0] || null;
     const recomendaciones: string[] = [];
+    const accionesRecomendaciones: ({ etiqueta: string; href: string } | null)[] = [];
     for (const o of ociosos.rows.slice(0, 2)) {
-      const dias = o.dias_ocioso != null ? `${o.dias_ocioso} días` : "un buen tiempo";
+      const inactividad = o.dias_sin_servicio != null
+        ? `no registra servicios desde hace ${o.dias_sin_servicio} días`
+        : "no tiene servicios anteriores registrados";
       recomendaciones.push(
-        `El vehículo ${o.placa} no registra viajes hace ${dias}.` +
-        (rutaMasPedida ? ` La ruta más pedida es ${rutaMasPedida} — considera asignarlo ahí.` : " Considera reasignarlo o promocionarlo.")
+        `El vehículo ${o.placa} ${inactividad}.` +
+          (rutaMasPedida
+            ? ` La ruta con más reservas en los últimos 6 meses fue ${rutaMasPedida.origen} → ${rutaMasPedida.destino} (${rutaMasPedida.total} reservas). Revisa si la unidad es adecuada para atenderla.`
+            : " Revisa su disponibilidad y utilización.")
       );
+      accionesRecomendaciones.push({ etiqueta: "Revisar en despacho", href: "/admin/operaciones" });
     }
-    if (diaPico) recomendaciones.push(`Los ${diaPico.dia.toLowerCase()} son tu día de mayor demanda — asegura flota disponible.`);
-    if (totalCot >= 3 && tasa < 40) recomendaciones.push(`Tu tasa de conversión de cotizaciones es ${tasa}%. Revisa precios y contraofertas para cerrar más viajes.`);
-    if (mesPico) recomendaciones.push(`Históricamente, ${mesPico.mes} es tu mes de mayor demanda — prepara la flota con anticipación.`);
-    if (recomendaciones.length === 0) recomendaciones.push("Aún no hay suficientes datos para recomendaciones; se generarán a medida que se registren más viajes.");
+    if (diaPico) {
+      recomendaciones.push(`Los ${diaPico.dia.toLowerCase()} concentraron más reservas en los últimos 6 meses (${diaPico.total}); procura mantener flota disponible.`);
+      accionesRecomendaciones.push(null);
+    }
+    if (totalCot >= 3 && tasa < 40) {
+      recomendaciones.push(`En los últimos 90 días se aprobaron ${aprobadas} de ${totalCot} cotizaciones (${tasa}%). Revisa precios y contraofertas para mejorar la conversión.`);
+      accionesRecomendaciones.push(null);
+    }
+    if (mesPico) {
+      recomendaciones.push(`En los últimos 12 meses, ${mesPico.mes} registró más reservas (${mesPico.total}); prepara la disponibilidad de la flota con anticipación.`);
+      accionesRecomendaciones.push(null);
+    }
+    if (recomendaciones.length === 0) {
+      recomendaciones.push("Aún no hay suficientes datos para recomendaciones; se generarán a medida que se registren más viajes.");
+      accionesRecomendaciones.push(null);
+    }
 
     return res.json({
       success: true,
@@ -553,6 +588,7 @@ const getAnaliticaInteligente = async (_req: any, res: any) => {
       proyeccion: { ingresosMes: Math.round(ingresosMes), proyeccionMes, promedioHistorico: Math.round(promedioHistorico) },
       conversion: { total: totalCot, aprobadas, tasa },
       recomendaciones,
+      accionesRecomendaciones,
     });
   } catch (error) {
     console.error("Error obteniendo analítica inteligente:", error);

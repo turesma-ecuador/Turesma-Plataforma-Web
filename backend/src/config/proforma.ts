@@ -202,7 +202,7 @@ const buildProformaDataRequerimiento = async (requerimientoId: number, usuarioId
     const total = Number(group.precio_total) || 0;
     const details = [
       `Grupo ${index + 1}${group.tipo_vehiculo ? ` · ${group.tipo_vehiculo}` : ""}`,
-      `${group.origen || "Salida por definir"} → ${group.destino || "Destino por definir"}`,
+      `Desde: ${group.origen || "por definir"} / Hasta: ${group.destino || "por definir"}`,
       `Fecha: ${fmtFecha(group.fecha_servicio)}${group.fecha_fin ? ` al ${fmtFecha(group.fecha_fin)}` : ""}${group.hora_salida ? ` · ${group.hora_salida}` : ""}`,
       `${quantity} vehículo(s)${group.pasajeros_por_vehiculo ? ` · ${group.pasajeros_por_vehiculo} pasajeros por unidad` : ""}`,
       group.paradas ? `Paradas: ${group.paradas}` : "",
