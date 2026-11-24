@@ -17,6 +17,9 @@ let reservation = {
 };
 const sentEmails = [];
 const inAppNotifications = [];
+const dueOperations = [];
+const reminderResets = [];
+let failNextEmail = false;
 const operation = {
   id: 70,
   reserva_id: 42,
@@ -38,10 +41,22 @@ const operation = {
   conductor_nombre: "Luis Pérez",
   conductor_usuario_id: 603,
   conductor_email: "luis@example.invalid",
+  itinerario: [
+    { label: "Quito", fecha_llegada: "2026-12-10", dias_estadia: 2 },
+    { label: "Cuenca", fecha_llegada: "2026-12-12" },
+    { label: "Manta", fecha_llegada: "2026-12-14", es_retorno: true },
+  ],
 };
 const fakePool = {
   async query(sql, params) {
     const query = sql.toLowerCase();
+    if (query.startsWith("update operaciones") && query.includes("recordatorio_asignacion_en = current_timestamp")) {
+      return { rows: dueOperations.map((id) => ({ id })), rowCount: dueOperations.length };
+    }
+    if (query.startsWith("update operaciones") && query.includes("recordatorio_asignacion_en = null")) {
+      reminderResets.push(params[0]);
+      return { rows: [], rowCount: 1 };
+    }
     if (query.includes("from operaciones o") && query.includes("o.estado = 'asignada'")) {
       assert.equal(params[0], operation.id);
       return { rows: [operation], rowCount: 1 };
@@ -70,6 +85,10 @@ const installMock = (specifier, exports) => {
 installMock("../dist/config/db", fakePool);
 installMock("../dist/config/mailer", {
   async enviarCorreo(email) {
+    if (failNextEmail) {
+      failNextEmail = false;
+      throw new Error("SMTP unavailable");
+    }
     sentEmails.push(email);
     return { sent: true };
   },
@@ -81,7 +100,12 @@ installMock("../dist/config/notificaciones", {
   async notificarAdmins() {},
 });
 
-const { notificarClienteReserva, notificarClienteOperacion, notificarConductorOperacion } = require("../dist/config/reservaMailer");
+const {
+  notificarClienteReserva,
+  notificarClienteOperacion,
+  notificarConductorOperacion,
+  enviarRecordatoriosAsignacionConductor,
+} = require("../dist/config/reservaMailer");
 
 test("notifica la asignación y sus cambios con los datos del vehículo", async (t) => {
   const previousWebUrl = process.env.WEB_URL;
@@ -146,11 +170,27 @@ test("notifica al cliente y al conductor al asignar una unidad personalizada", a
   assert.match(sentEmails[1].html, /Quito → Otavalo/);
   assert.match(sentEmails[1].html, /10 de diciembre de 2026/);
   assert.match(sentEmails[1].html, /09:30/);
+  assert.match(sentEmails[1].html, /Quito/);
+  assert.match(sentEmails[1].html, /Estadía: 2 día\(s\)/);
+  assert.match(sentEmails[1].html, /Retorno al origen/);
   assert.match(sentEmails[1].html, /XYZ-9876 · Van/);
   assert.match(sentEmails[1].html, /\/vehiculo\/activas/);
   assert.equal(inAppNotifications.length, 2);
   assert.equal(inAppNotifications[1][1], operation.conductor_usuario_id);
   assert.match(inAppNotifications[1][2], /servicio asignado/i);
+});
+
+test("libera el recordatorio para reintentar si falla el correo", async () => {
+  sentEmails.length = 0;
+  dueOperations.splice(0, dueOperations.length, operation.id);
+  reminderResets.length = 0;
+  failNextEmail = true;
+
+  await enviarRecordatoriosAsignacionConductor();
+
+  assert.deepEqual(reminderResets, [operation.id]);
+  assert.equal(sentEmails.length, 0);
+  dueOperations.length = 0;
 });
 
 test("adjunta el logo inline sin reemplazar la proforma de una reserva confirmada", async () => {

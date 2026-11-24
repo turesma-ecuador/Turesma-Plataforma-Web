@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useConductorPanel, type ReservaConductor } from "../_components/use-conductor-panel";
 import { LocationSharing } from "../_components/location-sharing";
 import { WhatsAppButton } from "../../../components/whatsapp-button";
@@ -81,6 +81,11 @@ export default function ConductorActivasPage() {
   const { checkingSession, panel, msg, err, user, callAction, actionLoadingId } = useConductorPanel();
   const [delayForms, setDelayForms] = useState<Record<number, { detalle: string; eta: string }>>({});
 
+  useEffect(() => {
+    if (!window.location.hash.startsWith("#operacion-")) return;
+    document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [panel.activas.length]);
+
   if (checkingSession) return (
     <div className="flex h-64 items-center justify-center">
       <Loader2 className="animate-spin text-[#E31E24]" size={36} />
@@ -158,6 +163,7 @@ export default function ConductorActivasPage() {
             return (
               <article
                 key={r.operation_id || r.id}
+                id={r.operation_id ? `operacion-${r.operation_id}` : undefined}
                 className="bg-white rounded-2xl md:rounded-[2rem] border-2 border-red-200 shadow-sm overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
               >
                 {/* Card Header */}
@@ -241,6 +247,37 @@ export default function ConductorActivasPage() {
                       </div>
                     )}
                   </div>
+
+                  {r.itinerario?.length ? (
+                    <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-violet-700">Recorrido del servicio</p>
+                      <ol className="mt-2 space-y-2">
+                        {r.itinerario.map((point, index) => {
+                          const progress = Number(r.itinerario_progreso) || 0;
+                          const label = point.label || point.destino || "Destino";
+                          return (
+                            <li key={`${label}-${index}`} className={`flex items-start gap-2 text-sm ${index < progress ? "text-emerald-700" : index === progress ? "font-black text-violet-950" : "text-slate-500"}`}>
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-black">
+                                {index < progress ? <Check size={13} /> : index + 1}
+                              </span>
+                              <span>
+                                {label}
+                                {point.fecha_llegada ? <span className="block text-[10px] font-semibold">Llegada estimada: {fmtFechaLarga(point.fecha_llegada)}</span> : null}
+                                {point.dias_estadia ? <span className="block text-[10px] font-semibold">Estadía: {point.dias_estadia} día(s)</span> : null}
+                                {point.hora_salida ? <span className="block text-[10px] font-semibold">Salida: {point.hora_salida}</span> : null}
+                                {point.es_retorno ? <span className="block text-[10px] font-black uppercase">Retorno al origen</span> : null}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                      {r.estado === "en_curso" && (Number(r.itinerario_progreso) || 0) < r.itinerario.length && (
+                        <p className="mt-3 rounded-xl bg-white/80 p-3 text-xs font-bold text-violet-900">
+                          Siguiente destino: {r.itinerario[Number(r.itinerario_progreso) || 0]?.label || r.itinerario[Number(r.itinerario_progreso) || 0]?.destino || "ver recorrido"}
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
 
                   {/* Destino */}
                   {destinoFinal && (
@@ -363,6 +400,15 @@ export default function ConductorActivasPage() {
 
                   {/* ACCIONES DEL CONDUCTOR */}
                   <div className="flex flex-col sm:flex-row gap-2">
+                    {r.operation_id && !r.asignacion_confirmada_en && ["confirmada", "en_curso"].includes(r.estado) && (
+                      <button
+                        onClick={() => callAction(actionId, "confirmar-asignacion", undefined, "operaciones")}
+                        disabled={actionLoadingId === actionId}
+                        className="flex-1 rounded-2xl border-2 border-blue-200 bg-blue-50 py-3 text-xs font-black text-blue-900 disabled:opacity-60"
+                      >
+                        {actionLoadingId === actionId ? "Guardando..." : "Confirmar que recibí este servicio"}
+                      </button>
+                    )}
                     {r.estado === "confirmada" && (
                       <button
                         onClick={() => callAction(actionId, "estado", { estado: "en_curso" }, isCustomOperation ? "operaciones" : "reservas")}
@@ -373,13 +419,30 @@ export default function ConductorActivasPage() {
                         {isCustomOperation ? "Iniciar servicio" : regresoEnCurso && !regresoHabilitado ? "Regreso programado" : regresoEnCurso ? "Iniciar regreso" : "Iniciar viaje"}
                       </button>
                     )}
-                    {r.estado === "en_curso" && isCustomOperation && (
+                    {r.estado === "en_curso" && r.itinerario?.length
+                      && (isCustomOperation || r.recogido)
+                      && (Number(r.itinerario_progreso) || 0) < r.itinerario.length && (
                       <button
-                        onClick={() => callAction(actionId, "estado", { estado: "completada" }, "operaciones")}
+                        onClick={() => callAction(actionId, "llegada", undefined, "operaciones")}
+                        disabled={actionLoadingId === actionId}
+                        className="flex-1 rounded-2xl bg-violet-700 py-3 text-xs font-black text-white disabled:opacity-60"
+                      >
+                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
+                        {" "}Llegué a {r.itinerario[Number(r.itinerario_progreso) || 0]?.label || r.itinerario[Number(r.itinerario_progreso) || 0]?.destino || "este destino"}
+                      </button>
+                    )}
+                    {r.estado === "en_curso" && isCustomOperation && (!r.itinerario?.length
+                      || (Number(r.itinerario_progreso) || 0) >= r.itinerario.length) && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm("¿Confirmas que llegaste al destino final y terminaste este servicio?")) {
+                            void callAction(actionId, "estado", { estado: "completada" }, "operaciones");
+                          }
+                        }}
                         disabled={actionLoadingId === actionId}
                         className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
                       >
-                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Completar unidad
+                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Finalizar servicio
                       </button>
                     )}
                     {r.estado === "en_curso" && !isCustomOperation && !r.recogido && (
@@ -391,13 +454,31 @@ export default function ConductorActivasPage() {
                         {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Ya recogí al cliente
                       </button>
                     )}
-                    {r.estado === "en_curso" && !isCustomOperation && r.recogido && (
+                    {r.estado === "en_curso" && !isCustomOperation && !r.itinerario?.length && r.recogido && (
                       <button
-                        onClick={() => callAction(r.id, "estado", { estado: "finalizada" })}
+                        onClick={() => {
+                          if (window.confirm("¿Confirmas que llegaste al destino y terminaste este servicio?")) {
+                            void callAction(r.id, "estado", { estado: "finalizada" });
+                          }
+                        }}
                         disabled={actionLoadingId === actionId}
                         className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
                       >
                         {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Finalizar viaje
+                      </button>
+                    )}
+                    {r.estado === "en_curso" && !isCustomOperation && r.itinerario?.length
+                      && (Number(r.itinerario_progreso) || 0) >= r.itinerario.length && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm("¿Confirmas que llegaste al último destino y terminaste este servicio?")) {
+                            void callAction(r.id, "estado", { estado: "finalizada" });
+                          }
+                        }}
+                        disabled={actionLoadingId === actionId}
+                        className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+                      >
+                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Finalizar servicio
                       </button>
                     )}
                   </div>

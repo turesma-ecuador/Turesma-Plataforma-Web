@@ -11,11 +11,13 @@ const state = {
     usuario_id: 51,
   },
   operations: [
-    { id: 44, reserva_id: 501, requerimiento_id: 72, grupo_numero: 1, unidad_numero: 1, conductor_id: 14, estado: "asignada", origen: "Quito", destino: "Otavalo" },
-    { id: 45, reserva_id: 501, requerimiento_id: 72, grupo_numero: 1, unidad_numero: 2, conductor_id: 14, estado: "asignada", origen: "Quito", destino: "Otavalo" },
+    { id: 44, reserva_id: 501, requerimiento_id: 72, grupo_numero: 1, unidad_numero: 1, conductor_id: 14, estado: "asignada", origen: "Quito", destino: "Otavalo", itinerario: [], itinerario_progreso: 0 },
+    { id: 45, reserva_id: 501, requerimiento_id: 72, grupo_numero: 1, unidad_numero: 2, conductor_id: 14, estado: "asignada", origen: "Quito", destino: "Otavalo", itinerario: [], itinerario_progreso: 0 },
   ],
   notifications: [],
+  adminNotifications: [],
   reservationNotifications: [],
+  driverNotifications: [],
   quote: { id: 33, usuario_id: 51, estado: "negociacion", turno: "admin" },
   quoteQueries: [],
 };
@@ -23,9 +25,25 @@ const state = {
 const result = (rows = []) => ({ rows, rowCount: rows.length });
 const normalized = (sql) => sql.replace(/\s+/g, " ").trim().toLowerCase();
 const pool = {
-  async query(sql) {
+  async query(sql, params) {
     const query = normalized(sql);
     if (query.startsWith("select id from usuarios")) return result([{ id: 7 }]);
+    if (query.startsWith("update operaciones o")) {
+      const operation = state.operations.find((row) => row.id === Number(params[0]));
+      if (!operation || Number(params[1]) !== 7 || !["asignada", "en_curso"].includes(operation.estado)) {
+        return result();
+      }
+      operation.asignacion_confirmada_en ||= "2026-01-01T00:00:00.000Z";
+      return result([{
+        id: operation.id,
+        reserva_id: operation.reserva_id,
+        requerimiento_id: operation.requerimiento_id,
+        grupo_numero: operation.grupo_numero,
+        unidad_numero: operation.unidad_numero,
+        asignacion_confirmada_en: operation.asignacion_confirmada_en,
+      }]);
+    }
+    if (query.startsWith("insert into operacion_historial")) return result();
     throw new Error(`Unexpected pool query: ${query}`);
   },
   async connect() {
@@ -51,10 +69,15 @@ const pool = {
             usuario_id: state.reservation.usuario_id,
           }] : []);
         }
-        if (query.startsWith("update operaciones set estado = $1")) {
+        if (query.startsWith("update operaciones set estado = $1::varchar")) {
           const operation = state.operations.find((row) => row.id === Number(params[1]));
           if (operation) operation.estado = params[0];
           return result();
+        }
+        if (query.startsWith("update operaciones set itinerario_progreso")) {
+          const operation = state.operations.find((row) => row.id === Number(params[1]));
+          if (operation) operation.itinerario_progreso = params[0];
+          return result(operation ? [{ itinerario_progreso: operation.itinerario_progreso }] : []);
         }
         if (query.startsWith("insert into operacion_historial")) return result();
         if (query.startsWith("select count(*)::int as total")) {
@@ -88,13 +111,18 @@ const installMock = (specifier, exports) => {
 installMock("../dist/config/db", pool);
 installMock("../dist/config/notificaciones", {
   async crearNotificacion(...args) { state.notifications.push(args); },
-  async notificarAdmins() {},
+  async notificarAdmins(...args) { state.adminNotifications.push(args); },
 });
 installMock("../dist/config/reservaMailer", {
   async notificarClienteReserva(...args) { state.reservationNotifications.push(args); },
+  async notificarConductorOperacion(...args) { state.driverNotifications.push(args); },
 });
 
-const { actualizarEstadoOperacionConductor } = require("../dist/controllers/conductor.controller");
+const {
+  actualizarEstadoOperacionConductor,
+  confirmarRecepcionOperacionConductor,
+  marcarLlegadaDestinoConductor,
+} = require("../dist/controllers/conductor.controller");
 const { cancelarMiReserva } = require("../dist/controllers/usuarios.controller");
 const { responderCotizacion } = require("../dist/controllers/admin/cotizaciones.admin.controller");
 
@@ -135,11 +163,25 @@ test("el conductor solo actualiza sus operaciones y finaliza el servicio al comp
     params: { id: "7", operationId: String(operationId) },
     body: { estado },
   });
+  const wrongDriverConfirmation = response();
+  await confirmarRecepcionOperacionConductor({
+    params: { id: "8", operationId: "44" },
+  }, wrongDriverConfirmation);
+  assert.equal(wrongDriverConfirmation.statusCode, 404);
+
   const unauthorized = response();
   state.operations[0].conductor_id = 99;
   await actualizarEstadoOperacionConductor(reqFor(44, "en_curso"), unauthorized);
   assert.equal(unauthorized.statusCode, 403);
   state.operations[0].conductor_id = 14;
+
+  const assignmentConfirmation = response();
+  await confirmarRecepcionOperacionConductor({
+    params: { id: "7", operationId: "44" },
+  }, assignmentConfirmation);
+  assert.equal(assignmentConfirmation.statusCode, 200);
+  assert.equal(state.adminNotifications.length, 1);
+  assert.match(state.adminNotifications[0][1], /confirmó que recibió la asignación/i);
 
   const started = response();
   await actualizarEstadoOperacionConductor(reqFor(44, "en_curso"), started);
@@ -147,12 +189,32 @@ test("el conductor solo actualiza sus operaciones y finaliza el servicio al comp
   assert.equal(state.reservation.estado_operativo, "en_curso");
   assert.equal(state.notifications.length, 1);
 
+  state.operations[0].itinerario = [{ label: "Cuenca" }, { label: "Manta", es_retorno: true }];
+  const firstArrival = response();
+  await marcarLlegadaDestinoConductor(reqFor(44), firstArrival);
+  assert.equal(firstArrival.statusCode, 200);
+  assert.equal(firstArrival.body.progreso, 1);
+  assert.equal(firstArrival.body.servicio_listo_para_finalizar, false);
+  assert.equal(state.operations[0].itinerario_progreso, 1);
+  assert.equal(state.adminNotifications.length, 2);
+
   const firstCompleted = response();
   await actualizarEstadoOperacionConductor(reqFor(44, "completada"), firstCompleted);
-  assert.equal(firstCompleted.statusCode, 200);
-  assert.equal(firstCompleted.body.servicio_finalizado, false);
+  assert.equal(firstCompleted.statusCode, 409);
+  assert.match(firstCompleted.body.error, /confirma primero la llegada/i);
   assert.equal(state.reservation.estado, "confirmada");
   assert.equal(state.reservationNotifications.length, 0);
+
+  const finalArrival = response();
+  await marcarLlegadaDestinoConductor(reqFor(44), finalArrival);
+  assert.equal(finalArrival.statusCode, 200);
+  assert.equal(finalArrival.body.progreso, 2);
+  assert.equal(finalArrival.body.servicio_listo_para_finalizar, true);
+
+  const firstCompletedAfterLastArrival = response();
+  await actualizarEstadoOperacionConductor(reqFor(44, "completada"), firstCompletedAfterLastArrival);
+  assert.equal(firstCompletedAfterLastArrival.statusCode, 200);
+  assert.equal(firstCompletedAfterLastArrival.body.servicio_finalizado, false);
 
   state.operations[1].estado = "en_curso";
   const finalCompleted = response();

@@ -14,6 +14,7 @@ const cotizacionesRoutes = require("./routes/cotizaciones.routes");
 const requerimientosRoutes = require("./routes/requerimientos.routes");
 const { initDatabase } = require("./config/initDb");
 const pool = require("./config/db");
+const { enviarRecordatoriosAsignacionConductor } = require("./config/reservaMailer");
 const { verifyToken } = require("./middleware/auth.middleware");
 const { authRateLimit } = require("./middleware/auth-rate-limit.middleware");
 const { servePrivateFile } = require("./controllers/private-files.controller");
@@ -86,6 +87,7 @@ app.get("/health", async (_req, res) => {
 });
 
 const PORT = process.env.PORT || 4000;
+const DRIVER_REMINDER_INTERVAL_MS = 30 * 60 * 1000;
 
 const startServer = async () => {
   try {
@@ -95,6 +97,11 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`Servidor corriendo en puerto ${PORT} - http://localhost:${PORT}`);
     });
+    void enviarRecordatoriosAsignacionConductor();
+    const reminderTimer = setInterval(() => {
+      void enviarRecordatoriosAsignacionConductor();
+    }, DRIVER_REMINDER_INTERVAL_MS);
+    reminderTimer.unref?.();
   } catch (error) {
     console.error("❌ Error iniciando el servidor:", error);
     process.exit(1);

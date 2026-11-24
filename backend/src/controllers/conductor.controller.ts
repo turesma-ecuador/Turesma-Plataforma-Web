@@ -3,7 +3,7 @@ export {};
 const pool = require("../config/db");
 const { syncReservaEstadosAutomaticos } = require("../config/reservaEstadoAuto");
 const { crearNotificacion, notificarAdmins } = require("../config/notificaciones");
-const { notificarClienteReserva } = require("../config/reservaMailer");
+const { notificarClienteReserva, notificarConductorOperacion } = require("../config/reservaMailer");
 
 const parsePositiveInt = (value) => {
   const parsed = Number(value);
@@ -702,6 +702,7 @@ const listarReservasConductor = async (req, res) => {
            r.recogido,
            co.hora_salida,
            co.origen_lat, co.origen_lng, co.destino_lat, co.destino_lng,
+           op.id AS operation_id, op.itinerario, op.itinerario_progreso, op.asignacion_confirmada_en,
            op.eta_actualizada, op.incidencia_detalle
          FROM reservas r
          INNER JOIN usuarios u ON u.id = r.usuario_id
@@ -709,10 +710,12 @@ const listarReservasConductor = async (req, res) => {
          LEFT JOIN vehiculos v ON v.id = r.vehiculo_id
          LEFT JOIN cotizaciones co ON co.reserva_id = r.id
          LEFT JOIN LATERAL (
-           SELECT eta_actualizada, incidencia_detalle
-           FROM operaciones
-           WHERE reserva_id = r.id AND estado IN ('en_curso', 'incidencia')
-           ORDER BY CASE WHEN estado = 'incidencia' THEN 0 ELSE 1 END, id DESC
+           SELECT id, itinerario, itinerario_progreso, asignacion_confirmada_en, eta_actualizada, incidencia_detalle
+           FROM operaciones o
+           WHERE reserva_id = r.id
+             AND conductor_id = $2
+             AND estado IN ('asignada', 'en_curso', 'incidencia')
+           ORDER BY CASE WHEN estado = 'en_curso' THEN 0 WHEN estado = 'incidencia' THEN 1 ELSE 2 END, id DESC
            LIMIT 1
          ) op ON true
          WHERE r.vehiculo_id = $1
@@ -720,7 +723,7 @@ const listarReservasConductor = async (req, res) => {
            AND COALESCE(r.estado_operativo, '') <> 'cancelada'
            AND (COALESCE(r.total, 0) <= 0 OR r.estado_pago = 'pagado')
          ORDER BY r.fecha_reserva ASC, r.id ASC`,
-        [vehiculoId]
+        [vehiculoId, conductorReservaId]
       ),
       pool.query(
         `SELECT
@@ -762,6 +765,7 @@ const listarReservasConductor = async (req, res) => {
         `SELECT o.id AS operation_id, o.reserva_id, o.requerimiento_id,
                 o.grupo_numero, o.unidad_numero, o.fecha_programada,
                 o.fecha_fin_programada AS fecha_fin, o.hora_inicio AS hora_salida,
+                o.itinerario, o.itinerario_progreso, o.asignacion_confirmada_en,
                 o.origen, o.destino, o.pasajeros AS num_personas, o.estado AS estado_operacion,
                 r.total, u.nombre AS usuario_nombre, u.email AS usuario_email,
                 u.telefono AS usuario_telefono, v.placa AS vehiculo_placa
@@ -781,6 +785,9 @@ const listarReservasConductor = async (req, res) => {
     const mapOperacionPersonalizada = (operation) => ({
       id: Number(operation.reserva_id),
       operation_id: Number(operation.operation_id),
+      itinerario: Array.isArray(operation.itinerario) ? operation.itinerario : [],
+      itinerario_progreso: Number(operation.itinerario_progreso) || 0,
+      asignacion_confirmada_en: operation.asignacion_confirmada_en,
       requerimiento_id: Number(operation.requerimiento_id),
       grupo_numero: operation.grupo_numero,
       unidad_numero: operation.unidad_numero,
@@ -1024,6 +1031,7 @@ const actualizarEstadoReservaConductor = async (req, res) => {
   let finalizaIda = false;
   let regresoFecha;
   let regresoHora;
+  let completedOperationIds: number[] = [];
   const client = await pool.connect();
   try {
     const conductorReservaId = await resolveReservaConductorId(conductorId);
@@ -1052,6 +1060,25 @@ const actualizarEstadoReservaConductor = async (req, res) => {
     if (Number(reserva.conductor_id) !== conductorReservaId) {
       await client.query("ROLLBACK");
       return res.status(403).json({ error: "No puedes cambiar estado de una reserva que no te pertenece" });
+    }
+
+    if (estado === "finalizada") {
+      const activeOperation = await client.query(
+        `SELECT id, itinerario, itinerario_progreso
+         FROM operaciones
+         WHERE reserva_id = $1 AND conductor_id = $2 AND requerimiento_id IS NULL
+           AND estado = 'en_curso'
+         ORDER BY CASE WHEN tipo_servicio = 'reserva_regreso' THEN 0 ELSE 1 END, id DESC
+         LIMIT 1 FOR UPDATE`,
+        [reservaId, conductorReservaId]
+      );
+      if (activeOperation.rowCount) {
+        const itinerary = Array.isArray(activeOperation.rows[0].itinerario) ? activeOperation.rows[0].itinerario : [];
+        if (itinerary.length && Number(activeOperation.rows[0].itinerario_progreso || 0) < itinerary.length) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ error: "Confirma primero la llegada a cada destino del itinerario" });
+        }
+      }
     }
 
     if (reserva.estado === "finalizada" || reserva.estado_operativo === "finalizada") {
@@ -1139,6 +1166,9 @@ const actualizarEstadoReservaConductor = async (req, res) => {
          RETURNING id, estado AS estado_nuevo`,
         [nextOperationState, reservaId, returnTrip, finalizaIda]
       );
+      if (estado === "finalizada" && !finalizaIda) {
+        completedOperationIds = operations.rows.map((operation) => Number(operation.id));
+      }
       for (const operation of operations.rows) {
         await client.query(
           `INSERT INTO operacion_historial (operacion_id, usuario_id, accion, estado_nuevo, detalle)
@@ -1165,6 +1195,9 @@ const actualizarEstadoReservaConductor = async (req, res) => {
     } catch (error) {
       console.error("El estado se actualizó, pero no se pudo notificar al cliente:", error);
       notificationWarning = "El cambio se guardó, pero no se pudo enviar la notificación.";
+    }
+    for (const operationId of completedOperationIds) {
+      await notificarConductorOperacion(operationId, conductorId, false, "completada");
     }
   }
 
@@ -1304,7 +1337,7 @@ const actualizarEstadoOperacionConductor = async (req, res) => {
     await client.query("BEGIN");
     const result = await client.query(
       `SELECT o.id, o.reserva_id, o.requerimiento_id, o.grupo_numero, o.unidad_numero,
-              o.conductor_id, o.estado, o.origen, o.destino,
+              o.conductor_id, o.estado, o.origen, o.destino, o.itinerario, o.itinerario_progreso,
               r.estado AS reserva_estado, r.estado_pago, r.total, r.usuario_id
        FROM operaciones o
        INNER JOIN reservas r ON r.id = o.reserva_id
@@ -1339,12 +1372,19 @@ const actualizarEstadoOperacionConductor = async (req, res) => {
       await client.query("ROLLBACK");
       return res.status(409).json({ error: "Solo puedes completar una operación que ya está en curso" });
     }
+    if (estado === "completada") {
+      const itinerary = Array.isArray(operation.itinerario) ? operation.itinerario : [];
+      if (itinerary.length && Number(operation.itinerario_progreso || 0) < itinerary.length) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Confirma primero la llegada a cada destino del itinerario" });
+      }
+    }
 
     await client.query(
       `UPDATE operaciones
-       SET estado = $1,
-           hora_inicio_real = CASE WHEN $1 = 'en_curso' THEN CURRENT_TIMESTAMP ELSE hora_inicio_real END,
-           hora_fin_real = CASE WHEN $1 = 'completada' THEN CURRENT_TIMESTAMP ELSE hora_fin_real END,
+       SET estado = $1::varchar,
+           hora_inicio_real = CASE WHEN $1::varchar = 'en_curso' THEN CURRENT_TIMESTAMP ELSE hora_inicio_real END,
+           hora_fin_real = CASE WHEN $1::varchar = 'completada' THEN CURRENT_TIMESTAMP ELSE hora_fin_real END,
            actualizado_en = CURRENT_TIMESTAMP
        WHERE id = $2`,
       [estado, operationId]
@@ -1406,6 +1446,9 @@ const actualizarEstadoOperacionConductor = async (req, res) => {
   } else if (allOperationsCompleted) {
     await notificarClienteReserva(reservaId, "finalizada", conductorId);
   }
+  if (estado === "completada") {
+    await notificarConductorOperacion(operationId, conductorId, false, "completada");
+  }
 
   return res.status(200).json({
     message: estado === "en_curso"
@@ -1463,6 +1506,172 @@ const marcarRecogidoConductor = async (req, res) => {
     console.error("Error marcando recogida:", error);
     return res.status(500).json({ error: "Error interno del servidor" });
   }
+};
+
+const confirmarRecepcionOperacionConductor = async (req, res) => {
+  const conductorId = parsePositiveInt(req.params.id);
+  const operationId = parsePositiveInt(req.params.operationId);
+  if (!conductorId || !operationId) return res.status(400).json({ error: "Debes enviar IDs válidos" });
+
+  try {
+    const result = await pool.query(
+      `UPDATE operaciones o
+       SET asignacion_confirmada_en = COALESCE(asignacion_confirmada_en, CURRENT_TIMESTAMP),
+           actualizado_en = CURRENT_TIMESTAMP
+       FROM conductores c
+       WHERE o.id = $1 AND c.usuario_id = $2 AND o.conductor_id = c.id
+         AND o.estado IN ('asignada', 'en_curso')
+       RETURNING o.id, o.reserva_id, o.requerimiento_id, o.grupo_numero, o.unidad_numero,
+                 o.asignacion_confirmada_en`,
+      [operationId, conductorId]
+    );
+    if (!result.rowCount) {
+      return res.status(404).json({ error: "No se encontró una asignación activa para este conductor" });
+    }
+    const operation = result.rows[0];
+    await pool.query(
+      `INSERT INTO operacion_historial (operacion_id, usuario_id, accion, estado_nuevo, detalle)
+       VALUES ($1, $2, 'asignacion_recibida_conductor', 'asignada', $3::jsonb)`,
+      [operationId, conductorId, JSON.stringify({ origen: "portal_conductor" })]
+    );
+    const unitLabel = operation.requerimiento_id
+      ? ` · Grupo ${operation.grupo_numero}, unidad ${operation.unidad_numero}`
+      : "";
+    await notificarAdmins(
+      conductorId,
+      `El conductor confirmó que recibió la asignación de la reserva #${operation.reserva_id}${unitLabel}.`,
+      "reserva",
+      Number(operation.reserva_id)
+    );
+    return res.status(200).json({ message: "Asignación recibida. Gracias por confirmar." });
+  } catch (error) {
+    console.error("Error confirmando recepción de asignación:", error);
+    return res.status(500).json({ error: "No se pudo confirmar la asignación" });
+  }
+};
+
+const marcarLlegadaDestinoConductor = async (req, res) => {
+  const conductorId = parsePositiveInt(req.params.id);
+  const operationId = parsePositiveInt(req.params.operationId);
+  if (!conductorId || !operationId) {
+    return res.status(400).json({ error: "Debes enviar IDs válidos" });
+  }
+
+  const client = await pool.connect();
+  let eventData;
+  try {
+    const profile = await client.query("SELECT id FROM conductores WHERE usuario_id = $1 LIMIT 1", [conductorId]);
+    if (!profile.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Perfil de conductor no encontrado" });
+    }
+
+    await client.query("BEGIN");
+    const result = await client.query(
+      `SELECT o.id, o.reserva_id, o.requerimiento_id, o.grupo_numero, o.unidad_numero,
+              o.conductor_id, o.estado, o.origen, o.destino, o.itinerario, o.itinerario_progreso,
+              r.usuario_id, r.estado AS reserva_estado, r.estado_operativo, r.recogido
+       FROM operaciones o
+       INNER JOIN reservas r ON r.id = o.reserva_id
+       WHERE o.id = $1
+       FOR UPDATE OF o, r`,
+      [operationId]
+    );
+    if (!result.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Operación no encontrada" });
+    }
+    const operation = result.rows[0];
+    if (Number(operation.conductor_id) !== Number(profile.rows[0].id)) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "Esta operación no está asignada a tu perfil" });
+    }
+    if (operation.estado !== "en_curso") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "La operación debe estar en curso para registrar una llegada" });
+    }
+    if (operation.reserva_estado !== "confirmada"
+      || (operation.requerimiento_id
+        ? false
+        : operation.estado_operativo !== "en_curso" || !operation.recogido)) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Inicia el viaje y registra la recogida antes de confirmar la llegada" });
+    }
+
+    const itinerary = Array.isArray(operation.itinerario) ? operation.itinerario : [];
+    const progress = Number(operation.itinerario_progreso) || 0;
+    if (!itinerary.length) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Esta operación no tiene destinos adicionales registrados" });
+    }
+    if (progress >= itinerary.length) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Ya registraste la llegada al último destino" });
+    }
+
+    const arrivedPoint = itinerary[progress];
+    const update = await client.query(
+      `UPDATE operaciones
+       SET itinerario_progreso = $1, actualizado_en = CURRENT_TIMESTAMP
+       WHERE id = $2 AND itinerario_progreso = $3 AND estado = 'en_curso'
+       RETURNING itinerario_progreso`,
+      [progress + 1, operationId, progress]
+    );
+    if (!update.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "El itinerario cambió. Actualiza la pantalla e inténtalo nuevamente." });
+    }
+
+    eventData = {
+      reservaId: Number(operation.reserva_id),
+      clienteId: Number(operation.usuario_id),
+      pointLabel: String(arrivedPoint.label || arrivedPoint.destino || operation.destino),
+      arrivedNumber: progress + 1,
+      stopCount: itinerary.length,
+      nextPoint: itinerary[progress + 1] || null,
+      groupNumber: operation.grupo_numero,
+      unitNumber: operation.unidad_numero,
+    };
+    await client.query(
+      `INSERT INTO operacion_historial (operacion_id, usuario_id, accion, estado_anterior, estado_nuevo, detalle)
+       VALUES ($1, $2, 'llegada_destino_conductor', $3, $3, $4::jsonb)`,
+      [operationId, conductorId, operation.estado, JSON.stringify({
+        destino: eventData.pointLabel,
+        destino_numero: eventData.arrivedNumber,
+        total_destinos: eventData.stopCount,
+      })]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch((rollbackError) => {
+      console.error("Error revirtiendo llegada del conductor:", rollbackError);
+    });
+    console.error("Error registrando llegada del conductor:", error);
+    return res.status(500).json({ error: "No se pudo registrar la llegada" });
+  } finally {
+    client.release();
+  }
+
+  const unitLabel = eventData.groupNumber
+    ? ` · Grupo ${eventData.groupNumber}, unidad ${eventData.unitNumber}`
+    : "";
+  const arrivalMessage = `El conductor registró la llegada ${eventData.arrivedNumber}/${eventData.stopCount} a ${eventData.pointLabel} en la reserva #${eventData.reservaId}${unitLabel}.`;
+  await notificarAdmins(conductorId, arrivalMessage, "reserva", eventData.reservaId);
+  await crearNotificacion(
+    conductorId,
+    eventData.clienteId,
+    `Llegaron a ${eventData.pointLabel} (${eventData.arrivedNumber} de ${eventData.stopCount}) en tu reserva #${eventData.reservaId}.`,
+    eventData.reservaId,
+    "reserva",
+    eventData.reservaId
+  );
+  return res.status(200).json({
+    message: `Llegada registrada en ${eventData.pointLabel}.`,
+    progreso: eventData.arrivedNumber,
+    total_destinos: eventData.stopCount,
+    servicio_listo_para_finalizar: eventData.arrivedNumber === eventData.stopCount,
+    siguiente_destino: eventData.nextPoint,
+  });
 };
 
 const obtenerDisponibilidadConductor = async (req, res) => {
@@ -1928,6 +2137,8 @@ module.exports = {
   actualizarEstadoReservaConductor,
   reportarIncidenciaReservaConductor,
   actualizarEstadoOperacionConductor,
+  confirmarRecepcionOperacionConductor,
+  marcarLlegadaDestinoConductor,
   marcarRecogidoConductor,
   obtenerDisponibilidadConductor,
   actualizarDisponibilidadConductor,

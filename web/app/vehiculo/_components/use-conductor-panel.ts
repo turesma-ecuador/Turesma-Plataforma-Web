@@ -56,6 +56,16 @@ export type ReservaConductor = {
   referencia_recogida?: string | null;
   hora_salida?: string | null;
   recogido?: boolean;
+  itinerario?: Array<{
+    label?: string;
+    destino?: string;
+    fecha_llegada?: string | null;
+    hora_salida?: string | null;
+    dias_estadia?: number;
+    es_retorno?: boolean;
+  }>;
+  itinerario_progreso?: number;
+  asignacion_confirmada_en?: string | null;
 };
 
 export type VehiculoAsignado = {

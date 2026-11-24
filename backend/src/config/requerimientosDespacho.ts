@@ -66,9 +66,9 @@ const prepararDespachoRequerimiento = async (reservaId: number, usuarioId?: numb
           `INSERT INTO operaciones
              (reserva_id, requerimiento_id, grupo_numero, unidad_numero, tipo_servicio, tipo_vehiculo_solicitado,
               fecha_programada, fecha_fin_programada, hora_inicio, origen, destino, pasajeros,
-              observaciones, creado_por)
+              observaciones, creado_por, itinerario)
            VALUES ($1, $2, $3, $4, 'requerimiento_especial', $5, $6::date, $7::date, $8::time,
-                   $9, $10, $11, $12, $13)
+                   $9, $10, $11, $12, $13, $14::jsonb)
            ON CONFLICT (requerimiento_id, grupo_numero, unidad_numero)
              WHERE requerimiento_id IS NOT NULL DO NOTHING
            RETURNING id`,
@@ -96,6 +96,7 @@ const prepararDespachoRequerimiento = async (reservaId: number, usuarioId?: numb
               group.detalles || "",
             ].filter(Boolean).join("\n"),
             usuarioId || null,
+            JSON.stringify(Array.isArray(group.itinerario) ? group.itinerario : []),
           ]
         );
         if (inserted.rowCount) {

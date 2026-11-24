@@ -341,7 +341,7 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
   try {
     await client.query("BEGIN");
     const reservation = await client.query(
-      `SELECT id, fecha_reserva, fecha_servicio, fecha_salida, fecha_llegada, fecha_fin, tipo_vehiculo,
+      `SELECT id, fecha_reserva, fecha_servicio, fecha_salida, fecha_llegada, fecha_fin, tipo_vehiculo, itinerario,
               fecha_regreso::date::text AS fecha_regreso, hora_regreso,
               COALESCE(fecha_salida::date, fecha_servicio::date, fecha_reserva)::text AS fecha_inicio,
               COALESCE(NULLIF(hora_salida, ''), to_char(fecha_salida, 'HH24:MI')) AS hora_salida_programada,
@@ -455,8 +455,8 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
         `INSERT INTO operaciones
          (reserva_id, tipo_servicio, tipo_vehiculo_solicitado, fecha_programada, fecha_fin_programada, hora_inicio, hora_fin,
           origen, destino, pasajeros, vehiculo_id, conductor_id, estado, creado_por,
-          duracion_estimada_minutos, origen_lat, origen_lng, destino_lat, destino_lng)
-         VALUES ($1, $2, $3, $4::date, $5::date, $6::time, $7::time, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+          duracion_estimada_minutos, origen_lat, origen_lng, destino_lat, destino_lng, itinerario)
+         VALUES ($1, $2, $3, $4::date, $5::date, $6::time, $7::time, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::jsonb)
          RETURNING id`,
         [
           reservationId, leg.type, textOrNull(current.tipo_vehiculo, 100), leg.date, leg.end.date, leg.time, leg.end.time,
@@ -464,6 +464,7 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
           String(leg.destination || "Destino pendiente").trim(),
           Number(current.num_personas) || 1, vehicleId, driverId, initialState, req.user?.id || null,
           durationMinutes, leg.originLat || null, leg.originLng || null, leg.destinationLat || null, leg.destinationLng || null,
+          JSON.stringify(leg.type === "reserva" && Array.isArray(current.itinerario) ? current.itinerario : []),
         ]
       );
       createdOperations.push(Number(created.rows[0].id));
@@ -485,6 +486,11 @@ const crearOperacionDesdeReserva = async (req: any, res: any) => {
     }
     const operation = await getOperation(client, operationId);
     await client.query("COMMIT");
+    if (initialState === "asignada") {
+      for (const createdId of createdOperations) {
+        await notificarConductorOperacion(createdId, req.user?.id || null);
+      }
+    }
     return res.status(201).json({ success: true, data: operation, operation_ids: createdOperations });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -907,9 +913,12 @@ const asignarOperacion = async (req: any, res: any) => {
 
     await client.query(
       `UPDATE operaciones
-       SET vehiculo_id = $1, conductor_id = $2, estado = 'asignada', actualizado_en = CURRENT_TIMESTAMP
+       SET vehiculo_id = $1, conductor_id = $2, estado = 'asignada',
+           asignacion_confirmada_en = CASE WHEN $4::boolean THEN NULL ELSE asignacion_confirmada_en END,
+           recordatorio_asignacion_en = CASE WHEN $4::boolean THEN NULL ELSE recordatorio_asignacion_en END,
+           actualizado_en = CURRENT_TIMESTAMP
        WHERE id = ANY($3::int[])`,
-      [vehicleId, driverId, linkedLegs.rows.length ? linkedLegs.rows.map((leg: any) => Number(leg.id)) : [operationId]]
+      [vehicleId, driverId, linkedLegs.rows.length ? linkedLegs.rows.map((leg: any) => Number(leg.id)) : [operationId], assignmentChanged]
     );
     if (current.reserva_id) {
       const reservation = await client.query(
