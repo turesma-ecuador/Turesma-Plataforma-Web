@@ -324,6 +324,14 @@ const listarSolicitudesCambioDestinoAdmin = async (_req: any, res: any) => {
               ) AS despacho_preparado,
               operacion_despacho.id AS despacho_operacion_id,
               operacion_despacho.estado AS despacho_estado,
+              (
+                COALESCE(r.estado_operativo = 'en_curso', false)
+                OR COALESCE(r.recogido, false)
+                OR EXISTS (
+                  SELECT 1 FROM operaciones o
+                  WHERE o.reserva_id = r.id AND o.estado IN ('en_curso', 'completada')
+                )
+              ) AS viaje_iniciado,
               CASE
                 WHEN r.estado <> 'confirmada' THEN 'La reserva ya no está confirmada.'
                 WHEN r.estado_pago <> 'pagado' THEN 'El pago de la reserva ya no está confirmado.'

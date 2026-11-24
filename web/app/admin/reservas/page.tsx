@@ -83,6 +83,7 @@ type CambioDestinoAdmin = {
   despacho_preparado: boolean;
   despacho_operacion_id?: number | null;
   despacho_estado?: string | null;
+  viaje_iniciado?: boolean | null;
   bloqueo_propuesta: string | null;
 };
 type CambioDestinoFeedback = { type: "success" | "error"; message: string };
@@ -246,6 +247,7 @@ const TRANSICIONES_VALIDAS: Record<string, string[]> = {
 };
 
 const INPUT_CLS = "w-full rounded-xl border-2 border-slate-100 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 outline-none transition-all focus:border-[#E31E24] focus:bg-white placeholder:font-normal";
+const STARTED_TRIP_CHANGE_CLOSURE_NOTE = "La ruta y el valor originales se mantienen. Los cambios después de iniciar el viaje se coordinan directamente con Turesma por llamada o WhatsApp; esta solicitud no se tramita desde el sistema.";
 
 export default function AdminReservasPage() {
   const { user, checkingSession } = useAdminGuard();
@@ -606,7 +608,7 @@ export default function AdminReservasPage() {
     }
   };
 
-  const actualizarSolicitudCambio = async (id: number, action: "propuesta" | "rechazar" | "devolucion") => {
+  const actualizarSolicitudCambio = async (id: number, action: "propuesta" | "rechazar" | "devolucion", defaultRejectionNote = "") => {
     if (savingChangeIdsRef.current.has(id)) return;
     savingChangeIdsRef.current.add(id);
     setSavingChangeIds(new Set(savingChangeIdsRef.current));
@@ -623,7 +625,7 @@ export default function AdminReservasPage() {
       ? { total_propuesto: Number(form.total), nota_admin: form.nota }
       : action === "devolucion"
         ? { referencia_externa: form.referencia }
-        : { nota_admin: form.nota };
+        : { nota_admin: form.nota.trim() || defaultRejectionNote };
     setErr(""); setMsg("");
     try {
       const response = await fetch(`${API_URL}${endpoint}`, {
@@ -643,7 +645,9 @@ export default function AdminReservasPage() {
         if (response.status === 409) await load(true);
         throw new Error(data.error || `No se pudo procesar la solicitud (HTTP ${response.status})`);
       }
-      const successMessage = data.message || "Solicitud actualizada";
+      const successMessage = action === "rechazar" && defaultRejectionNote
+        ? "Solicitud cerrada y cliente notificado. La reserva conserva la ruta original."
+        : data.message || "Solicitud actualizada";
       setCambioDestinoFeedback((previous) => ({ ...previous, [id]: { type: "success", message: successMessage } }));
       setMsg(successMessage);
       await load(true);
@@ -835,6 +839,7 @@ export default function AdminReservasPage() {
             {solicitudesCambioDestino.map((change) => {
               const proposalForm = propuestasCambio[change.id] || { total: "", nota: "", referencia: "" };
               const difference = Number(change.total_propuesto || 0) - Number(change.total_anterior || 0);
+              const tripAlreadyStarted = Boolean(change.viaje_iniciado || change.despacho_estado === "en_curso");
               return (
                 <article key={change.id} className="space-y-3 p-4 sm:p-5">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -869,8 +874,10 @@ export default function AdminReservasPage() {
                   </div>
                   {change.estado === "pendiente_admin" && change.bloqueo_propuesta && (
                     <p role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
-                      {change.despacho_estado === "en_curso"
-                        ? `La Operación #${change.despacho_operacion_id} de esta reserva está en curso. No se puede cotizar un cambio de ruta mientras el viaje esté activo.`
+                      {tripAlreadyStarted
+                        ? change.despacho_estado === "en_curso"
+                          ? `La Operación #${change.despacho_operacion_id} está en curso. No cambies la ruta ni el precio desde esta solicitud. Para un ajuste urgente, coordínalo por llamada o WhatsApp; la reserva conserva sus datos originales.`
+                          : "El viaje ya comenzó o terminó. No cambies su ruta ni precio desde esta solicitud; coordina cualquier ajuste directamente por llamada o WhatsApp."
                         : change.bloqueo_propuesta}
                       {change.despacho_preparado && (
                         <Link href="/admin/operaciones" className="inline-flex items-center gap-1 font-black underline underline-offset-2">
@@ -879,7 +886,22 @@ export default function AdminReservasPage() {
                       )}
                     </p>
                   )}
-                  {change.estado === "pendiente_admin" && (
+                  {change.estado === "pendiente_admin" && tripAlreadyStarted && (
+                    <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs leading-relaxed text-slate-700">
+                        Al cerrar, el cliente recibirá: “{STARTED_TRIP_CHANGE_CLOSURE_NOTE}”
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void actualizarSolicitudCambio(change.id, "rechazar", STARTED_TRIP_CHANGE_CLOSURE_NOTE)}
+                        disabled={savingChangeIds.has(change.id)}
+                        className="shrink-0 rounded-xl bg-slate-900 px-4 py-3 text-xs font-black uppercase text-white disabled:opacity-50"
+                      >
+                        {savingChangeIds.has(change.id) ? "Cerrando..." : "Cerrar y notificar"}
+                      </button>
+                    </div>
+                  )}
+                  {change.estado === "pendiente_admin" && !tripAlreadyStarted && (
                     <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)_auto_auto]">
                       <label className="text-[10px] font-black uppercase text-slate-500">Nuevo total ($)
                         <input type="number" min="0.01" step="0.01" value={proposalForm.total} disabled={savingChangeIds.has(change.id)} onChange={(event) => setPropuestasCambio((old) => ({ ...old, [change.id]: { ...proposalForm, total: event.target.value } }))} className={`${INPUT_CLS} mt-1`} />
@@ -904,7 +926,7 @@ export default function AdminReservasPage() {
                       <button type="button" onClick={() => void actualizarSolicitudCambio(change.id, "rechazar")} disabled={savingChangeIds.has(change.id) || proposalForm.nota.trim().length < 5} className="self-end rounded-xl bg-red-50 px-4 py-3 text-xs font-black uppercase text-red-700 disabled:opacity-50">{savingChangeIds.has(change.id) ? "Procesando..." : "Rechazar"}</button>
                     </div>
                   )}
-                  {change.estado === "pendiente_admin" && <p className="text-xs text-slate-500">Reserva pagada: ${Number(change.total_anterior).toFixed(2)}. Revisa ruta, disponibilidad y despacho antes de proponer.</p>}
+                  {change.estado === "pendiente_admin" && !tripAlreadyStarted && <p className="text-xs text-slate-500">Reserva pagada: ${Number(change.total_anterior).toFixed(2)}. Revisa ruta, disponibilidad y despacho antes de proponer.</p>}
                   {change.estado === "propuesta_cliente" && (
                     <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-800">
                       Esperando respuesta del cliente: ${Number(change.total_anterior).toFixed(2)} → ${Number(change.total_propuesto).toFixed(2)}. {change.nota_admin}
@@ -1299,9 +1321,10 @@ export default function AdminReservasPage() {
               <button onClick={() => setModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full"><X size={18} /></button>
             </div>
 
-            <form onSubmit={handleSubmit} className="min-h-0 overflow-y-auto p-4 sm:p-6">
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
               <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-semibold leading-relaxed text-blue-800">
-                <span className="font-black">Disponibilidad y despacho:</span> el vehículo y el conductor se asignan o cambian únicamente desde Despacho, después de confirmar la reserva.
+                <span className="font-black">Fechas y disponibilidad:</span> puedes registrar la fecha sin asignar un vehículo. La disponibilidad final y la asignación del vehículo y conductor se revisan desde Despacho, después de confirmar la reserva.
                 {editingReservation && (
                   <span className="mt-1 block text-blue-700">
                     Asignación actual: {editingReservation.vehiculo_placa || "sin vehículo"} · {editingReservation.conductor_nombre || "sin conductor"}.
@@ -1311,7 +1334,7 @@ export default function AdminReservasPage() {
               <div className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
                 <div className="space-y-5">
                   <section>
-                    <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">1. Datos de la reserva</p>
+                    <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">1. Cliente y datos básicos</p>
                     <div className="space-y-4">
                       <div>
                         <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Cliente *</label>
@@ -1336,11 +1359,12 @@ export default function AdminReservasPage() {
                   </section>
 
                   <section>
-                    <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">2. Fechas y valor</p>
+                    <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">2. Fechas y detalles del viaje</p>
                     <div className="space-y-4">
                       <div>
                         <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Fecha de reserva *</label>
-                        <VehiculoCalendario vehiculoId={null} value={form.fecha_reserva} onSelect={(f) => setForm(p => ({ ...p, fecha_reserva: f }))} />
+                        <VehiculoCalendario compact allowUnassigned vehiculoId={null} value={form.fecha_reserva} onSelect={(f) => setForm(p => ({ ...p, fecha_reserva: f }))} />
+                        <p className="mt-2 text-[11px] leading-relaxed text-slate-500">La fecha se puede elegir aquí; la disponibilidad del vehículo se verifica en Despacho.</p>
                       </div>
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div>
@@ -1465,21 +1489,26 @@ export default function AdminReservasPage() {
                           />
                         </div>
                       </div>
-                      <div>
-                        <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Total ($)</label>
-                        <input type="number" step="0.01" min="0" value={form.total} onChange={e => setForm(p => ({ ...p, total: e.target.value }))} className={INPUT_CLS} placeholder="0.00" />
-                      </div>
                     </div>
                   </section>
 
                   <section>
-                    <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">3. Notas</p>
-                    <textarea value={form.notas} onChange={e => setForm(p => ({ ...p, notas: e.target.value }))} rows={3} className={INPUT_CLS + " resize-none"} placeholder="Observaciones para despacho..." />
+                    <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">3. Valor y observaciones</p>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Total ($)</label>
+                        <input type="number" step="0.01" min="0" value={form.total} onChange={e => setForm(p => ({ ...p, total: e.target.value }))} className={INPUT_CLS} placeholder="0.00" />
+                      </div>
+                      <div>
+                        <label className="mb-1 ml-1 block text-[10px] font-black uppercase text-slate-400">Notas para despacho</label>
+                        <textarea value={form.notas} onChange={e => setForm(p => ({ ...p, notas: e.target.value }))} rows={3} className={INPUT_CLS + " resize-none"} placeholder="Observaciones para despacho..." />
+                      </div>
+                    </div>
                   </section>
                 </div>
 
                 <section className="min-w-0">
-                  <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">4. Ruta del viaje</p>
+                  <p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">Ruta del viaje</p>
                   {(form.origen || form.destino) && !adminOrigin && !adminDestination && (
                     <p className="mb-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
                       Ruta actual: <b>{form.origen || "—"}</b> → <b>{form.destino || "—"}</b>
@@ -1495,8 +1524,9 @@ export default function AdminReservasPage() {
               </div>
 
               {err && <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{err}</p>}
+              </div>
 
-              <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
+              <div className="flex shrink-0 flex-col-reverse gap-3 border-t border-slate-100 bg-white px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
                 <button type="button" onClick={() => setModalOpen(false)} className="rounded-2xl border-2 border-slate-100 px-6 py-3 text-xs font-black uppercase tracking-widest text-slate-500 transition-all hover:border-slate-300">
                   Cancelar
                 </button>

@@ -11,6 +11,7 @@ const requestRow = {
   despacho_preparado: true,
   despacho_operacion_id: 10,
   despacho_estado: "en_curso",
+  viaje_iniciado: true,
   bloqueo_propuesta: "El viaje ya comenzó o fue completado; no se puede cotizar el cambio desde aquí.",
 };
 let queryText = "";
@@ -64,8 +65,10 @@ test("expone el bloqueo por despacho para que administración no envíe una prop
   assert.equal(res.body[0].despacho_preparado, true);
   assert.equal(res.body[0].despacho_operacion_id, 10);
   assert.equal(res.body[0].despacho_estado, "en_curso");
+  assert.equal(res.body[0].viaje_iniciado, true);
   assert.match(res.body[0].bloqueo_propuesta, /viaje ya comenzó/);
   assert.match(queryText, /estado not in \('cancelada', 'completada'\)/);
   assert.match(queryText, /left join lateral/);
+  assert.match(queryText, /as viaje_iniciado/);
   assert.match(queryText, /as bloqueo_propuesta/);
 });

@@ -733,6 +733,8 @@ const translations: Record<string, string> = {
   "Turesma S.A., inicio": "Turesma S.A., home",
   "Bus de turismo": "Tourist bus",
   "Contactar a Turesma por WhatsApp": "Contact Turesma on WhatsApp",
+  "El viaje ya comenzó. Los cambios de ruta después del inicio se coordinan por llamada o WhatsApp; la reserva conserva la ruta y el valor originales.": "The trip has already started. Route changes after departure are coordinated by phone or WhatsApp; the booking keeps its original route and price.",
+  "Mantener ruta original": "Keep original route",
   "Pausar video": "Pause video",
   "Reproducir video": "Play video",
   "Activar sonido": "Turn sound on",

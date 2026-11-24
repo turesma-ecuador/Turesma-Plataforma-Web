@@ -17,6 +17,7 @@ import { descargarArchivo } from "../../../lib/download";
 import { formatLocalizedDate, LocalizedContent, useLocale } from "../../../lib/i18n";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const ROUTE_CHANGE_LOCKED_MESSAGE = "El viaje ya comenzó. Los cambios de ruta después del inicio se coordinan por llamada o WhatsApp; la reserva conserva la ruta y el valor originales.";
 const LiveTripMap = dynamic(
   () => import("../../../components/live-trip-map").then((module) => module.LiveTripMap),
   { loading: () => <div className="h-64 animate-pulse rounded-2xl bg-slate-100" /> },
@@ -634,6 +635,10 @@ export default function ClienteHistorialPage() {
             const standaloneReschedule = r.solicitudes_reprogramacion?.find((request) => request.grupo_numero == null);
             const standaloneRequestOpen = standaloneReschedule && ["pendiente_admin", "propuesta_cliente"].includes(standaloneReschedule.estado);
             const primaryOperation = r.operaciones?.find((operation) => operation.grupo_numero === 1) || r.operaciones?.[0];
+            const routeChangeLocked = r.estado === "en_curso"
+              || (r.operaciones || []).some((operation) => ["en_curso", "completada"].includes(operation.estado));
+            const routeChangeRequestOpen = ["pendiente_admin", "propuesta_cliente", "pago_pendiente", "devolucion_pendiente"]
+              .includes(r.cambio_destino?.estado || "");
             return (
               <div key={r.id} className="bg-white rounded-2xl border-2 border-slate-200 shadow-sm p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-3 mb-3">
@@ -785,13 +790,20 @@ export default function ClienteHistorialPage() {
                           Total actual: ${Number(r.cambio_destino.total_anterior).toFixed(2)} · Propuesta: ${Number(r.cambio_destino.total_propuesto).toFixed(2)}
                         </p>
                         {r.cambio_destino.nota_admin && <p className="text-xs text-blue-800">{r.cambio_destino.nota_admin}</p>}
+                        {routeChangeLocked && <p className="text-xs text-amber-800">{ROUTE_CHANGE_LOCKED_MESSAGE}</p>}
                         <div className="flex flex-wrap gap-2">
-                          <button type="button" onClick={() => void responderPropuestaCambioDestino(r.cambio_destino!.id, "aceptar")} disabled={saving} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase text-white disabled:opacity-50">Aceptar propuesta</button>
-                          <button type="button" onClick={() => void responderPropuestaCambioDestino(r.cambio_destino!.id, "rechazar")} disabled={saving} className="rounded-lg bg-white px-3 py-2 text-[10px] font-black uppercase text-slate-600 disabled:opacity-50">Rechazar propuesta</button>
+                          {!routeChangeLocked && <button type="button" onClick={() => void responderPropuestaCambioDestino(r.cambio_destino!.id, "aceptar")} disabled={saving} className="rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase text-white disabled:opacity-50">Aceptar propuesta</button>}
+                          <button type="button" onClick={() => void responderPropuestaCambioDestino(r.cambio_destino!.id, "rechazar")} disabled={saving} className="rounded-lg bg-white px-3 py-2 text-[10px] font-black uppercase text-slate-600 disabled:opacity-50">{routeChangeLocked ? "Mantener ruta original" : "Rechazar propuesta"}</button>
                         </div>
                       </>
                     )}
-                    {r.cambio_destino.estado === "pendiente_admin" && <p className="text-xs text-blue-800">Turesma revisará la nueva ruta y te enviará el total antes de aplicarla.</p>}
+                    {r.cambio_destino.estado === "pendiente_admin" && (
+                      <p className="text-xs text-blue-800">
+                        {routeChangeLocked
+                          ? ROUTE_CHANGE_LOCKED_MESSAGE
+                          : "Turesma revisará la nueva ruta y te enviará el total antes de aplicarla."}
+                      </p>
+                    )}
                     {r.cambio_destino.estado === "pago_pendiente" && <p className="text-xs text-blue-800">Paga el saldo pendiente de la reserva. Aplicaremos la nueva ruta después de confirmar el pago.</p>}
                     {r.cambio_destino.estado === "devolucion_pendiente" && <p className="text-xs text-blue-800">Aceptaste un precio menor. La ruta se actualizará después de registrar la devolución externa.</p>}
                     {r.cambio_destino.estado === "aplicada" && <p className="text-xs text-emerald-800">La nueva ruta ya está aplicada.</p>}
@@ -927,13 +939,18 @@ export default function ClienteHistorialPage() {
                         )}
                       </div>
                     )}
-                    {pagoCompleto && !["pendiente_admin", "propuesta_cliente", "pago_pendiente", "devolucion_pendiente"].includes(r.cambio_destino?.estado || "") && (
+                    {pagoCompleto && !routeChangeLocked && !routeChangeRequestOpen && (
                       <button onClick={() => abrirSolicitudCambioDestino(r)}
                         className="w-full mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100">
                         <MapPin size={14} /> Solicitar cambio de destino
                       </button>
                     )}
                   </>
+                )}
+                {pagoCompleto && routeChangeLocked && !routeChangeRequestOpen && (
+                  <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                    {ROUTE_CHANGE_LOCKED_MESSAGE}
+                  </p>
                 )}
 
                 {/* Calificación */}
