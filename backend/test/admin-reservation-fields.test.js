@@ -193,9 +193,55 @@ test("guarda modalidad y duración en horas al crear una cotización", async () 
   assert.equal(res.statusCode, 201);
   const insert = queries.find(({ query }) => query.startsWith("insert into cotizaciones"));
   assert.ok(insert);
-  assert.match(insert.query, /modalidad_servicio, duracion_horas\)/);
-  assert.equal(insert.params.at(-2), "horas");
-  assert.equal(insert.params.at(-1), 2.5);
+  assert.match(insert.query, /modalidad_servicio, duracion_horas, itinerario\)/);
+  assert.equal(insert.params.at(-3), "horas");
+  assert.equal(insert.params.at(-2), 2.5);
+  assert.deepEqual(JSON.parse(insert.params.at(-1)), []);
+});
+
+test("valida y guarda itinerario continuo al crear una cotización", async () => {
+  queries.length = 0;
+  const res = response();
+  const itinerary = [
+    { label: "Quito", lat: -0.18, lng: -78.47, fecha_llegada: "2026-07-07", dias_estadia: 2, hora_salida: "08:00" },
+    { label: "Cuenca", lat: -2.9, lng: -79, fecha_llegada: "2026-07-09", dias_estadia: 1, hora_salida: "09:00" },
+    { label: "Manta", lat: -0.95, lng: -80.73, fecha_llegada: "2026-07-10", dias_estadia: 0, hora_salida: "", es_retorno: true },
+  ];
+
+  await crearCotizacion({
+    user: { id: 7, rol: "admin" },
+    body: {
+      usuario_id: 7, origen: "Manta", destino: "Manta",
+      fecha_servicio: "2026-07-06", fecha_fin: "2026-07-10",
+      origen_lat: -0.95, origen_lng: -80.73, num_personas: 2, modalidad_servicio: "varios_dias",
+      modo_itinerario: true, itinerario: itinerary,
+    },
+  }, res);
+
+  assert.equal(res.statusCode, 201);
+  const insert = queries.find(({ query }) => query.startsWith("insert into cotizaciones"));
+  assert.ok(insert);
+  assert.deepEqual(JSON.parse(insert.params.at(-1)), itinerary.map(point => ({
+    ...point,
+    hora_salida: point.hora_salida || null,
+    es_retorno: point.es_retorno === true,
+  })));
+
+  queries.length = 0;
+  const invalidRes = response();
+  await crearCotizacion({
+    user: { id: 7, rol: "admin" },
+    body: {
+      usuario_id: 7, origen: "Manta", destino: "Manta",
+      fecha_servicio: "2026-07-06", fecha_fin: "2026-07-10",
+      num_personas: 2, modalidad_servicio: "varios_dias",
+      modo_itinerario: true,
+      itinerario: [{ ...itinerary[0], fecha_llegada: "2026-07-09", dias_estadia: 2 }],
+    },
+  }, invalidRes);
+
+  assert.equal(invalidRes.statusCode, 400);
+  assert.equal(queries.some(({ query }) => query.startsWith("insert into cotizaciones")), false);
 });
 
 test("edita los detalles operativos usando el parámetro SQL correcto", async () => {

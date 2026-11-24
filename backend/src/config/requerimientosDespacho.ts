@@ -88,6 +88,11 @@ const prepararDespachoRequerimiento = async (reservaId: number, usuarioId?: numb
               `Requerimiento especial #${requerimientoId} · Grupo ${groupIndex + 1} · Unidad ${unitIndex}/${count}`,
               group.tipo_vehiculo ? `Tipo solicitado: ${group.tipo_vehiculo}` : "",
               group.paradas ? `Paradas: ${group.paradas}` : "",
+              ...(Array.isArray(group.itinerario) && group.itinerario.length
+                ? [`Itinerario continuo:\n${group.itinerario.map((stop: Record<string, unknown>, stopIndex: number) =>
+                  `${stopIndex + 1}. ${stop.destino}${stop.fecha_llegada ? ` · llegada ${stop.fecha_llegada}` : ""}${Number(stop.dias_estadia) ? ` · estadía ${stop.dias_estadia} día(s)` : ""}${stop.hora_salida ? ` · salida ${stop.hora_salida}` : ""}`
+                ).join("\n")}`]
+                : []),
               group.detalles || "",
             ].filter(Boolean).join("\n"),
             usuarioId || null,

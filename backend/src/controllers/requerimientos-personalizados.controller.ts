@@ -27,6 +27,30 @@ const validDate = (value: unknown): string | null | undefined => {
     : undefined;
 };
 
+const normalizeGroupItinerary = (value: unknown) => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > 10) return null;
+  const itinerary = [];
+  for (const rawStop of value) {
+    if (!rawStop || typeof rawStop !== "object" || Array.isArray(rawStop)) return null;
+    const stop = rawStop as Record<string, unknown>;
+    const destination = optionalText(stop.destino, 300);
+    const arrivalDate = validDate(stop.fecha_llegada);
+    const departureTime = optionalText(stop.hora_salida, 10);
+    const stayDays = Number(stop.dias_estadia);
+    if (!destination || arrivalDate === undefined || departureTime === undefined) return null;
+    if (!Number.isInteger(stayDays) || stayDays < 0 || stayDays > 365) return null;
+    if (departureTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(departureTime)) return null;
+    itinerary.push({
+      destino: destination,
+      fecha_llegada: arrivalDate,
+      hora_salida: departureTime,
+      dias_estadia: stayDays,
+    });
+  }
+  return itinerary;
+};
+
 const normalizeServiceGroups = (value: unknown) => {
   if (!Array.isArray(value) || value.length < 1 || value.length > 20) return null;
   const groups = [];
@@ -45,11 +69,24 @@ const normalizeServiceGroups = (value: unknown) => {
     const vehicleType = optionalText(group.tipo_vehiculo, 100);
     const stops = optionalText(group.paradas, 1000);
     const details = optionalText(group.detalles, 2000);
+    const itinerary = normalizeGroupItinerary(group.itinerario);
 
     if (!Number.isInteger(count) || count < 1 || count > 1000) return null;
     if (passengers !== null && (!Number.isInteger(passengers) || passengers < 1 || passengers > 1000)) return null;
-    if ([startDate, endDate].includes(undefined) || [departureTime, origin, destination, vehicleType, stops, details].includes(undefined)) return null;
+    if ([startDate, endDate].includes(undefined) || [departureTime, origin, destination, vehicleType, stops, details].includes(undefined) || !itinerary) return null;
     if (endDate && (!startDate || endDate < startDate)) return null;
+    if (itinerary.some((stop: { dias_estadia: number }) => stop.dias_estadia > 0) && (!startDate || !endDate)) return null;
+    if (itinerary.some((stop: { fecha_llegada: string | null }) => stop.fecha_llegada && (
+      startDate && stop.fecha_llegada < startDate || endDate && stop.fecha_llegada > endDate
+    ))) return null;
+    if (itinerary.some((stop: { fecha_llegada: string | null; dias_estadia: number }) => {
+      if (!stop.fecha_llegada || !endDate) return false;
+      const lastStayDate = new Date(`${stop.fecha_llegada}T00:00:00.000Z`);
+      lastStayDate.setUTCDate(lastStayDate.getUTCDate() + stop.dias_estadia);
+      return lastStayDate.toISOString().slice(0, 10) > endDate;
+    })) return null;
+    if (startDate && endDate && itinerary.reduce((total: number, stop: { dias_estadia: number }) => total + stop.dias_estadia, 0)
+      > (Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) / 86400000) return null;
     if (departureTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(departureTime)) return null;
     if (typeof group.simultaneo !== "boolean") return null;
 
@@ -63,6 +100,7 @@ const normalizeServiceGroups = (value: unknown) => {
       origen: origin,
       destino: destination,
       paradas: stops,
+      itinerario: itinerary,
       detalles: details,
       simultaneo: group.simultaneo,
     });
@@ -97,6 +135,7 @@ const crearRequerimiento = async (req: any, res: any) => {
     const result = await pool.query(
       `INSERT INTO requerimientos_personalizados
          (usuario_id, organizacion, cantidad_vehiculos, tipo_vehiculo, pasajeros_por_vehiculo,
+          fecha_servicio, fecha_fin, hora_salida, origen, destino,           itinerario: itinerary,
           fecha_servicio, fecha_fin, hora_salida, origen, destino, detalles, service_groups)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id, estado, creado_en`,

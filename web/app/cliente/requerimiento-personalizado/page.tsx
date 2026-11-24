@@ -13,6 +13,7 @@ type Group = {
   cantidad_vehiculos: string; tipo_vehiculo: string; pasajeros_por_vehiculo: string;
   fecha_servicio: string; fecha_fin: string; hora_salida: string; origen: string;
   destino: string; paradas: string; detalles: string; simultaneo: boolean;
+  itinerario: Array<{ destino: string; fecha_llegada: string; dias_estadia: number; hora_salida: string }>;
 };
 type Request = {
   id: number; organizacion?: string | null; cantidad_vehiculos: number; estado: string;
@@ -22,6 +23,7 @@ type Request = {
     cantidad_vehiculos: number; tipo_vehiculo?: string | null; pasajeros_por_vehiculo?: number | null;
     fecha_servicio?: string | null; fecha_fin?: string | null; hora_salida?: string | null;
     origen?: string | null; destino?: string | null; precio_total?: number | null;
+    itinerario?: Array<{ destino: string; fecha_llegada?: string | null; dias_estadia: number; hora_salida?: string | null }>;
     incluido_en_propuesta?: boolean; motivo_no_inclusion?: string | null;
   }>;
   unidades_despacho?: Array<{
@@ -33,7 +35,7 @@ type Request = {
 const emptyGroup = (): Group => ({
   cantidad_vehiculos: "1", tipo_vehiculo: "", pasajeros_por_vehiculo: "",
   fecha_servicio: "", fecha_fin: "", hora_salida: "", origen: "", destino: "",
-  paradas: "", detalles: "", simultaneo: false,
+  paradas: "", detalles: "", simultaneo: false, itinerario: [],
 });
 
 export default function ClienteRequerimientoPersonalizadoPage() {
@@ -235,6 +237,14 @@ export default function ClienteRequerimientoPersonalizadoPage() {
                   </span>
                 </div>
                 <p className="mt-1">{group.origen || "Salida"} → {group.destino || "Destino"}{group.fecha_servicio ? ` · ${group.fecha_servicio.slice(0, 10)}` : ""}{group.hora_salida ? ` · ${group.hora_salida}` : ""}</p>
+                {group.itinerario?.length ? <div className="mt-2 rounded-lg border border-violet-100 bg-violet-50 p-2.5">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-violet-700">Itinerario continuo · mismo vehículo y conductor</p>
+                  <ol className="mt-1 list-inside list-decimal space-y-0.5 text-xs text-violet-950">
+                    {group.itinerario.map((stop, stopIndex) => <li key={stopIndex}>
+                      {stop.destino}{stop.fecha_llegada ? ` · llegada ${stop.fecha_llegada.slice(0, 10)}` : ""}{stop.dias_estadia ? ` · estadía ${stop.dias_estadia} día(s)` : ""}{stop.hora_salida ? ` · salida ${stop.hora_salida}` : ""}
+                    </li>)}
+                  </ol>
+                </div> : null}
                 {group.incluido_en_propuesta === false
                   ? <p className="mt-1 font-semibold text-slate-500">{group.motivo_no_inclusion || "Este grupo no forma parte de la propuesta ni de la reserva."}</p>
                   : <p className="mt-1 font-bold text-emerald-700">Subtotal del grupo: ${Number(group.precio_total || 0).toFixed(2)}</p>}

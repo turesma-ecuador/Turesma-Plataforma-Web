@@ -6,7 +6,7 @@ import {
   MapPin, Calendar, Users, Car, FileText, Clock, CheckCircle2,
   XCircle, Loader2, RefreshCw, Send, ArrowRight,
   DollarSign, ChevronDown, ChevronUp, Zap, Minus, Plus, Bus,
-  Navigation, AlertCircle,
+  Navigation, AlertCircle, Trash2,
 } from "lucide-react";
 import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
 import { useClienteGuard } from "../../../lib/use-cliente-guard";
@@ -17,12 +17,15 @@ import { calcularRuta, formatDuracion, reverseGeocode, RutaCalculada } from "../
 import { formatLocalizedDate, LocalizedContent, useLocale } from "../../../lib/i18n";
 import { ClientGuidedTour } from "../_components/client-guided-tour";
 import { CommunicationPanel } from "../../../components/communication-panel";
+import { ItineraryMapPicker } from "../../../components/itinerary-map-picker";
+import type { ItineraryDestination } from "../../../components/itinerary-map-picker";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 type Vehiculo = { id: number; placa: string; tipo: string; modelo?: string | null; capacidad?: number; imagen_url?: string | null };
 type Cotizacion = {
   id: number; origen: string; destino: string; fecha_servicio: string; fecha_fin?: string | null;
+  itinerario?: ItineraryDestination[] | null;
   fecha_regreso?: string | null; hora_regreso?: string | null;
   num_personas: number; tipo_vehiculo?: string | null; notas?: string | null;
   estado: string; precio_final?: number | null; valor_ofrecido?: number | null;
@@ -45,6 +48,7 @@ type CustomServiceGroup = {
   paradas: string;
   detalles: string;
   simultaneo: boolean;
+  itinerario: Array<{ destino: string; fecha_llegada: string; dias_estadia: number; hora_salida: string }>;
 };
 type ServiceGroupView = {
   cantidad_vehiculos: number;
@@ -58,6 +62,7 @@ type ServiceGroupView = {
   paradas?: string | null;
   detalles?: string | null;
   simultaneo?: boolean;
+  itinerario?: Array<{ destino: string; fecha_llegada?: string | null; dias_estadia: number; hora_salida?: string | null }>;
 };
 type RequerimientoPersonalizado = {
   id: number;
@@ -87,6 +92,7 @@ const INPUT = "w-full rounded-2xl border-2 border-slate-100 bg-slate-50 px-4 py-
 
 // Tope de días seguidos que puede reservar el cliente en un solo servicio.
 const MAX_DIAS = 365;
+
 const createEmptyServiceGroup = (): CustomServiceGroup => ({
   cantidad_vehiculos: "1",
   tipo_vehiculo: "",
@@ -99,6 +105,7 @@ const createEmptyServiceGroup = (): CustomServiceGroup => ({
   paradas: "",
   detalles: "",
   simultaneo: false,
+  itinerario: [],
 });
 const WIZARD_STEPS = [
   { label: "Ruta", icon: MapPin, title: "¿A dónde necesitas viajar?", guidance: "Indica tu punto de salida y destino. Puedes buscar una dirección o ajustar el marcador en el mapa." },
@@ -193,6 +200,9 @@ export default function ClienteCotizarPage() {
   const [fechaCalendarioActiva, setFechaCalendarioActiva] = useState<"salida" | "regreso">("salida");
   const [origin, setOrigin] = useState<Punto | null>(null);
   const [destination, setDestination] = useState<Punto | null>(null);
+  const [itinerarioContinuo, setItinerarioContinuo] = useState(false);
+  const [itineraryDestinations, setItineraryDestinations] = useState<ItineraryDestination[]>([]);
+  const [itineraryReturnToOrigin, setItineraryReturnToOrigin] = useState(true);
   const [locatingOrigin, setLocatingOrigin] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [focusSignal, setFocusSignal] = useState(0);
@@ -363,6 +373,7 @@ export default function ClienteCotizarPage() {
       origen: previous.origen,
       destino: previous.destino,
       paradas: previous.paradas,
+      itinerario: previous.itinerario.map((stop) => ({ ...stop })),
       simultaneo: previous.simultaneo,
     });
   };
@@ -374,12 +385,13 @@ export default function ClienteCotizarPage() {
   }, [checkingSession, userId]);
 
   useEffect(() => {
+    if (itinerarioContinuo) { setRoute(null); return; }
     if (!origin || !destination) { setRoute(null); return; }
     let cancelled = false;
     setRouteLoading(true);
     calcularRuta(origin, destination).then(result => { if (!cancelled) setRoute(result); }).finally(() => { if (!cancelled) setRouteLoading(false); });
     return () => { cancelled = true; };
-  }, [origin, destination]);
+  }, [origin, destination, itinerarioContinuo]);
 
   useEffect(() => {
     if (!route || !form.hora_salida) return;
@@ -397,6 +409,15 @@ export default function ClienteCotizarPage() {
 
   const getDateStepError = () => {
     if (!form.fecha_servicio) return "Selecciona la fecha de inicio del servicio.";
+    if (itinerarioContinuo) {
+      if (!form.fecha_fin) return "Indica la fecha estimada de retorno del itinerario.";
+      if (form.fecha_fin < form.fecha_servicio) return "La fecha de retorno no puede ser anterior a la salida.";
+      if (diasEntre(form.fecha_servicio, form.fecha_fin) > MAX_DIAS) return `El servicio no puede superar los ${MAX_DIAS} días seguidos.`;
+      if (itineraryDestinations.some((stop) => stop.fecha_llegada && (
+        stop.fecha_llegada < form.fecha_servicio || stop.fecha_llegada > form.fecha_fin
+      ))) return "Las fechas de llegada de cada destino deben estar dentro del período del viaje.";
+      return "";
+    }
     if (variosDias && !form.fecha_fin) return "Toca también el último día del viaje en el calendario.";
     if (regresoOtraFecha && !form.fecha_regreso) return "Selecciona la fecha de recogida para el regreso.";
     if (regresoOtraFecha && form.fecha_regreso <= form.fecha_servicio) {
@@ -409,8 +430,10 @@ export default function ClienteCotizarPage() {
   };
 
   const getStepError = (stepNumber: number) => {
-    if (stepNumber === 1 && (!origin || !destination)) {
-      return "Marca el punto de salida y el destino en el mapa.";
+    if (stepNumber === 1 && (!origin || (itinerarioContinuo ? itineraryDestinations.length === 0 : !destination))) {
+      return itinerarioContinuo
+        ? "Marca el origen y agrega al menos un destino al itinerario."
+        : "Marca el punto de salida y el destino en el mapa.";
     }
     if (stepNumber === 2) {
       const dateError = getDateStepError();
@@ -471,9 +494,11 @@ export default function ClienteCotizarPage() {
         return;
       }
     }
-    if (!origin || !destination) {
+    if (!origin || (itinerarioContinuo ? itineraryDestinations.length === 0 : !destination)) {
       setWizardStep(1);
-      setFormErr("Marca el punto de salida y el destino en el mapa.");
+      setFormErr(itinerarioContinuo
+        ? "Marca el origen y agrega al menos un destino al itinerario."
+        : "Marca el punto de salida y el destino en el mapa.");
       return;
     }
     setSending(true); setFormErr(""); setFormMsg("");
@@ -482,21 +507,41 @@ export default function ClienteCotizarPage() {
         method: "POST", headers: getAuthHeaders(),
         body: JSON.stringify({
           ...form,
-          fecha_fin: variosDias ? form.fecha_fin || null : null,
+          fecha_fin: itinerarioContinuo || variosDias ? form.fecha_fin || null : null,
           origen: origin.label,
-          destino: destination.label,
+          destino: itinerarioContinuo
+            ? itineraryReturnToOrigin ? origin.label : itineraryDestinations[itineraryDestinations.length - 1].label
+            : destination?.label,
           origen_lat: origin.lat, origen_lng: origin.lng,
-          destino_lat: destination.lat, destino_lng: destination.lng,
+          destino_lat: itinerarioContinuo
+            ? (itineraryReturnToOrigin ? origin.lat : itineraryDestinations[itineraryDestinations.length - 1].lat)
+            : destination?.lat,
+          destino_lng: itinerarioContinuo
+            ? (itineraryReturnToOrigin ? origin.lng : itineraryDestinations[itineraryDestinations.length - 1].lng)
+            : destination?.lng,
+          itinerario: itinerarioContinuo
+            ? [
+                ...itineraryDestinations,
+                ...(itineraryReturnToOrigin && origin ? [{
+                  ...origin,
+                  fecha_llegada: form.fecha_fin,
+                  hora_salida: form.hora_regreso || "",
+                  dias_estadia: 0,
+                  es_retorno: true,
+                }] : []),
+              ]
+            : [],
+          modo_itinerario: itinerarioContinuo,
           num_personas: Number(form.num_personas) || 1,
           num_viajes: Number(form.num_viajes) || 1,
           tipo_vehiculo: form.tipo_vehiculo,
-          modalidad_servicio: variosDias ? "varios_dias" : form.modalidad_servicio,
+          modalidad_servicio: itinerarioContinuo || variosDias ? "varios_dias" : form.modalidad_servicio,
           duracion_horas: form.modalidad_servicio === "horas" ? Number(form.duracion_horas) || 1 : null,
           hora_salida: form.hora_salida || null,
           hora_llegada_estimada: form.hora_llegada_estimada || null,
           duracion_estimada_minutos: duracionEntreHoras(form.hora_salida, form.hora_llegada_estimada),
-          fecha_regreso: regresoOtraFecha ? form.fecha_regreso : null,
-          hora_regreso: regresoOtraFecha ? form.hora_regreso : null,
+          fecha_regreso: itinerarioContinuo ? null : regresoOtraFecha ? form.fecha_regreso : null,
+          hora_regreso: itinerarioContinuo ? null : regresoOtraFecha ? form.hora_regreso : null,
         }),
       });
       if (handleUnauthorized(res.status)) return;
@@ -511,6 +556,9 @@ export default function ClienteCotizarPage() {
       setWizardStep(1);
       setVariosDias(false);
       setRegresoOtraFecha(false);
+      setItinerarioContinuo(false);
+      setItineraryDestinations([]);
+      setItineraryReturnToOrigin(true);
       setOrigin(null); setDestination(null);
       locateMyLocation();
       loadCotizaciones();
@@ -652,10 +700,57 @@ export default function ClienteCotizarPage() {
                           className={INPUT} placeholder="Ciudad, dirección o lugar de encuentro" />
                       </div>
                       <div className="space-y-1.5 sm:col-span-2">
-                        <label htmlFor={`custom-destination-${index}`} className="text-[10px] font-black uppercase tracking-widest text-slate-500">Destino o destinos</label>
+                        <label htmlFor={`custom-destination-${index}`} className="text-[10px] font-black uppercase tracking-widest text-slate-500">Destino final</label>
                         <input id={`custom-destination-${index}`} maxLength={300} value={group.destino}
                           onChange={event => updateCustomServiceGroup(index, { destino: event.target.value })}
-                          className={INPUT} placeholder="Puedes incluir varios destinos" />
+                          className={INPUT} placeholder="Ej: Manta (retorno)" />
+                      </div>
+                      <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3 sm:col-span-2 lg:col-span-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-900">Destinos intermedios y estadías</p>
+                            <p className="mt-1 text-[10px] leading-relaxed text-blue-800">Agrega cada ciudad en orden. El vehículo y el conductor quedan contratados durante todos los días del servicio.</p>
+                          </div>
+                          <button type="button" disabled={group.itinerario.length >= 10}
+                            onClick={() => updateCustomServiceGroup(index, {
+                              itinerario: [...group.itinerario, { destino: "", fecha_llegada: "", dias_estadia: 1, hora_salida: "" }],
+                            })}
+                            className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-2 text-[9px] font-black uppercase text-blue-800 disabled:opacity-50">
+                            <Plus size={13} /> Agregar destino
+                          </button>
+                        </div>
+                        {group.itinerario.map((stop, stopIndex) => (
+                          <div key={stopIndex} className="grid gap-2 rounded-lg border border-blue-100 bg-white p-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_1fr_1fr_1fr_auto]">
+                            <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">
+                              Destino {stopIndex + 1}
+                              <input maxLength={300} required value={stop.destino}
+                                onChange={(event) => updateCustomServiceGroup(index, { itinerario: group.itinerario.map((item, itemIndex) => itemIndex === stopIndex ? { ...item, destino: event.target.value } : item) })}
+                                className={`${INPUT} mt-1`} placeholder="Ej: Quito" />
+                            </label>
+                            <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">
+                              Llegada (opcional)
+                              <input type="date" value={stop.fecha_llegada}
+                                onChange={(event) => updateCustomServiceGroup(index, { itinerario: group.itinerario.map((item, itemIndex) => itemIndex === stopIndex ? { ...item, fecha_llegada: event.target.value } : item) })}
+                                className={`${INPUT} mt-1`} />
+                            </label>
+                            <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">
+                              Estadía (días)
+                              <input type="number" min={0} max={365} value={stop.dias_estadia}
+                                onChange={(event) => updateCustomServiceGroup(index, { itinerario: group.itinerario.map((item, itemIndex) => itemIndex === stopIndex ? { ...item, dias_estadia: Math.max(0, Math.min(365, Number(event.target.value) || 0)) } : item) })}
+                                className={`${INPUT} mt-1`} />
+                            </label>
+                            <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">
+                              Hora de salida
+                              <input type="time" value={stop.hora_salida}
+                                onChange={(event) => updateCustomServiceGroup(index, { itinerario: group.itinerario.map((item, itemIndex) => itemIndex === stopIndex ? { ...item, hora_salida: event.target.value } : item) })}
+                                className={`${INPUT} mt-1`} />
+                            </label>
+                            <button type="button" onClick={() => updateCustomServiceGroup(index, { itinerario: group.itinerario.filter((_, itemIndex) => itemIndex !== stopIndex) })}
+                              aria-label={`Quitar destino ${stopIndex + 1}`} className="self-end rounded-lg p-2 text-red-600 hover:bg-red-50">
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        ))}
                       </div>
                       <div className="space-y-1.5 sm:col-span-2">
                         <label htmlFor={`custom-stops-${index}`} className="text-[10px] font-black uppercase tracking-widest text-slate-500">Paradas</label>
@@ -747,6 +842,18 @@ export default function ClienteCotizarPage() {
                           {group.fecha_servicio ? ` · ${new Date(`${String(group.fecha_servicio).slice(0, 10)}T00:00:00`).toLocaleDateString(dateLocale)}` : ""}
                           {group.hora_salida ? ` · ${group.hora_salida}` : ""}
                         </p>
+                        {group.itinerario?.length ? (
+                          <ol className="mt-2 space-y-1 border-l-2 border-blue-200 pl-3 text-xs text-slate-600">
+                            {group.itinerario.map((stop, stopIndex) => (
+                              <li key={stopIndex}>
+                                <b>{stopIndex + 1}. {stop.destino}</b>
+                                {stop.fecha_llegada ? ` · llegada ${stop.fecha_llegada}` : ""}
+                                {` · estadía: ${stop.dias_estadia} día(s)`}
+                                {stop.hora_salida ? ` · salida ${stop.hora_salida}` : ""}
+                              </li>
+                            ))}
+                          </ol>
+                        ) : null}
                         {group.paradas && <p className="mt-1 text-xs text-slate-500">Paradas: {group.paradas}</p>}
                         {group.detalles && <p className="mt-1 whitespace-pre-line text-xs text-slate-600">{group.detalles}</p>}
                         {group.simultaneo && <p className="mt-1 text-[10px] font-bold text-violet-700">Operación simultánea solicitada</p>}
@@ -885,7 +992,7 @@ export default function ClienteCotizarPage() {
               </p>
 
               {/* Un día o varios días */}
-              <div className="grid grid-cols-2 gap-2 bg-slate-100 rounded-2xl p-1">
+              {!itinerarioContinuo && <div className="grid grid-cols-2 gap-2 bg-slate-100 rounded-2xl p-1">
                 <button type="button"
                   onClick={() => { setVariosDias(false); setForm(p => ({ ...p, fecha_fin: "" })); }}
                   className={`py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${!variosDias ? "bg-white text-[#E31E24] shadow" : "text-slate-400"}`}>
@@ -901,9 +1008,36 @@ export default function ClienteCotizarPage() {
                   className={`py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all disabled:cursor-not-allowed disabled:opacity-40 ${variosDias ? "bg-white text-[#E31E24] shadow" : "text-slate-400"}`}>
                   Varios días
                 </button>
-              </div>
+              </div>}
 
               <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
+                <label className="flex cursor-pointer items-start gap-2 text-sm font-bold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={itinerarioContinuo}
+                    onChange={(event) => {
+                      const enabled = event.target.checked;
+                      setItinerarioContinuo(enabled);
+                      setDestination(null);
+                      setItineraryDestinations([]);
+                      setItineraryReturnToOrigin(true);
+                      setRegresoOtraFecha(false);
+                      setFechaCalendarioActiva("salida");
+                      setVariosDias(enabled);
+                      setForm((current) => ({ ...current, fecha_regreso: "", hora_regreso: "", fecha_fin: enabled ? current.fecha_fin : "" }));
+                    }}
+                    className="mt-0.5 h-4 w-4 accent-blue-700"
+                  />
+                  <span>
+                    <span className="block">Viaje continuo con varios destinos</span>
+                    <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                      El vehículo y el conductor permanecen contigo durante las estadías.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
+              {!itinerarioContinuo && <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
                 <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
                   <input
                     type="checkbox"
@@ -928,7 +1062,7 @@ export default function ClienteCotizarPage() {
                     Te llevamos al destino y regresamos a recogerte en la fecha acordada para volver al punto de salida.
                   </p>
                 )}
-              </div>
+              </div>}
 
               {regresoOtraFecha && (
                 <div className="grid grid-cols-2 gap-2" role="group" aria-label={language === "en" ? "Trip dates" : "Fechas del viaje"}>
@@ -977,7 +1111,7 @@ export default function ClienteCotizarPage() {
                       setFechaCalendarioActiva("regreso");
                     }
                   }}
-                  range={variosDias}
+                  range={variosDias && !itinerarioContinuo}
                   endValue={form.fecha_fin}
                   onSelectEnd={(f) => setForm(p => ({ ...p, fecha_fin: f }))}
                   maxDays={MAX_DIAS}
@@ -989,11 +1123,27 @@ export default function ClienteCotizarPage() {
                 />
               </div>
 
+              {itinerarioContinuo && (
+                <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div>
+                    <label htmlFor="itinerary-end-date" className="text-xs font-black uppercase tracking-wide text-slate-600">
+                      Fecha estimada de retorno *
+                    </label>
+                    <input id="itinerary-end-date" type="date" min={form.fecha_servicio || undefined}
+                      value={form.fecha_fin} onChange={(event) => setForm((current) => ({ ...current, fecha_fin: event.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 sm:max-w-xs" />
+                    <p className="mt-1 text-[11px] text-slate-500">Indica el último día reservado para el vehículo y el conductor, incluido el regreso.</p>
+                  </div>
+                </div>
+              )}
+
               {/* Resumen del rango elegido */}
               {form.fecha_servicio && (
                 <div className="flex items-center justify-center gap-2 text-[11px] font-bold text-slate-500 bg-emerald-50 border border-emerald-200 rounded-xl py-2 px-3">
                   <Calendar size={13} className="text-emerald-600" />
-                  {regresoOtraFecha && form.fecha_regreso
+                  {itinerarioContinuo && form.fecha_fin
+                    ? <span>Viaje continuo: <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> al <b className="text-slate-700">{new Date(form.fecha_fin + "T00:00").toLocaleDateString(dateLocale)}</b></span>
+                    : regresoOtraFecha && form.fecha_regreso
                     ? <span>Fecha de salida: <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> · Fecha de regreso: <b className="text-slate-700">{new Date(form.fecha_regreso + "T00:00").toLocaleDateString(dateLocale)}</b></span>
                     : variosDias && form.fecha_fin
                     ? <span>Del <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> al <b className="text-slate-700">{new Date(form.fecha_fin + "T00:00").toLocaleDateString(dateLocale)}</b> · {diasEntre(form.fecha_servicio, form.fecha_fin)} días</span>
@@ -1080,19 +1230,32 @@ export default function ClienteCotizarPage() {
                 <p className="text-[11px] text-amber-600 font-bold flex items-center gap-1.5"><AlertCircle size={12} /> {locationError}</p>
               )}
 
-              <MapPicker
-                localized
-                addressSearch
-                tourTarget="booking-route"
-                origin={origin}
-                destination={destination}
-                onChange={onMapChange}
-                onClear={(which) => (which === "origin" ? setOrigin(null) : setDestination(null))}
-                focusDestinationSignal={focusSignal}
-              />
-              <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-xs font-bold text-sky-800">
-                {routeLoading ? "Calculando distancia por carretera…" : route ? `Distancia estimada: ${route.distanciaKm.toFixed(1)} km · Duración: ${formatDuracion(route.duracionMin)}` : "Marca ambos puntos para calcular la distancia."}
-              </div>
+              {itinerarioContinuo ? (
+                <ItineraryMapPicker
+                  origin={origin}
+                  destinations={itineraryDestinations}
+                  returnToOrigin={itineraryReturnToOrigin}
+                  onOriginChange={setOrigin}
+                  onDestinationsChange={setItineraryDestinations}
+                  onReturnToOriginChange={setItineraryReturnToOrigin}
+                />
+              ) : (
+                <>
+                  <MapPicker
+                    localized
+                    addressSearch
+                    tourTarget="booking-route"
+                    origin={origin}
+                    destination={destination}
+                    onChange={onMapChange}
+                    onClear={(which) => (which === "origin" ? setOrigin(null) : setDestination(null))}
+                    focusDestinationSignal={focusSignal}
+                  />
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-xs font-bold text-sky-800">
+                    {routeLoading ? "Calculando distancia por carretera…" : route ? `Distancia estimada: ${route.distanciaKm.toFixed(1)} km · Duración: ${formatDuracion(route.duracionMin)}` : "Marca ambos puntos para calcular la distancia."}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* PASO 4: detalles por selección */}
@@ -1245,8 +1408,13 @@ export default function ClienteCotizarPage() {
                       </div>
                       <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
                         <MapPin size={13} className="text-[#E31E24] flex-shrink-0" />                        <span data-no-translate className="truncate">{cot.origen}</span>
-                        <ArrowRight size={13} className="text-slate-400 flex-shrink-0" /><span data-no-translate className="truncate">{cot.destino}</span>
+                        <ArrowRight size={13} className="text-slate-400 flex-shrink-0" /><span data-no-translate className="truncate">{cot.itinerario?.length ? cot.itinerario.map(point => point.label).join(" → ") : cot.destino}</span>
                       </div>
+                      {cot.itinerario?.length ? <ol className="mt-2 list-inside list-decimal space-y-0.5 text-[10px] font-semibold text-violet-700">
+                        {cot.itinerario.map((point, pointIndex) => <li key={pointIndex}>
+                          {point.label}{point.fecha_llegada ? ` · llegada ${formatLocalizedDate(point.fecha_llegada, language)}` : ""}{point.dias_estadia ? ` · estadía ${point.dias_estadia} día(s)` : ""}
+                        </li>)}
+                      </ol> : null}
                       <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400 flex-wrap">
                         <span className="flex items-center gap-1"><Calendar size={10} />
                           {formatLocalizedDate(cot.fecha_servicio, language)}
@@ -1271,6 +1439,14 @@ export default function ClienteCotizarPage() {
                         <div className="flex items-center gap-2 text-xs text-slate-500"><DollarSign size={13} className="text-slate-400" />Valor ofrecido: <b className="text-slate-700">${Number(cot.valor_ofrecido).toFixed(2)}</b></div>
                       )}
                       {cot.notas && <div className="bg-slate-50 rounded-xl p-3"><p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Tus notas</p><p data-no-translate className="text-sm text-slate-600">{cot.notas}</p></div>}
+                      {cot.itinerario?.length ? <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-violet-700">Itinerario continuo · vehículo y conductor durante todo el viaje</p>
+                        <ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-violet-950">
+                          {cot.itinerario.map((point, pointIndex) => <li key={pointIndex}>
+                            {point.label}{point.fecha_llegada ? ` · llegada ${formatLocalizedDate(point.fecha_llegada, language)}` : ""}{point.dias_estadia ? ` · estadía ${point.dias_estadia} día(s)` : ""}{point.hora_salida ? ` · salida ${point.hora_salida}` : ""}
+                          </li>)}
+                        </ol>
+                      </div> : null}
                       {cot.precio_final && (
                         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3"><DollarSign size={20} className="text-emerald-600 flex-shrink-0" />
                           <div><p className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Precio acordado</p><p className="text-xl font-black text-emerald-700">${Number(cot.precio_final).toFixed(2)}</p></div></div>

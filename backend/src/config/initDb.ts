@@ -705,7 +705,8 @@ const initDatabase = async () => {
     ADD COLUMN IF NOT EXISTS origen_lat NUMERIC(10, 7),
     ADD COLUMN IF NOT EXISTS origen_lng NUMERIC(10, 7),
     ADD COLUMN IF NOT EXISTS destino_lat NUMERIC(10, 7),
-    ADD COLUMN IF NOT EXISTS destino_lng NUMERIC(10, 7);
+    ADD COLUMN IF NOT EXISTS destino_lng NUMERIC(10, 7),
+    ADD COLUMN IF NOT EXISTS itinerario JSONB NOT NULL DEFAULT '[]'::jsonb;
   `);
 
   await pool.query(`
@@ -1151,6 +1152,7 @@ const initDatabase = async () => {
       num_personas INT NOT NULL DEFAULT 1,
       tipo_vehiculo VARCHAR(60),
       notas TEXT,
+      itinerario JSONB NOT NULL DEFAULT '[]'::jsonb,
       estado VARCHAR(50) DEFAULT 'pendiente',
       precio_estimado DECIMAL(10,2),
       precio_final DECIMAL(10,2),
@@ -1159,6 +1161,10 @@ const initDatabase = async () => {
       creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+  `);
+  await pool.query(`
+    ALTER TABLE cotizaciones
+    ADD COLUMN IF NOT EXISTS itinerario JSONB NOT NULL DEFAULT '[]'::jsonb;
   `);
 
   await pool.query(`

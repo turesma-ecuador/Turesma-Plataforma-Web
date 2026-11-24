@@ -26,6 +26,7 @@ type Cotizacion = {
   cliente_telefono?: string | null;
   origen: string;
   destino: string;
+  itinerario?: Array<{ label: string; fecha_llegada?: string | null; dias_estadia: number; hora_salida?: string | null; es_retorno?: boolean }> | null;
   fecha_servicio: string;
   fecha_fin?: string | null;
   fecha_regreso?: string | null;
@@ -82,6 +83,7 @@ type RequerimientoPersonalizado = {
     origen?: string | null;
     destino?: string | null;
     paradas?: string | null;
+    itinerario?: Array<{ destino: string; fecha_llegada?: string | null; dias_estadia: number; hora_salida?: string | null }>;
     detalles?: string | null;
     simultaneo?: boolean;
     precio_total?: number | null;
@@ -659,6 +661,7 @@ function AdminCotizacionesContent() {
                       <p className="font-bold text-slate-700 truncate">{c.destino}</p>
                     </div>
                   </div>
+                  {c.itinerario?.length ? <p className="text-[11px] font-semibold text-violet-700">Itinerario: {c.origen} → {c.itinerario.map(point => point.label).join(" → ")}</p> : null}
                   <div className="flex gap-2">
                     <button type="button" onClick={() => setChatCotizacion(c)} className="flex-1 rounded-xl border border-blue-200 bg-blue-50 py-2 text-[10px] font-black uppercase text-blue-800 hover:bg-blue-100">
                       Conversación
@@ -715,6 +718,7 @@ function AdminCotizacionesContent() {
                           <MapPin size={10} className="flex-shrink-0" />
                           <span className="truncate max-w-[140px]">{c.destino}</span>
                         </div>
+                        {c.itinerario?.length ? <p className="mt-1 max-w-[280px] truncate text-[10px] font-semibold text-violet-700">{c.origen} → {c.itinerario.map(point => point.label).join(" → ")}</p> : null}
                       </td>
                       <td className="px-5 py-4 text-xs font-bold text-slate-600 whitespace-nowrap">
                         {new Date(c.fecha_servicio).toLocaleDateString("es-EC")}
@@ -888,6 +892,14 @@ function AdminCotizacionesContent() {
                       </label>
                     </div>
                     {group.paradas && <p className="mt-1 text-xs text-slate-600"><b>Paradas:</b> {group.paradas}</p>}
+                    {group.itinerario?.length ? <div className="mt-2 rounded-lg border border-violet-100 bg-violet-50 p-2.5">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-violet-700">Itinerario continuo · mismo vehículo y conductor</p>
+                      <ol className="mt-1 list-inside list-decimal space-y-0.5 text-xs text-violet-950">
+                        {group.itinerario.map((stop, stopIndex) => <li key={stopIndex}>
+                          {stop.destino}{stop.fecha_llegada ? ` · llegada ${stop.fecha_llegada}` : ""}{stop.dias_estadia ? ` · estadía ${stop.dias_estadia} día(s)` : ""}{stop.hora_salida ? ` · salida ${stop.hora_salida}` : ""}
+                        </li>)}
+                      </ol>
+                    </div> : null}
                     {group.detalles && <p className="mt-1 whitespace-pre-line text-xs text-slate-600"><b>Indicaciones:</b> {group.detalles}</p>}
                     {group.simultaneo && <p className="mt-1 text-[10px] font-black text-violet-700">Operación simultánea solicitada</p>}
                     <label className="mt-3 block max-w-xs text-[9px] font-black uppercase tracking-widest text-slate-500">
@@ -1066,6 +1078,15 @@ function AdminCotizacionesContent() {
                   <p className="text-sm font-bold text-slate-700">{selected.num_personas}</p>
                 </div>
               </div>
+
+              {selected.itinerario?.length ? <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                <p className="text-[9px] font-black uppercase tracking-widest text-violet-700">Itinerario continuo · mismo vehículo y conductor</p>
+                <ol className="mt-2 list-inside list-decimal space-y-1 text-sm text-violet-950">
+                  {selected.itinerario.map((point, pointIndex) => <li key={pointIndex}>
+                    {point.label}{point.fecha_llegada ? ` · llegada ${point.fecha_llegada}` : ""}{point.dias_estadia ? ` · estadía ${point.dias_estadia} día(s)` : ""}{point.hora_salida ? ` · salida ${point.hora_salida}` : ""}
+                  </li>)}
+                </ol>
+              </div> : null}
 
               {/* Vehículo elegido / duración / valor ofrecido */}
               <div className="grid grid-cols-2 gap-3">

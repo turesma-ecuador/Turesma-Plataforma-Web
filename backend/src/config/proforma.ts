@@ -63,7 +63,7 @@ const getCotizacionIdDeReserva = async (reservaId: number, usuarioId?: number): 
 // (continúa la numeración física: 22604 → 22605…).
 const buildProformaData = async (cotizacionId: number) => {
   const r = await pool.query(
-    `SELECT c.id, c.origen, c.destino, c.fecha_servicio, c.hora_salida,
+    `SELECT c.id, c.origen, c.destino, c.fecha_servicio, c.fecha_fin, c.hora_salida, c.itinerario,
             c.fecha_regreso, c.hora_regreso, c.num_personas,
             c.notas, c.tipo_vehiculo, c.proforma_numero,
             COALESCE(c.precio_final, c.precio_estimado, 0)::numeric AS precio,
@@ -76,6 +76,7 @@ const buildProformaData = async (cotizacionId: number) => {
   );
   if (r.rowCount === 0) return null;
   const c = r.rows[0];
+  const itinerary = Array.isArray(c.itinerario) ? c.itinerario : [];
   if (!c.proforma_numero) {
     const upd = await pool.query(
       `UPDATE cotizaciones SET proforma_numero = (SELECT COALESCE(MAX(proforma_numero), 22604) + 1 FROM cotizaciones)
@@ -92,8 +93,15 @@ const buildProformaData = async (cotizacionId: number) => {
     cliente: { nombre: c.cliente_nombre, email: c.cliente_email, telefono: c.cliente_telefono, cedula: c.cliente_cedula, tipo_identificacion: c.cliente_tipo_identificacion },
     servicio: {
       origen: c.origen, destino: c.destino, fecha_servicio: c.fecha_servicio, hora_salida: c.hora_salida,
-      fecha_regreso: c.fecha_regreso, hora_regreso: c.hora_regreso,
-      num_personas: c.num_personas, notas: c.notas, tipo_vehiculo: c.tipo_vehiculo,
+      fecha_fin: c.fecha_fin, fecha_regreso: c.fecha_regreso, hora_regreso: c.hora_regreso,
+      num_personas: c.num_personas,
+      notas: [
+        c.notas,
+        ...(itinerary.length ? [`Itinerario continuo:\n${itinerary.map((point: Record<string, unknown>, index: number) =>
+          `${index + 1}. ${point.label}${point.fecha_llegada ? ` · llegada ${point.fecha_llegada}` : ""}${Number(point.dias_estadia) ? ` · estadía ${point.dias_estadia} día(s)` : ""}${point.hora_salida ? ` · salida ${point.hora_salida}` : ""}`
+        ).join("\n")}`] : []),
+      ].filter(Boolean).join("\n\n"),
+      itinerario: itinerary, tipo_vehiculo: c.tipo_vehiculo,
     },
     precio: Number(c.precio) || 0,
   };
@@ -218,6 +226,11 @@ const buildProformaDataRequerimiento = async (requerimientoId: number, usuarioId
       `Fecha: ${fmtFecha(group.fecha_servicio)}${group.fecha_fin ? ` al ${fmtFecha(group.fecha_fin)}` : ""}${group.hora_salida ? ` · ${group.hora_salida}` : ""}`,
       `${quantity} vehículo(s)${group.pasajeros_por_vehiculo ? ` · ${group.pasajeros_por_vehiculo} pasajeros por unidad` : ""}`,
       group.paradas ? `Paradas: ${group.paradas}` : "",
+      ...(Array.isArray(group.itinerario) && group.itinerario.length
+        ? [`Itinerario continuo:\n${group.itinerario.map((stop: Record<string, unknown>, stopIndex: number) =>
+          `${stopIndex + 1}. ${stop.destino}${stop.fecha_llegada ? ` · llegada ${fmtFecha(stop.fecha_llegada)}` : ""}${Number(stop.dias_estadia) ? ` · estadía ${stop.dias_estadia} día(s)` : ""}${stop.hora_salida ? ` · salida ${stop.hora_salida}` : ""}`
+        ).join("\n")}`]
+        : []),
       group.detalles ? `Indicaciones: ${group.detalles}` : "",
     ].filter(Boolean);
     if (index === 0 && request.detalles) details.push(`Requerimiento: ${request.detalles}`);
@@ -482,6 +495,9 @@ const generarProformaPDF = (d: any): Promise<Buffer> => new Promise((resolve, re
         label: "Fecha y hora salida",
         value: `${fmtFecha(d.servicio.fecha_servicio)}${d.servicio.hora_salida ? ` · ${d.servicio.hora_salida}` : ""}`,
       },
+      ...(d.servicio.fecha_fin && d.servicio.fecha_fin !== d.servicio.fecha_servicio
+        ? [{ label: "Fecha final del servicio", value: fmtFecha(d.servicio.fecha_fin) }]
+        : []),
       { label: "Pasajeros", value: `${d.servicio.num_personas} pasajero(s)` },
       ...(d.servicio.fecha_regreso ? [{
         label: "Recogida de regreso",

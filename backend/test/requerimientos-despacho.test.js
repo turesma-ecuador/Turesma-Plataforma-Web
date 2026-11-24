@@ -12,6 +12,7 @@ const groups = [
     hora_salida: "08:30",
     origen: "Manta",
     destino: "Quito",
+    itinerario: [{ destino: "Cuenca", fecha_llegada: "2026-11-10", dias_estadia: 1, hora_salida: "10:00" }],
   },
   {
     cantidad_vehiculos: 1,
@@ -80,6 +81,7 @@ test("crea una operación por unidad y repite sin duplicar operaciones", async (
   assert.deepEqual(first, { found: true, created: 3, total: 3 });
   assert.equal(insertedOperations.length, 3);
   assert.deepEqual(insertedOperations.map(params => [params[2], params[3]]), [[1, 1], [1, 2], [2, 1]]);
+  assert.match(insertedOperations[0][11], /Itinerario continuo:[\s\S]*Cuenca[\s\S]*estadía 1 día/);
   assert.equal(dispatchStatus, "generado");
 
   const second = await prepararDespachoRequerimiento(900, 2);

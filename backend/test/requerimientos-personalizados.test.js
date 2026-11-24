@@ -165,6 +165,7 @@ test("valida y guarda un requerimiento personalizado asociado al cliente autenti
           hora_salida: "08:30",
           origen: "Manta",
           destino: "Quito",
+          itinerario: [{ destino: "Cuenca", fecha_llegada: "2026-11-10", dias_estadia: 1, hora_salida: "10:00" }],
           paradas: "Portoviejo",
           detalles: "Recoger al personal en la terminal.",
           simultaneo: true,
@@ -192,6 +193,9 @@ test("valida y guarda un requerimiento personalizado asociado al cliente autenti
   assert.equal(queries.at(-1).params[2], 11);
   assert.equal(queries.at(-1).params[3], "Varios");
   assert.equal(JSON.parse(queries.at(-1).params[11])[0].simultaneo, true);
+  assert.deepEqual(JSON.parse(queries.at(-1).params[11])[0].itinerario, [
+    { destino: "Cuenca", fecha_llegada: "2026-11-10", hora_salida: "10:00", dias_estadia: 1 },
+  ]);
   assert.equal(sentNotifications[0][0], "admins");
 });
 

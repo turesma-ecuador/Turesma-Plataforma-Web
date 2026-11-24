@@ -66,8 +66,8 @@ const crearReservaDesdeCotizacion = async (client: any, c: any, precioFinal: num
        (usuario_id, fecha_reserva, fecha_fin, fecha_regreso, hora_regreso, fecha_salida, fecha_llegada, fecha_servicio,
         hora_salida, duracion_estimada_minutos, num_viajes, modalidad_servicio, duracion_horas,
         origen_lat, origen_lng, destino_lat, destino_lng, num_personas, total, estado, origen, destino, tipo_vehiculo,
-        vehiculo_id, conductor_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $6, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NULL, NULL)
+        vehiculo_id, conductor_id, itinerario, notas)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $6, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NULL, NULL, $23::jsonb, $24)
      RETURNING id`,
     [
       c.usuario_id, fechaServicio, fechaFin, fechaRegreso, c.hora_regreso || null,
@@ -75,6 +75,13 @@ const crearReservaDesdeCotizacion = async (client: any, c: any, precioFinal: num
       numViajes, modalidadServicio, duracionHoras,
       c.origen_lat || null, c.origen_lng || null, c.destino_lat || null, c.destino_lng || null,
       c.num_personas, precioFinal, estadoInicial, c.origen, c.destino, c.tipo_vehiculo || null,
+      JSON.stringify(c.itinerario || []),
+      [
+        c.notas,
+        ...(Array.isArray(c.itinerario) && c.itinerario.length
+          ? [`Itinerario continuo:\n${c.itinerario.map((point: any, index: number) => `${index + 1}. ${point.label}${point.fecha_llegada ? ` · llegada ${point.fecha_llegada}` : ""}${point.dias_estadia ? ` · estadía ${point.dias_estadia} día(s)` : ""}${point.hora_salida ? ` · salida ${point.hora_salida}` : ""}`).join("\n")}`]
+          : []),
+      ].filter(Boolean).join("\n"),
     ]
   );
   return reservaRes.rows[0].id;
@@ -437,7 +444,7 @@ const crearCotizacion = async (req: any, res: any) => {
     vehiculo_id, valor_ofrecido, duracion_valor, duracion_unidad, hora_salida,
     hora_llegada_estimada, duracion_estimada_minutos, fecha_regreso, hora_regreso,
     origen_lat, origen_lng, destino_lat, destino_lng,
-    num_viajes, modalidad_servicio, duracion_horas,
+    num_viajes, modalidad_servicio, duracion_horas, itinerario, modo_itinerario,
   } = req.body;
 
   if (!usuario_id || !origen || !destino || !fecha_servicio || !num_personas) {
@@ -459,6 +466,72 @@ const crearCotizacion = async (req: any, res: any) => {
   const fechaRegreso = fecha_regreso == null || fecha_regreso === "" ? null : esFecha(fecha_regreso) ? fecha_regreso.trim() : null;
   const horaRegreso = typeof hora_regreso === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(hora_regreso.trim()) ? hora_regreso.trim() : null;
   const modalidadServicio = String(modalidad_servicio || (fechaFin ? "varios_dias" : "dia")).trim().toLowerCase();
+  const itineraryMode = modo_itinerario === true;
+  const normalizedItinerary = (() => {
+    if (!itineraryMode) return [];
+    if (!Array.isArray(itinerario) || itinerario.length < 1 || itinerario.length > 11) return null;
+    const points = [];
+    for (const rawPoint of itinerario) {
+      if (!rawPoint || typeof rawPoint !== "object" || Array.isArray(rawPoint)) return null;
+      const point = rawPoint as Record<string, unknown>;
+      const label = typeof point.label === "string" ? point.label.trim() : "";
+      const lat = Number(point.lat);
+      const lng = Number(point.lng);
+      const arrivalDate = point.fecha_llegada == null || point.fecha_llegada === ""
+        ? null
+        : esFecha(point.fecha_llegada) ? String(point.fecha_llegada).trim() : undefined;
+      const departureTime = typeof point.hora_salida === "string" ? point.hora_salida.trim() : "";
+      const stayDays = Number(point.dias_estadia);
+      if (!label || label.length > 300 || !Number.isFinite(lat) || lat < -90 || lat > 90
+        || !Number.isFinite(lng) || lng < -180 || lng > 180
+        || arrivalDate === undefined
+        || !Number.isInteger(stayDays) || stayDays < 0 || stayDays > 365
+        || (departureTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(departureTime))
+        || (point.es_retorno !== undefined && typeof point.es_retorno !== "boolean")) return null;
+      points.push({
+        label,
+        lat,
+        lng,
+        fecha_llegada: arrivalDate,
+        hora_salida: departureTime || null,
+        dias_estadia: stayDays,
+        es_retorno: point.es_retorno === true,
+      });
+    }
+    if (points.filter(point => point.es_retorno).length > 1
+      || points.some((point, index) => point.es_retorno && index !== points.length - 1)) return null;
+    return points;
+  })();
+  if (itineraryMode && (!normalizedItinerary || !fechaFin || !esFecha(fecha_servicio))) {
+    return res.status(400).json({ error: "Completa un itinerario válido y la fecha estimada de retorno" });
+  }
+  if (itineraryMode && normalizedItinerary.some((point: { fecha_llegada: string | null }) =>
+    point.fecha_llegada && (point.fecha_llegada < String(fecha_servicio) || point.fecha_llegada > String(fechaFin))
+  )) {
+    return res.status(400).json({ error: "Las fechas de llegada del itinerario deben estar dentro del período del viaje" });
+  }
+  if (itineraryMode && normalizedItinerary.some((point: { fecha_llegada: string | null; dias_estadia: number }) => {
+    if (!point.fecha_llegada) return false;
+    const lastStayDate = new Date(`${point.fecha_llegada}T00:00:00.000Z`);
+    lastStayDate.setUTCDate(lastStayDate.getUTCDate() + point.dias_estadia);
+    return lastStayDate.toISOString().slice(0, 10) > String(fechaFin);
+  })) {
+    return res.status(400).json({ error: "La estadía de cada destino debe finalizar dentro del período del viaje" });
+  }
+  if (itineraryMode && normalizedItinerary.reduce((total: number, point: { dias_estadia: number }) => total + point.dias_estadia, 0)
+    > (Date.parse(`${fechaFin}T00:00:00.000Z`) - Date.parse(`${fecha_servicio}T00:00:00.000Z`)) / 86400000) {
+    return res.status(400).json({ error: "La duración total de las estadías excede el período del viaje" });
+  }
+  if (itineraryMode && normalizedItinerary[normalizedItinerary.length - 1]?.es_retorno) {
+    const returnPoint = normalizedItinerary[normalizedItinerary.length - 1];
+    const originLat = Number(origen_lat);
+    const originLng = Number(origen_lng);
+    if (!Number.isFinite(originLat) || !Number.isFinite(originLng)
+      || Math.abs(returnPoint.lat - originLat) > 0.0001
+      || Math.abs(returnPoint.lng - originLng) > 0.0001) {
+      return res.status(400).json({ error: "El punto de retorno debe coincidir con el origen del viaje" });
+    }
+  }
   const duracionHoras = duracion_horas === null || duracion_horas === undefined || duracion_horas === ""
     ? null
     : Number(duracion_horas);
@@ -533,13 +606,13 @@ const crearCotizacion = async (req: any, res: any) => {
           vehiculo_id, valor_ofrecido, precio_estimado, num_viajes, distancia_km, precio_desglose,
           duracion_valor, duracion_unidad, turno,
            origen_lat, origen_lng, destino_lat, destino_lng, hora_salida, hora_llegada_estimada, duracion_estimada_minutos, fecha_regreso, hora_regreso,
-           modalidad_servicio, duracion_horas)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'admin', $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+           modalidad_servicio, duracion_horas, itinerario)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'admin', $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28::jsonb)
        RETURNING *`,
       [
         usuario_id, origen, destino, fecha_servicio, fechaFin, num_personas, tipoVehiculo, notas || null,
         vehiculo_id ? Number(vehiculo_id) : null, num(valor_ofrecido), null, trips, null, null,
-         num(duracion_valor), dUnidad, num(origen_lat), num(origen_lng), num(destino_lat), num(destino_lng), horaSalida, horaLlegadaEstimada, Number.isInteger(duracionEstimada) && duracionEstimada > 0 ? duracionEstimada : null, fechaRegreso, horaRegreso, modalidadServicio, modalidadServicio === "horas" ? duracionHoras : null,
+         num(duracion_valor), dUnidad, num(origen_lat), num(origen_lng), num(destino_lat), num(destino_lng), horaSalida, horaLlegadaEstimada, Number.isInteger(duracionEstimada) && duracionEstimada > 0 ? duracionEstimada : null, fechaRegreso, horaRegreso, modalidadServicio, modalidadServicio === "horas" ? duracionHoras : null, JSON.stringify(normalizedItinerary || []),
       ]
     );
     const cotizacion = result.rows[0];
