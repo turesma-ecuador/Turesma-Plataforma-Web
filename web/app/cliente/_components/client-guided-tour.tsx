@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
+import { useLocale } from "../../../lib/i18n";
 import {
   ArrowLeft,
   ArrowRight,
@@ -35,6 +36,7 @@ type ClientGuidedTourProps = {
   variant: TourVariant;
   autoStart?: boolean;
   stepComplete?: boolean;
+  stepHint?: string;
   onStepChange?: (stepIndex: number) => void;
 };
 
@@ -67,35 +69,35 @@ const getPortalTourSeen = () => {
 const PORTAL_STEPS: TourStep[] = [
   {
     title: "Inicio",
-    description: "Consulta los viajes publicados y el resumen de tus solicitudes y servicios.",
+    description: "En Inicio puedes ver los viajes publicados y un resumen de tus solicitudes y servicios.",
     target: "portal-home-services",
     href: "/cliente",
     icon: LayoutDashboard,
   },
   {
     title: "Cotizar",
-    description: "En esta sección puedes solicitar un servicio o comprar un viaje publicado. Usa la guía de reserva para completar el formulario.",
+    description: "Solicita un servicio a tu medida o reserva un viaje publicado. Si eliges cotizar, la guía de reserva te acompaña paso a paso.",
     target: "portal-cotizar-start",
     href: "/cliente/cotizar",
     icon: FileText,
   },
   {
     title: "Requerimiento especial",
-    description: "Solicita varios vehículos o un servicio especial; el equipo revisará los detalles y te enviará una propuesta.",
+    description: "Si necesitas varios vehículos o una ruta especial, envía los detalles. Administración revisará la disponibilidad y te enviará una propuesta.",
     target: "portal-custom-request",
     href: "/cliente/requerimiento-personalizado",
     icon: Bus,
   },
   {
     title: "Historial",
-    description: "Consulta tus reservas, pagos y viajes, y revisa aquí las actualizaciones de cada servicio.",
+    description: "En Historial encontrarás tus reservas, pagos y las actualizaciones de cada servicio.",
     target: "portal-travel-history",
     href: "/cliente/historial",
     icon: History,
   },
   {
     title: "Perfil",
-    description: "Actualiza tus datos de contacto y revisa la información de tu cuenta.",
+    description: "Mantén al día tus datos de contacto y revisa la información de tu cuenta.",
     target: "portal-profile",
     href: "/cliente/perfil",
     icon: UserRound,
@@ -105,40 +107,110 @@ const PORTAL_STEPS: TourStep[] = [
 const BOOKING_STEPS: TourStep[] = [
   {
     title: "Indica tu ruta",
-    description: "Busca salida y destino o marca ambos puntos en el mapa.",
+    description: "Escribe el punto de salida y el destino, o selecciónalos directamente en el mapa.",
     target: "booking-route",
-    completionHint: "Selecciona origen y destino para continuar.",
+    completionHint: "Selecciona un punto de salida y un destino para continuar.",
     icon: MapPin,
   },
   {
     title: "Elige la fecha del viaje",
-    description: "Selecciona la fecha en el calendario. Si el servicio dura varios días o tiene fecha de regreso, indica también esas fechas.",
+    description: "Elige la fecha de salida. Si el servicio dura varios días o incluye un regreso, indica también esas fechas.",
     target: "booking-schedule-calendar",
     completionHint: "Selecciona la fecha del servicio para continuar.",
     icon: CalendarDays,
   },
   {
     title: "Completa horario y pasajeros",
-    description: "Más abajo indica la hora de salida, la llegada estimada y cuántas personas viajarán.",
+    description: "Indica la hora de salida, la llegada estimada y la cantidad de pasajeros.",
     target: "booking-time-passengers",
     completionHint: "Completa los horarios y la cantidad de personas para continuar.",
     icon: Clock3,
   },
   {
     title: "Selecciona una categoría",
-    description: "Elige una categoría. Las fotos son referenciales; no reservas una unidad específica.",
+    description: "Elige una categoría de vehículo. Las imágenes son referenciales; la unidad específica se confirma después.",
     target: "booking-category",
     completionHint: "Elige una categoría disponible para continuar.",
     icon: Bus,
   },
   {
     title: "Revisa y envía",
-    description: "Revisa los datos y envía la solicitud. El equipo definirá el precio para que lo revises desde Historial.",
+    description: "Revisa los datos antes de enviar la solicitud. Administración definirá el precio y podrás revisarlo en Historial.",
     target: "booking-submit",
     completionHint: "Envía la solicitud para finalizar la guía.",
     icon: CheckCircle2,
   },
 ];
+
+const TOUR_ENGLISH: Record<string, string> = {
+  "Inicio": "Home",
+  "En Inicio puedes ver los viajes publicados y un resumen de tus solicitudes y servicios.": "Home shows published trips and a summary of your requests and services.",
+  "Cotizar": "Get a quote",
+  "Solicita un servicio a tu medida o reserva un viaje publicado. Si eliges cotizar, la guía de reserva te acompaña paso a paso.": "Request a tailored service or book a published trip. If you request a quote, the booking guide will walk you through it.",
+  "Requerimiento especial": "Special request",
+  "Si necesitas varios vehículos o una ruta especial, envía los detalles. Administración revisará la disponibilidad y te enviará una propuesta.": "For multiple vehicles or a special route, send us the details. Our team will check availability and send you a proposal.",
+  "Historial": "History",
+  "En Historial encontrarás tus reservas, pagos y las actualizaciones de cada servicio.": "History contains your bookings, payments, and service updates.",
+  "Perfil": "Profile",
+  "Mantén al día tus datos de contacto y revisa la información de tu cuenta.": "Keep your contact details up to date and review your account information.",
+  "Indica tu ruta": "Enter your route",
+  "Escribe el punto de salida y el destino, o selecciónalos directamente en el mapa.": "Enter your pickup and destination, or select them directly on the map.",
+  "Selecciona un punto de salida y un destino para continuar.": "Select a pickup point and destination to continue.",
+  "Marca el origen y agrega al menos un destino al itinerario.": "Set your starting point and add at least one destination to your itinerary.",
+  "Marca el punto de salida y el destino en el mapa.": "Set your pickup point and destination on the map.",
+  "Elige la fecha del viaje": "Choose your trip dates",
+  "Elige la fecha de salida. Si el servicio dura varios días o incluye un regreso, indica también esas fechas.": "Choose your departure date. If your service spans multiple days or includes a return, enter those dates too.",
+  "Selecciona la fecha del servicio para continuar.": "Select a service date to continue.",
+  "Selecciona la fecha de inicio del servicio.": "Select the service start date.",
+  "Indica la fecha estimada de retorno del itinerario.": "Enter the itinerary's estimated return date.",
+  "La fecha de retorno no puede ser anterior a la salida.": "The return date cannot be before the departure date.",
+  "Las fechas de llegada de cada destino deben estar dentro del período del viaje.": "Each destination's arrival date must be within the trip dates.",
+  "Toca también el último día del viaje en el calendario.": "Select the trip's last day on the calendar too.",
+  "Selecciona la fecha de recogida para el regreso.": "Select the pickup date for your return.",
+  "La fecha de regreso debe ser posterior a la fecha de salida.": "The return date must be after the departure date.",
+  "Completa horario y pasajeros": "Add schedule and passengers",
+  "Indica la hora de salida, la llegada estimada y la cantidad de pasajeros.": "Enter your departure time, estimated arrival, and passenger count.",
+  "Completa los horarios y la cantidad de personas para continuar.": "Enter the schedule and passenger count to continue.",
+  "Indica la hora de salida que prefieres.": "Enter your preferred departure time.",
+  "Indica una hora estimada de llegada.": "Enter an estimated arrival time.",
+  "La llegada estimada debe ser posterior a la salida.": "The estimated arrival must be after departure.",
+  "Indica la hora de recogida para el regreso.": "Enter the pickup time for your return.",
+  "Selecciona una categoría": "Choose a vehicle category",
+  "Elige una categoría de vehículo. Las imágenes son referenciales; la unidad específica se confirma después.": "Choose a vehicle category. Images are illustrative; the specific vehicle will be confirmed later.",
+  "Elige una categoría disponible para continuar.": "Choose an available category to continue.",
+  "Selecciona una categoría de vehículo disponible.": "Choose an available vehicle category.",
+  "Revisa y envía": "Review and submit",
+  "Revisa los datos antes de enviar la solicitud. Administración definirá el precio y podrás revisarlo en Historial.": "Review your details before submitting. Our team will set the price for you to review in History.",
+  "Envía la solicitud para finalizar la guía.": "Submit your request to finish the guide.",
+  "Completa el dato pendiente en el área resaltada para continuar.": "Complete the missing information in the highlighted area to continue.",
+  "Cuando termines de revisar los datos, envía la solicitud con el botón al final del formulario.": "After reviewing your details, submit the request using the button at the end of the form.",
+  "Recorrido del portal": "Portal tour",
+  "Guía de reserva": "Booking guide",
+  "Paso": "Step",
+  "Siguiente": "Next",
+  "Anterior": "Previous",
+  "Salir": "Exit",
+  "Finalizar": "Finish",
+  "Cerrar recorrido": "Close tour",
+  "Progreso del recorrido": "Tour progress",
+  "Ayuda para clientes": "Customer help",
+  "Conoce tu portal Turesma": "Explore your Turesma portal",
+  "Te llevaremos por las secciones del portal, desplazándonos hasta cada una y resaltando su función. Puedes salir en cualquier momento o repetir el recorrido desde el botón de ayuda.": "We'll guide you through the portal sections, scrolling to each one and highlighting what it does. You can exit at any time or restart the tour from the help button.",
+  "Ahora no": "Not now",
+  "Empezar recorrido": "Start tour",
+  "Recorrido de navegación": "Navigation tour",
+  "Guíame para reservar": "Guide me through booking",
+};
+
+const localizeTourText = (text: string, language: "es" | "en") => {
+  if (language !== "en") return text;
+  const capacity = text.match(/^La categoría seleccionada admite hasta (\d+) pasajeros\. Elige otra categoría\.$/);
+  const maxDays = text.match(/^El servicio no puede superar los (\d+) días seguidos\.$/);
+  return TOUR_ENGLISH[text]
+    || (capacity ? `The selected category accommodates up to ${capacity[1]} passengers. Choose another category.` : undefined)
+    || (maxDays ? `The service cannot exceed ${maxDays[1]} consecutive days.` : undefined)
+    || text;
+};
 
 function findVisibleTarget(selector: string) {
   return Array.from(document.querySelectorAll<HTMLElement>(`[data-tour-target="${selector}"]`))
@@ -166,12 +238,20 @@ export function ClientGuidedTour({
   variant,
   autoStart = false,
   stepComplete = true,
+  stepHint,
   onStepChange,
 }: ClientGuidedTourProps) {
-  const steps = variant === "portal" ? PORTAL_STEPS : BOOKING_STEPS;
+  const { language } = useLocale();
+  const sourceSteps = variant === "portal" ? PORTAL_STEPS : BOOKING_STEPS;
+  const steps = useMemo(() => sourceSteps.map((step) => ({
+    ...step,
+    title: localizeTourText(step.title, language),
+    description: localizeTourText(step.description, language),
+    completionHint: step.completionHint ? localizeTourText(step.completionHint, language) : undefined,
+  })), [language, sourceSteps]);
   const router = useRouter();
   const pathname = usePathname();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(() => variant === "booking" && autoStart);
   const [stepIndex, setStepIndex] = useState(0);
   const mounted = useSyncExternalStore(subscribeToClientHydration, getClientHydrationSnapshot, getServerHydrationSnapshot);
   const [targetBounds, setTargetBounds] = useState<{ selector: string; bounds: ReturnType<typeof getTargetBounds> } | null>(null);
@@ -313,13 +393,19 @@ export function ClientGuidedTour({
   const overlay = useMemo(() => {
     if (!isOpen || !mounted) return null;
     const bounds = targetBounds?.selector === currentStep.target ? targetBounds.bounds : null;
-    const panelHeight = Math.min(180, window.innerHeight - 24);
+    const panelHeight = Math.min(240, window.innerHeight - 24);
     const gap = 12;
     const spaceAbove = bounds ? bounds.top - gap : 0;
     const spaceBelow = bounds ? window.innerHeight - bounds.bottom - gap : 0;
     let panelTop = window.innerHeight - panelHeight - gap;
-    if (variant === "booking" && ["booking-schedule-calendar", "booking-time-passengers"].includes(currentStep.target)) {
-      panelTop = Math.min(84, window.innerHeight - panelHeight - gap);
+    if (bounds && variant === "booking" && ["booking-schedule-calendar", "booking-time-passengers"].includes(currentStep.target)) {
+      if (spaceAbove >= panelHeight) {
+        panelTop = bounds.top - panelHeight - gap;
+      } else if (spaceBelow >= panelHeight) {
+        panelTop = bounds.bottom + gap;
+      } else {
+        panelTop = gap;
+      }
     } else if (bounds && variant === "booking" && currentStep.target === "booking-route") {
       if (spaceBelow >= panelHeight) {
         panelTop = bounds.bottom + gap;
@@ -348,7 +434,7 @@ export function ClientGuidedTour({
           <div
             key={index}
             aria-hidden="true"
-            className={`fixed z-[10000] backdrop-blur-[1px] ${variant === "booking" ? "pointer-events-none bg-slate-950/35" : "bg-slate-950/55"}`}
+            className={`fixed z-[10000] backdrop-blur-0 ${variant === "booking" ? "pointer-events-none bg-slate-950/15" : "bg-slate-950/25"}`}
             style={style}
           />
         ))}
@@ -364,7 +450,7 @@ export function ClientGuidedTour({
           aria-modal="false"
           aria-labelledby="client-tour-title"
           aria-describedby="client-tour-description"
-          className="fixed left-1/2 z-[10002] w-[calc(100vw-1.5rem)] max-w-[21rem] -translate-x-1/2 rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-950/15"
+          className="fixed left-1/2 z-[10002] max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-[21rem] -translate-x-1/2 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-950/15"
           style={{ left: "50%", top: panelTop }}
         >
           <div className="flex items-start justify-between gap-3 px-3 pt-3">
@@ -374,17 +460,20 @@ export function ClientGuidedTour({
               </span>
               <div>
                 <p className="text-[8px] font-black uppercase tracking-[0.14em] text-red-600">
-                  {variant === "portal" ? "Recorrido del portal" : `Guía de reserva · ${stepIndex + 1} de ${steps.length}`}
+                  {localizeTourText(variant === "portal" ? "Recorrido del portal" : "Guía de reserva", language)}
                 </p>
                 <h2 id="client-tour-title" className="text-[13px] font-black leading-tight text-slate-950">
                   {currentStep.title}
                 </h2>
+                <p className="mt-0.5 text-[9px] font-semibold text-slate-500">
+                  {language === "en" ? `Step ${stepIndex + 1} of ${steps.length}` : `Paso ${stepIndex + 1} de ${steps.length}`}
+                </p>
               </div>
             </div>
             <button
               type="button"
               onClick={closeTour}
-              aria-label="Cerrar recorrido"
+              aria-label={localizeTourText("Cerrar recorrido", language)}
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-900"
             >
               <X size={16} />
@@ -396,15 +485,29 @@ export function ClientGuidedTour({
               {currentStep.description}
             </p>
 
-            <div className="mt-2 flex gap-1" aria-hidden="true">
+            <div
+              className="mt-2 flex gap-1"
+              role="progressbar"
+              aria-label={localizeTourText("Progreso del recorrido", language)}
+              aria-valuemin={1}
+              aria-valuemax={steps.length}
+              aria-valuenow={stepIndex + 1}
+              aria-valuetext={language === "en" ? `Step ${stepIndex + 1} of ${steps.length}` : `Paso ${stepIndex + 1} de ${steps.length}`}
+            >
               {steps.map((step, index) => (
                 <span key={step.title} className={`h-1 flex-1 rounded-full ${index <= stepIndex ? "bg-red-600" : "bg-slate-200"}`} />
               ))}
             </div>
 
             {variant === "booking" && !stepComplete && (
-              <p role="status" className="mt-1.5 text-[10px] font-semibold text-amber-700">
-                {currentStep.completionHint}
+              <p role="status" className="mt-1.5 rounded-lg bg-amber-50 px-2 py-1.5 text-[10px] font-semibold leading-snug text-amber-800">
+                {localizeTourText("Completa el dato pendiente en el área resaltada para continuar.", language)}{" "}
+                {localizeTourText(stepHint || currentStep.completionHint || "", language)}
+              </p>
+            )}
+            {variant === "booking" && (
+              <p className="mt-1 text-[9px] text-slate-500">
+                {localizeTourText("Si sales de la guía, tus datos se conservarán.", language)}
               </p>
             )}
 
@@ -415,7 +518,7 @@ export function ClientGuidedTour({
                   onClick={closeTour}
                   className="rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-500 transition hover:bg-slate-100"
                 >
-                  Salir
+                  {localizeTourText("Salir", language)}
                 </button>
                 {stepIndex > 0 && (
                   <button
@@ -423,7 +526,7 @@ export function ClientGuidedTour({
                     onClick={() => moveToStep(stepIndex - 1)}
                     className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-100"
                   >
-                    <ArrowLeft size={13} aria-hidden="true" /> Anterior
+                    <ArrowLeft size={13} aria-hidden="true" /> {localizeTourText("Anterior", language)}
                   </button>
                 )}
               </div>
@@ -434,7 +537,7 @@ export function ClientGuidedTour({
                   onClick={() => moveToStep(stepIndex + 1)}
                   className="inline-flex min-h-8 items-center justify-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-[10px] font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
                 >
-                  Siguiente <ArrowRight size={13} aria-hidden="true" />
+                  {localizeTourText("Siguiente", language)} <ArrowRight size={13} aria-hidden="true" />
                 </button>
               ) : (
                 <button
@@ -443,7 +546,7 @@ export function ClientGuidedTour({
                   onClick={closeTour}
                   className="inline-flex min-h-8 items-center justify-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-[10px] font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
                 >
-                  Finalizar <CheckCircle2 size={15} aria-hidden="true" />
+                  {localizeTourText("Finalizar", language)} <CheckCircle2 size={15} aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -452,7 +555,7 @@ export function ClientGuidedTour({
       </>,
       document.body,
     );
-  }, [closeTour, currentStep, isOpen, mounted, StepIcon, stepComplete, stepIndex, steps, targetBounds, variant]);
+  }, [closeTour, currentStep, isOpen, language, mounted, StepIcon, stepComplete, stepHint, stepIndex, steps, targetBounds, variant]);
 
   return (
     <>
@@ -462,7 +565,7 @@ export function ClientGuidedTour({
         className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-red-700 transition hover:border-red-300 hover:bg-red-100 sm:text-xs"
       >
         <TourButtonIcon size={16} aria-hidden="true" />
-        {variant === "portal" ? "Recorrido del portal" : "Guíame para reservar"}
+        {localizeTourText(variant === "portal" ? "Recorrido del portal" : "Guíame para reservar", language)}
       </button>
       {variant === "portal" && showWelcome && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center overflow-y-auto bg-slate-950/65 p-4 backdrop-blur-sm">
@@ -474,24 +577,24 @@ export function ClientGuidedTour({
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-600">Ayuda para clientes</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-600">{localizeTourText("Ayuda para clientes", language)}</p>
                 <h2 id="client-tour-welcome-title" className="mt-1 text-xl font-black tracking-tight text-slate-950">
-                  Conoce tu portal Turesma
+                  {localizeTourText("Conoce tu portal Turesma", language)}
                 </h2>
               </div>
-              <button type="button" onClick={closeTour} aria-label="Cerrar recorrido" className="rounded-full bg-slate-100 p-2 text-slate-500">
+              <button type="button" onClick={closeTour} aria-label={localizeTourText("Cerrar recorrido", language)} className="rounded-full bg-slate-100 p-2 text-slate-500">
                 <X size={18} />
               </button>
             </div>
             <p className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm leading-relaxed text-blue-950">
-              Te llevaremos por las secciones del portal, desplazándonos hasta cada una y resaltando su función. Puedes salir en cualquier momento o repetir el recorrido desde el botón de ayuda.
+              {localizeTourText("Te llevaremos por las secciones del portal, desplazándonos hasta cada una y resaltando su función. Puedes salir en cualquier momento o repetir el recorrido desde el botón de ayuda.", language)}
             </p>
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button type="button" onClick={closeTour} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50">
-                Ahora no
+                {localizeTourText("Ahora no", language)}
               </button>
               <button type="button" onClick={openTour} className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white hover:bg-red-700">
-                Empezar recorrido <ArrowRight size={16} aria-hidden="true" />
+                {localizeTourText("Empezar recorrido", language)} <ArrowRight size={16} aria-hidden="true" />
               </button>
             </div>
           </section>

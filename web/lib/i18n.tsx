@@ -315,6 +315,7 @@ const translations: Record<string, string> = {
   "Ver historial": "View history",
   "El seguimiento en vivo estará disponible cuando el conductor inicie el viaje.": "Live tracking will be available when your driver starts the trip.",
   "Cotizar viaje": "Get a quote",
+  "Guía para Reservar": "Booking Guide",
   "Mi historial": "My history",
   "En revisión": "Under review",
   "Aprobadas": "Approved",

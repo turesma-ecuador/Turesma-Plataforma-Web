@@ -21,7 +21,7 @@ const addDaysIso = (isoDate: string, n: number) => {
 
 // Permite elegir fechas y, cuando hay una unidad concreta, muestra sus días no disponibles.
 export function VehiculoCalendario({
-  vehiculoId, value, onSelect, range = false, endValue = "", onSelectEnd, maxDays = 0, allowUnassigned = false, localized = false, minDate = "", selectionLabel = "", secondaryValue = "", secondaryLabel = "",
+  vehiculoId, value, onSelect, range = false, endValue = "", onSelectEnd, maxDays = 0, allowUnassigned = false, localized = false, minDate = "", selectionLabel = "", secondaryValue = "", secondaryLabel = "", compact = false,
 }: {
   vehiculoId: number | null;
   value: string;
@@ -36,12 +36,16 @@ export function VehiculoCalendario({
   selectionLabel?: string;
   secondaryValue?: string;
   secondaryLabel?: string;
+  compact?: boolean;
 }) {
   const [dispo, setDispo] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [aviso, setAviso] = useState("");
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const { language } = useLocale();
+  const calendarSize = compact ? "max-w-[640px] p-3" : "max-w-[720px] p-3 sm:p-4";
+  const gridSize = compact ? "max-w-[600px] gap-1" : "max-w-[680px] gap-1.5";
+  const dayCellSize = compact ? "h-11 sm:h-12" : "h-12 sm:h-14";
 
   useEffect(() => {
     if (!vehiculoId || allowUnassigned) return;
@@ -118,7 +122,7 @@ export function VehiculoCalendario({
 
   return (
     <LocalizedContent enabled={localized}>
-      <div className="mx-auto max-w-[720px] rounded-2xl border-2 border-slate-100 bg-white p-3 sm:p-4">
+      <div className={`mx-auto rounded-2xl border-2 border-slate-100 bg-white ${calendarSize}`}>
         <div className="mb-3 flex items-center justify-between gap-2">
           <button type="button" onClick={() => cambiarMes(-1)} aria-label={localized && language === "en" ? "Previous month" : "Mes anterior"} className="rounded-lg p-2 text-slate-600 transition hover:bg-slate-100">
             <ChevronLeft size={18} />
@@ -149,7 +153,7 @@ export function VehiculoCalendario({
           <div className="flex justify-center py-8"><Loader2 className="animate-spin text-[#E31E24]" size={24} /></div>
         ) : (
           <>
-            <div className="mx-auto grid max-w-[680px] grid-cols-7 gap-1.5">
+            <div className={`mx-auto grid grid-cols-7 ${gridSize}`}>
               {(localized && language === "en" ? ["S", "M", "T", "W", "T", "F", "S"] : DIAS).map((day, i) => (
                 <div key={i} className="py-1 text-center text-[10px] font-black uppercase text-slate-500">
                   <span aria-hidden="true">{day}</span>
@@ -157,7 +161,7 @@ export function VehiculoCalendario({
                 </div>
               ))}
               {dias.map((date, i) => {
-                if (!date) return <span key={`empty-${i}`} aria-hidden="true" className="h-12 sm:h-14" />;
+                if (!date) return <span key={`empty-${i}`} aria-hidden="true" className={dayCellSize} />;
                 const dayNum = Number(date.slice(8, 10));
                 const past = date < hoy;
                 const beforeMinDate = !past && date < fechaMinima;
@@ -192,7 +196,7 @@ export function VehiculoCalendario({
                     aria-label={`${dateLabel}${selected ? `, ${accessibleMarker}` : ""}${reservado ? localized && language === "en" ? ", unavailable" : ", no disponible" : ""}`}
                     aria-pressed={selected}
                     title={reservado ? "No disponible" : dateLabel}
-                    className={`flex h-12 min-w-0 flex-col items-center justify-center rounded-xl border text-xs font-bold transition-colors sm:h-14 ${
+                    className={`flex ${dayCellSize} min-w-0 flex-col items-center justify-center rounded-xl border text-xs font-bold transition-colors ${
                       isSecondary ? "border-emerald-600 bg-emerald-600 text-white shadow-sm" :
                       selected ? "border-[#E31E24] bg-[#E31E24] text-white shadow-sm" :
                       inRange ? "border-red-100 bg-red-50 text-red-800" :

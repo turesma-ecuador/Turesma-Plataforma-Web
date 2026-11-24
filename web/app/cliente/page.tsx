@@ -236,10 +236,14 @@ export default function ClienteInicioPage() {
       )}
 
       {/* ACCIONES RÁPIDAS */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Link href="/cliente/cotizar" className="group bg-[#E31E24] text-white rounded-2xl p-5 shadow-lg shadow-red-200 hover:bg-red-700 transition-all flex items-center justify-between">
           <div className="flex items-center gap-3"><div className="bg-white/20 p-2.5 rounded-xl"><FileText size={20} /></div><span className="font-black text-sm uppercase tracking-widest">Cotizar viaje</span></div>
           <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+        </Link>
+        <Link href="/cliente/cotizar?guia=reserva" aria-label="Guía para Reservar" className="group flex items-center justify-between rounded-2xl border border-red-200 bg-red-50 p-5 text-red-800 transition-all hover:border-red-300 hover:bg-red-100">
+          <div className="flex items-center gap-3"><div className="rounded-xl bg-white p-2.5"><MapPin size={20} className="text-[#E31E24]" /></div><span className="text-sm font-black uppercase tracking-widest">Guía para Reservar</span></div>
+          <ArrowRight size={18} className="text-red-400 transition-transform group-hover:translate-x-1 group-hover:text-[#E31E24]" />
         </Link>
         <Link href="/cliente/historial" className="group bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:border-[#E31E24] transition-all flex items-center justify-between">
           <div className="flex items-center gap-3"><div className="bg-slate-100 p-2.5 rounded-xl"><History size={20} className="text-slate-600" /></div><span className="font-black text-sm uppercase tracking-widest text-slate-700">Mi historial</span></div>

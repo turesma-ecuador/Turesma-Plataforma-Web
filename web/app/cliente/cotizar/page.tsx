@@ -206,6 +206,8 @@ export default function ClienteCotizarPage() {
   const [locatingOrigin, setLocatingOrigin] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [focusSignal, setFocusSignal] = useState(0);
+  const startBookingTour = typeof window !== "undefined"
+    && new URLSearchParams(window.location.search).get("guia") === "reserva";
   const onMapChange = (which: "origin" | "destination", val: Punto) => {
     if (which === "origin") setOrigin(val); else setDestination(val);
   };
@@ -457,6 +459,16 @@ export default function ClienteCotizarPage() {
     return "";
   };
 
+  const getBookingTourHint = (stepIndex: number) => {
+    if (stepIndex === 0) return getStepError(1);
+    if (stepIndex === 1) return getDateStepError();
+    if (stepIndex === 2) return getStepError(2);
+    if (stepIndex === 3) return getStepError(3);
+    return formMsg
+      ? ""
+      : "Cuando termines de revisar los datos, envía la solicitud con el botón al final del formulario.";
+  };
+
   const handleBookingTourStepChange = useCallback((stepIndex: number) => {
     const formStep = [1, 2, 2, 3, 4][stepIndex] || 1;
     setBookingTourStep(stepIndex);
@@ -569,6 +581,7 @@ export default function ClienteCotizarPage() {
   const tipoSeleccionado = form.tipo_vehiculo.toString().trim().toLowerCase();
   const selectedDays = form.fecha_servicio && variosDias && form.fecha_fin ? diasEntre(form.fecha_servicio, form.fecha_fin) : 1;
   const selectedTrips = Math.max(1, Number(form.num_viajes) || 1);
+  const bookingTourHint = getBookingTourHint(bookingTourStep);
   if (checkingSession) return (
     <div className="flex h-64 items-center justify-center"><Loader2 className="animate-spin text-[#E31E24]" size={34} /></div>
   );
@@ -580,14 +593,10 @@ export default function ClienteCotizarPage() {
       <div className="flex justify-end">
         <ClientGuidedTour
           variant="booking"
+          autoStart={startBookingTour}
           onStepChange={handleBookingTourStepChange}
-          stepComplete={
-            bookingTourStep === 0 ? !getStepError(1)
-              : bookingTourStep === 1 ? !getDateStepError()
-                : bookingTourStep === 2 ? !getStepError(2)
-                  : bookingTourStep === 3 ? !getStepError(3)
-                    : Boolean(formMsg)
-          }
+          stepComplete={!bookingTourHint}
+          stepHint={bookingTourHint}
         />
       </div>
 
@@ -923,7 +932,7 @@ export default function ClienteCotizarPage() {
 
             <div data-tour-target="booking-category" className={`space-y-6 ${wizardStep === 3 ? "" : "hidden"}`}>
             {/* PASO 1: PREFERENCIA DE CATEGORÍA */}
-            <div data-tour-target="booking-schedule-calendar" className="space-y-2 scroll-mt-[15rem]">
+            <div className="space-y-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Car size={12} /> 3. Elige una categoría de vehículo</p>
               <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
                 <AlertCircle size={16} className="mt-0.5 shrink-0 text-blue-700" />
@@ -981,7 +990,7 @@ export default function ClienteCotizarPage() {
 
             {/* PASO 2: FECHA (calendario con días reservados bloqueados) */}
             <div className={`space-y-4 ${wizardStep === 2 ? "" : "hidden"}`}>
-              <div className="space-y-2">
+              <div data-tour-target="booking-schedule-calendar" className="space-y-2 scroll-mt-[15rem]">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Calendar size={12} /> 2. Fecha del servicio</p>
               <p className="text-xs text-slate-500">
                 {variosDias
@@ -1095,6 +1104,7 @@ export default function ClienteCotizarPage() {
               <div>
                 <VehiculoCalendario
                   localized
+                  compact
                   vehiculoId={null}
                   value={regresoOtraFecha && fechaCalendarioActiva === "regreso" ? form.fecha_regreso : form.fecha_servicio}
                   onSelect={(f) => {
@@ -1231,14 +1241,16 @@ export default function ClienteCotizarPage() {
               )}
 
               {itinerarioContinuo ? (
-                <ItineraryMapPicker
-                  origin={origin}
-                  destinations={itineraryDestinations}
-                  returnToOrigin={itineraryReturnToOrigin}
-                  onOriginChange={setOrigin}
-                  onDestinationsChange={setItineraryDestinations}
-                  onReturnToOriginChange={setItineraryReturnToOrigin}
-                />
+                <div data-tour-target="booking-route">
+                  <ItineraryMapPicker
+                    origin={origin}
+                    destinations={itineraryDestinations}
+                    returnToOrigin={itineraryReturnToOrigin}
+                    onOriginChange={setOrigin}
+                    onDestinationsChange={setItineraryDestinations}
+                    onReturnToOriginChange={setItineraryReturnToOrigin}
+                  />
+                </div>
               ) : (
                 <>
                   <MapPicker
