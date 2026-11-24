@@ -95,8 +95,6 @@ const useConductorPanelState = () => {
   const [panel, setPanel] = useState<PanelConductor>({ activas: [], historial: [] });
   const [vehiculo, setVehiculo] = useState<VehiculoAsignado | null>(null);
   const [loadingPanel, setLoadingPanel] = useState(false);
-  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
-  const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const primeraCargaRef = useRef(true);
 
@@ -183,37 +181,6 @@ const useConductorPanelState = () => {
     intervalMs: POLLING_INTERVAL,
   });
 
-  const callAction = async (
-    reservaId: number,
-    endpoint: string,
-    body?: Record<string, unknown>,
-    resource: "reservas" | "operaciones" = "reservas"
-  ) => {
-    if (!user?.id) return;
-    setActionLoadingId(reservaId);
-    setErr("");
-    setMsg("");
-
-    try {
-      const res = await fetch(`${API_URL}/api/conductor/${user.id}/${resource}/${reservaId}/${endpoint}`, {
-        method: "PATCH",
-        headers: getAuthHeaders(),
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      if (handleUnauthorized(res.status)) return;
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "No se pudo procesar la acción");
-
-      setMsg(data.message || "Acción realizada correctamente");
-      await loadPanel();
-    } catch (actionError) {
-      setErr(actionError instanceof Error ? actionError.message : "Error ejecutando la acción");
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
   const formatFecha = (value?: string) => {
     if (!value) return "-";
     const date = new Date(value);
@@ -229,12 +196,9 @@ const useConductorPanelState = () => {
     panel,
     vehiculo,
     loadingPanel,
-    actionLoadingId,
-    msg,
     err,
     greeting,
     loadPanel,
-    callAction,
     formatFecha,
   };
 };

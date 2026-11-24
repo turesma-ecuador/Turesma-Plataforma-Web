@@ -272,7 +272,7 @@ const notificarConductorOperacion = async (
   operationId: number,
   senderId: number | null | undefined,
   isReassignment = false,
-  event: "asignada" | "recordatorio" | "completada" = "asignada"
+  event: "asignada" | "completada" = "asignada"
 ) => {
   try {
     const result = await pool.query(
@@ -298,13 +298,11 @@ const notificarConductorOperacion = async (
       ? ` · Grupo ${operation.grupo_numero}, unidad ${operation.unidad_numero}`
       : "";
     const vehicleLabel = [operation.vehiculo_placa, operation.vehiculo_modelo].filter(Boolean).join(" · ") || "Por confirmar";
-    const message = event === "recordatorio"
-      ? `Recordatorio: mañana tienes ${reservationLabel}${unitLabel}, ${operation.origen} → ${operation.destino}.`
-      : event === "completada"
-        ? `El servicio ${reservationLabel}${unitLabel} quedó registrado como completado.`
-        : isReassignment
-          ? `Se actualizó tu asignación para la ${reservationLabel}${unitLabel}. Revisa los nuevos datos del servicio.`
-          : `Tienes un nuevo servicio asignado: ${reservationLabel}${unitLabel}, ${operation.origen} → ${operation.destino}.`;
+    const message = event === "completada"
+      ? `El servicio ${reservationLabel}${unitLabel} quedó registrado como completado.`
+      : isReassignment
+        ? `Se actualizó tu asignación para la ${reservationLabel}${unitLabel}. Revisa los nuevos datos del servicio.`
+        : `Tienes un nuevo servicio asignado: ${reservationLabel}${unitLabel}, ${operation.origen} → ${operation.destino}.`;
 
     if (event === "asignada") {
       await crearNotificacion(
@@ -325,11 +323,9 @@ const notificarConductorOperacion = async (
     const safeDate = escapeHtml(fmtFecha(operation.fecha_programada));
     const safeTime = escapeHtml(String(operation.hora_inicio || "Por confirmar").slice(0, 5));
     const safePassengerCount = escapeHtml(String(operation.pasajeros || "—"));
-    const title = event === "recordatorio"
-      ? "Recordatorio de servicio para mañana"
-      : event === "completada"
-        ? "Servicio completado"
-        : isReassignment ? "Se actualizó tu servicio" : "Tienes un nuevo servicio asignado";
+    const title = event === "completada"
+      ? "Servicio completado"
+      : isReassignment ? "Se actualizó tu servicio" : "Tienes un nuevo servicio asignado";
     const webUrl = getWebBaseUrl();
     const itinerary = Array.isArray(operation.itinerario) ? operation.itinerario : [];
     const itineraryRows = itinerary.map((point: Record<string, unknown>, index: number) => {
@@ -354,7 +350,7 @@ const notificarConductorOperacion = async (
       subject: `${title} · ${reservationLabel}`,
       html: renderBrandedEmail({
         preheader: message,
-        eyebrow: event === "recordatorio" ? "RECORDATORIO" : event === "completada" ? "CIERRE DEL SERVICIO" : "ASIGNACIÓN DE SERVICIO",
+        eyebrow: event === "completada" ? "CIERRE DEL SERVICIO" : "ASIGNACIÓN DE SERVICIO",
         title,
         bodyHtml: `<p style="margin:0 0 16px">Hola <strong>${escapeHtml(String(operation.conductor_nombre || "conductor"))}</strong>, ${escapeHtml(message)}</p>
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #e2e8f0">
@@ -364,7 +360,7 @@ const notificarConductorOperacion = async (
             <tr><td style="padding:8px 0;color:#64748b">Vehículo</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safeVehicle}</td></tr>
             <tr><td style="padding:8px 0;color:#64748b">Pasajeros</td><td style="padding:8px 0;text-align:right;font-weight:bold;color:#111827">${safePassengerCount}</td></tr>
           </table>${itineraryHtml}`,
-        actionLabel: event === "asignada" ? "Abrir servicio y confirmar recepción" : "Ver mis servicios",
+        actionLabel: "Ver mis servicios",
         actionUrl,
         contactEmail: CONTACTO_EMAIL,
       }),
@@ -375,34 +371,6 @@ const notificarConductorOperacion = async (
   } catch (error: any) {
     console.error(`Error notificando al conductor de la operación #${operationId}:`, error?.message || error);
     return false;
-  }
-};
-
-const enviarRecordatoriosAsignacionConductor = async () => {
-  try {
-    const due = await pool.query(
-      `UPDATE operaciones
-       SET recordatorio_asignacion_en = CURRENT_TIMESTAMP
-       WHERE estado = 'asignada'
-         AND asignacion_confirmada_en IS NULL
-         AND recordatorio_asignacion_en IS NULL
-         AND fecha_programada = ((NOW() AT TIME ZONE 'America/Guayaquil')::date + 1)
-       RETURNING id`
-    );
-    for (const operation of due.rows) {
-      const sent = await notificarConductorOperacion(Number(operation.id), null, false, "recordatorio");
-      if (!sent) {
-        await pool.query(
-          `UPDATE operaciones
-           SET recordatorio_asignacion_en = NULL
-           WHERE id = $1 AND estado = 'asignada'
-             AND asignacion_confirmada_en IS NULL`,
-          [Number(operation.id)]
-        );
-      }
-    }
-  } catch (error: any) {
-    console.error("Error enviando recordatorios de asignaciones a conductores:", error?.message || error);
   }
 };
 
@@ -474,6 +442,5 @@ module.exports = {
   notificarClienteReserva,
   notificarClienteOperacion,
   notificarConductorOperacion,
-  enviarRecordatoriosAsignacionConductor,
   notificarReprogramacion,
 };

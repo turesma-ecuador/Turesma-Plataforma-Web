@@ -23,6 +23,9 @@ const state = {
       tipo_vehiculo: "bus",
       total: 240,
       estado: "confirmada",
+      estado_operativo: null,
+      ida_finalizada: false,
+      recogido: false,
       vehiculo_id: null,
       conductor_id: null,
       usuario_id: 901,
@@ -84,6 +87,24 @@ const state = {
       conductor_id: null,
       usuario_id: 904,
       cliente_nombre: "Reserva ida y regreso",
+    },
+    {
+      id: 805,
+      fecha_reserva: "2026-10-19",
+      fecha_servicio: "2026-10-29T09:00:00.000Z",
+      fecha_salida: "2026-10-29T09:00:00.000Z",
+      fecha_llegada: "2026-10-29T11:00:00.000Z",
+      hora_salida: "09:00",
+      origen: "Quito",
+      destino: "Riobamba",
+      num_personas: 4,
+      tipo_vehiculo: "sedan",
+      total: 120,
+      estado: "confirmada",
+      vehiculo_id: null,
+      conductor_id: null,
+      usuario_id: 905,
+      cliente_nombre: "Reserva especial de prueba",
     },
   ],
   vehicles: [
@@ -614,9 +635,26 @@ const pool = {
           const operation = operationFor(params[0]);
           return result(operation ? [{ reserva_id: operation.reserva_id }] : []);
         }
+        if (query.startsWith("select id, estado, estado_operativo, fecha_regreso, ida_finalizada from reservas where id = $1 for update")) {
+          const reservation = reservationFor(params[0]);
+          return result(reservation ? [{
+            id: reservation.id,
+            estado: reservation.estado,
+            estado_operativo: reservation.estado_operativo,
+            fecha_regreso: reservation.fecha_regreso || null,
+            ida_finalizada: reservation.ida_finalizada || false,
+          }] : []);
+        }
         if (query.startsWith("select id from reservas where id = $1 for update")) {
           const reservation = reservationFor(params[0]);
           return result(reservation ? [{ id: reservation.id }] : []);
+        }
+        if (query.startsWith("select count(*)::int as total")) {
+          const units = state.operations.filter((operation) => operation.requerimiento_id === Number(params[0]));
+          return result([{
+            total: units.length,
+            completadas: units.filter((operation) => operation.estado === "completada").length,
+          }]);
         }
         if (query.startsWith("select r.id as reserva_id, r.vehiculo_id, v.placa, coalesce(r.fecha_salida::date")) {
           assert.equal(params.length, 6, "La consulta de reservas sin preparar debe enviar solo parámetros usados");
@@ -731,6 +769,21 @@ const pool = {
           if (reservation) reservation.estado_operativo = params[0];
           return result();
         }
+        if (query.startsWith("update reservas set estado_operativo = 'en_curso'")) {
+          const reservation = reservationFor(params[0]);
+          if (reservation) reservation.estado_operativo = "en_curso";
+          return result();
+        }
+        if (query.startsWith("update reservas set ida_finalizada = true")) {
+          const reservation = reservationFor(params[0]);
+          if (reservation) Object.assign(reservation, { ida_finalizada: true, estado_operativo: "asignada", recogido: false });
+          return result();
+        }
+        if (query.startsWith("update reservas set estado = 'finalizada'")) {
+          const reservation = reservationFor(params[0]);
+          if (reservation) Object.assign(reservation, { estado: "finalizada", estado_operativo: "finalizada", recogido: false });
+          return result();
+        }
         if (query.startsWith("update decisiones_sistema")) {
           const [decisionId, vehicleId, confirmedBy, reason, operationId, date, passengers, start, end, endDate] = params;
           const decision = state.decisions.find((row) => row.id === Number(decisionId));
@@ -753,6 +806,8 @@ const pool = {
         if (query.startsWith("update operaciones set estado = $1,") && !query.includes("id = any")) {
           const operation = operationFor(params[1]);
           operation.estado = params[0];
+          if (query.includes("hora_inicio_real = current_timestamp")) operation.hora_inicio_real = "recorded";
+          if (query.includes("hora_fin_real = current_timestamp")) operation.hora_fin_real = "recorded";
           return result();
         }
         if (query.startsWith("update reservas set estado = $1")) {
@@ -826,6 +881,7 @@ require.cache[reservationMailerModule] = {
     async notificarClienteReserva(...args) {
       assignmentNotifications.push(args);
     },
+    async notificarClienteOperacion() {},
     async notificarConductorOperacion(...args) {
       driverAssignmentNotifications.push(args);
     },
@@ -1078,17 +1134,67 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     assert.equal(state.reservations[0].vehiculo_id, suggestedVehicleId);
     assert.equal(assignmentNotifications.length, 1);
 
-    const started = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "en_curso" } });
-    assert.equal(started.status, 403);
+    const missingConfirmation = await request(`/api/admin/operaciones/${operationId}/estado`, {
+      method: "PATCH",
+      body: { estado: "en_curso" },
+    });
+    assert.equal(missingConfirmation.status, 400);
+
+    const started = await request(`/api/admin/operaciones/${operationId}/estado`, {
+      method: "PATCH",
+      body: { estado: "en_curso", canal_confirmacion: "llamada_o_whatsapp" },
+    });
+    assert.equal(started.status, 200, JSON.stringify(started.body));
+    assert.equal(operationFor(operationId).estado, "en_curso");
+    assert.equal(operationFor(operationId).hora_inicio_real, "recorded");
+    assert.equal(state.reservations[0].estado, "confirmada");
+    assert.equal(state.reservations[0].estado_operativo, "en_curso");
+
+    const completedOutbound = await request(`/api/admin/operaciones/${operationId}/estado`, {
+      method: "PATCH",
+      body: { estado: "completada", canal_confirmacion: "llamada_o_whatsapp" },
+    });
+    assert.equal(completedOutbound.status, 200, JSON.stringify(completedOutbound.body));
     assert.equal(state.reservations[0].estado, "confirmada");
     assert.equal(state.reservations[0].estado_operativo, "asignada");
+    assert.equal(state.reservations[0].ida_finalizada, true);
 
-    const completed = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "completada" } });
-    assert.equal(completed.status, 403);
-    assert.equal(state.reservations[0].estado, "confirmada");
-    operationFor(operationId).estado = "completada";
-    state.reservations[0].estado = "finalizada";
-    state.reservations[0].estado_operativo = "finalizada";
+    const returnOperation = state.operations.find((operation) => operation.reserva_id === 801 && operation.tipo_servicio === "reserva_regreso");
+    assert.ok(returnOperation);
+    const completedReturnWithoutStart = await request(`/api/admin/operaciones/${returnOperation.id}/estado`, {
+      method: "PATCH",
+      body: { estado: "completada", canal_confirmacion: "llamada_o_whatsapp" },
+    });
+    assert.equal(completedReturnWithoutStart.status, 200, JSON.stringify(completedReturnWithoutStart.body));
+    assert.equal(returnOperation.estado, "completada");
+    assert.equal(returnOperation.hora_inicio_real, undefined, "No se inventa una hora de inicio si se finaliza directamente");
+    assert.equal(state.reservations[0].estado, "finalizada");
+    assert.equal(state.reservations[0].estado_operativo, "finalizada");
+    const completionHistory = state.history.find((entry) => entry.operacion_id === returnOperation.id && entry.accion === "finalizacion_confirmada_administracion");
+    assert.equal(completionHistory.detalle.canal_confirmacion, "llamada_o_whatsapp");
+    assert.equal(completionHistory.detalle.inicio_omitido, true);
+  });
+
+  await t.test("finaliza una reserva especial cuando todas sus unidades terminan", async () => {
+    state.operations.push(
+      { id: 3001, reserva_id: 805, requerimiento_id: 9901, tipo_servicio: "requerimiento_especial", estado: "asignada", vehiculo_id: 701, conductor_id: 501 },
+      { id: 3002, reserva_id: 805, requerimiento_id: 9901, tipo_servicio: "requerimiento_especial", estado: "asignada", vehiculo_id: 702, conductor_id: 502 }
+    );
+
+    const firstUnit = await request("/api/admin/operaciones/3001/estado", {
+      method: "PATCH",
+      body: { estado: "completada", canal_confirmacion: "llamada_o_whatsapp" },
+    });
+    assert.equal(firstUnit.status, 200, JSON.stringify(firstUnit.body));
+    assert.equal(reservationFor(805).estado, "confirmada");
+
+    const secondUnit = await request("/api/admin/operaciones/3002/estado", {
+      method: "PATCH",
+      body: { estado: "completada", canal_confirmacion: "llamada_o_whatsapp" },
+    });
+    assert.equal(secondUnit.status, 200, JSON.stringify(secondUnit.body));
+    assert.equal(reservationFor(805).estado, "finalizada");
+    assert.equal(reservationFor(805).estado_operativo, "finalizada");
   });
 
   await t.test("devuelve una reserva cancelada a la cola y reabre la operación existente", async () => {
@@ -1158,7 +1264,7 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
       method: "PATCH",
       body: { estado: "en_curso" },
     });
-    assert.equal(startBeforeConfirmation.status, 403);
+    assert.equal(startBeforeConfirmation.status, 400);
 
     const missingDetails = await request(`/api/admin/operaciones/${operationId}/subcontratacion`, {
       method: "PATCH",
@@ -1212,11 +1318,17 @@ test("despacha, recomienda, asigna, sincroniza estados y reabre usando HTTP con 
     });
     assert.equal(reconfirmedSubcontract.status, 200);
 
-    const startedExternally = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "en_curso" } });
-    assert.equal(startedExternally.status, 403);
-    const completedExternally = await request(`/api/admin/operaciones/${operationId}/estado`, { method: "PATCH", body: { estado: "completada" } });
-    assert.equal(completedExternally.status, 403);
-    assert.equal(state.reservations[1].estado, "confirmada");
+    const startedExternally = await request(`/api/admin/operaciones/${operationId}/estado`, {
+      method: "PATCH",
+      body: { estado: "en_curso", canal_confirmacion: "llamada_o_whatsapp" },
+    });
+    assert.equal(startedExternally.status, 200);
+    const completedExternally = await request(`/api/admin/operaciones/${operationId}/estado`, {
+      method: "PATCH",
+      body: { estado: "completada", canal_confirmacion: "llamada_o_whatsapp" },
+    });
+    assert.equal(completedExternally.status, 200);
+    assert.equal(state.reservations[1].estado, "finalizada");
   });
 
   await t.test("cancela y reabre juntos los tramos de una reserva de ida y regreso", async () => {

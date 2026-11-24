@@ -53,6 +53,14 @@ type Operation = {
   tipo_vehiculo_solicitado?: string | null;
   fecha_programada: string;
   fecha_fin_programada?: string | null;
+  itinerario?: Array<{
+    label?: string | null;
+    destino?: string | null;
+    fecha_llegada?: string | null;
+    dias_estadia?: number | null;
+    hora_salida?: string | null;
+    es_retorno?: boolean | null;
+  }>;
   hora_inicio?: string | null;
   hora_fin?: string | null;
   eta_actualizada?: string | null;
@@ -706,6 +714,31 @@ export default function OperacionesPage() {
     }
   };
 
+  const updateOperationState = async (operation: Operation, estado: "en_curso" | "completada") => {
+    const message = estado === "en_curso"
+      ? "¿Confirmaste por llamada o WhatsApp que el servicio ya inició?"
+      : `¿Confirmaste por llamada o WhatsApp que terminó la operación #${operation.id}?${operation.estado === "asignada" ? "\n\nNo se registrará una hora de inicio que no fue reportada." : ""}`;
+    if (!window.confirm(message)) return;
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await request(`/api/admin/operaciones/${operation.id}/estado`, {
+        method: "PATCH",
+        body: JSON.stringify({ estado, canal_confirmacion: "llamada_o_whatsapp" }),
+      });
+      setMessage(estado === "en_curso"
+        ? `Se registró el inicio de la operación #${operation.id}.`
+        : `Se registró la finalización de la operación #${operation.id}.`);
+      await load();
+    } catch (stateError) {
+      setError(stateError instanceof Error ? stateError.message : "No se pudo actualizar el estado de la operación");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const createOperation = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -1251,7 +1284,7 @@ export default function OperacionesPage() {
                       {stateLabels[operation.estado] || operation.estado}
                     </span>
                     {overdue && <span className="rounded-full border border-red-200 bg-red-100 px-2.5 py-1 text-[10px] font-black text-red-700">Vencida · revisar</span>}
-                    {startPending && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-800">Inicio pendiente del conductor</span>}
+                    {startPending && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black text-amber-800">Inicio pendiente de confirmar</span>}
                     {subcontractState !== "no_requerida" && (
                       <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${subcontractState === "confirmada" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                         {subcontractingLabels[subcontractState]}
@@ -1265,6 +1298,19 @@ export default function OperacionesPage() {
                       <p className="mt-1 break-words text-sm font-semibold leading-relaxed text-slate-800">{operation.origen || "Origen pendiente"}</p>
                       <p className="my-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">hasta</p>
                       <p className="break-words text-sm font-semibold leading-relaxed text-slate-900">{operation.destino || "Destino pendiente"}</p>
+                      {operation.itinerario?.length ? (
+                        <ol className="mt-3 space-y-1 border-t border-slate-200 pt-2">
+                          {operation.itinerario.map((point, index) => (
+                            <li key={`${point.label || point.destino || "destino"}-${index}`} className="text-xs text-slate-600">
+                              <span className="font-bold">{index + 1}. {point.label || point.destino || "Destino"}</span>
+                              {point.fecha_llegada && <span className="block text-[10px]">Llegada: {formatDate(point.fecha_llegada)}</span>}
+                              {point.dias_estadia && <span className="block text-[10px]">Estadía: {point.dias_estadia} día(s)</span>}
+                              {point.hora_salida && <span className="block text-[10px]">Salida: {formatTime(point.hora_salida)}</span>}
+                              {point.es_retorno && <span className="block text-[10px] font-bold uppercase">Retorno al origen</span>}
+                            </li>
+                          ))}
+                        </ol>
+                      ) : null}
                     </div>
                     {operation.eta_actualizada && (
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
@@ -1306,6 +1352,8 @@ export default function OperacionesPage() {
 
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                     <button onClick={() => void openOperationHistory(operation)} className="rounded-lg bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700">Historial</button>
+                    {operation.estado === "asignada" && <button onClick={() => void updateOperationState(operation, "en_curso")} disabled={saving} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Registrar inicio</button>}
+                    {["asignada", "en_curso", "incidencia"].includes(operation.estado) && <button onClick={() => void updateOperationState(operation, "completada")} disabled={saving} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Registrar finalización</button>}
                     {["programada", "asignada"].includes(operation.estado)
                       && subcontractState === "no_requerida"
                       && (!isMultiUnitSpecialOperation || hasAssignedResources(operation))

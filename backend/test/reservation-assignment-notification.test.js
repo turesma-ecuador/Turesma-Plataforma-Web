@@ -17,8 +17,6 @@ let reservation = {
 };
 const sentEmails = [];
 const inAppNotifications = [];
-const dueOperations = [];
-const reminderResets = [];
 let failNextEmail = false;
 const operation = {
   id: 70,
@@ -50,13 +48,6 @@ const operation = {
 const fakePool = {
   async query(sql, params) {
     const query = sql.toLowerCase();
-    if (query.startsWith("update operaciones") && query.includes("recordatorio_asignacion_en = current_timestamp")) {
-      return { rows: dueOperations.map((id) => ({ id })), rowCount: dueOperations.length };
-    }
-    if (query.startsWith("update operaciones") && query.includes("recordatorio_asignacion_en = null")) {
-      reminderResets.push(params[0]);
-      return { rows: [], rowCount: 1 };
-    }
     if (query.includes("from operaciones o") && query.includes("o.estado = 'asignada'")) {
       assert.equal(params[0], operation.id);
       return { rows: [operation], rowCount: 1 };
@@ -104,7 +95,6 @@ const {
   notificarClienteReserva,
   notificarClienteOperacion,
   notificarConductorOperacion,
-  enviarRecordatoriosAsignacionConductor,
 } = require("../dist/config/reservaMailer");
 
 test("notifica la asignación y sus cambios con los datos del vehículo", async (t) => {
@@ -174,23 +164,12 @@ test("notifica al cliente y al conductor al asignar una unidad personalizada", a
   assert.match(sentEmails[1].html, /Estadía: 2 día\(s\)/);
   assert.match(sentEmails[1].html, /Retorno al origen/);
   assert.match(sentEmails[1].html, /XYZ-9876 · Van/);
+  assert.match(sentEmails[1].html, /Ver mis servicios/);
+  assert.doesNotMatch(sentEmails[1].html, /confirmar recepción/i);
   assert.match(sentEmails[1].html, /\/vehiculo\/activas/);
   assert.equal(inAppNotifications.length, 2);
   assert.equal(inAppNotifications[1][1], operation.conductor_usuario_id);
   assert.match(inAppNotifications[1][2], /servicio asignado/i);
-});
-
-test("libera el recordatorio para reintentar si falla el correo", async () => {
-  sentEmails.length = 0;
-  dueOperations.splice(0, dueOperations.length, operation.id);
-  reminderResets.length = 0;
-  failNextEmail = true;
-
-  await enviarRecordatoriosAsignacionConductor();
-
-  assert.deepEqual(reminderResets, [operation.id]);
-  assert.equal(sentEmails.length, 0);
-  dueOperations.length = 0;
 });
 
 test("adjunta el logo inline sin reemplazar la proforma de una reserva confirmada", async () => {

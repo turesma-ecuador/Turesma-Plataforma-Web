@@ -10,7 +10,7 @@ import {
 export default function ConductorInicioPage() {
   const {
     checkingSession, panel, vehiculo,
-    msg: panelMsg, err: panelErr,
+    err: panelErr,
   } = useConductorPanel();
 
   if (checkingSession) return (
@@ -128,8 +128,7 @@ export default function ConductorInicioPage() {
         ))}
       </div>
 
-      {/* Mensajes */}
-      {panelMsg && <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700 text-xs font-black uppercase tracking-wider rounded-r-xl">{panelMsg}</div>}
+      {/* Errores */}
       {panelErr && <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-xs font-black uppercase tracking-wider rounded-r-xl">{panelErr}</div>}
 
     </div>

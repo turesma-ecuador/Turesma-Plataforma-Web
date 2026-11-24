@@ -1265,6 +1265,13 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
   if (!Number.isInteger(operationId) || !VALID_STATES.includes(nextState)) {
     return res.status(400).json({ success: false, error: "Estado u operación inválidos" });
   }
+  const isServiceAction = ["en_curso", "completada"].includes(nextState);
+  const confirmationChannel = req.body?.canal_confirmacion === "llamada_o_whatsapp"
+    ? "llamada_o_whatsapp"
+    : null;
+  if (isServiceAction && !confirmationChannel) {
+    return res.status(400).json({ success: false, error: "Confirma que el estado fue verificado por llamada o WhatsApp" });
+  }
 
   const client = await pool.connect();
   try {
@@ -1274,8 +1281,13 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
       await client.query("ROLLBACK");
       return res.status(404).json({ success: false, error: "Operación no encontrada" });
     }
+    let linkedReservation: any = null;
     if (operationLink.rows[0].reserva_id) {
-      await client.query("SELECT id FROM reservas WHERE id = $1 FOR UPDATE", [operationLink.rows[0].reserva_id]);
+      const reservationResult = await client.query(
+        "SELECT id, estado, estado_operativo, fecha_regreso, ida_finalizada FROM reservas WHERE id = $1 FOR UPDATE",
+        [operationLink.rows[0].reserva_id]
+      );
+      linkedReservation = reservationResult.rows[0] || null;
     }
     const current = await client.query("SELECT * FROM operaciones WHERE id = $1 FOR UPDATE", [operationId]);
     if (!current.rowCount) {
@@ -1287,9 +1299,13 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
       await client.query("ROLLBACK");
       return res.status(409).json({ success: false, error: "Una operación completada no se puede cancelar" });
     }
-    if (operation.reserva_id && !operation.requerimiento_id && ["en_curso", "completada"].includes(nextState)) {
+    if (nextState === "en_curso" && operation.estado !== "asignada") {
       await client.query("ROLLBACK");
-      return res.status(403).json({ success: false, error: "El conductor actualiza el inicio y la finalización desde su portal" });
+      return res.status(409).json({ success: false, error: "Solo se puede iniciar una operación asignada" });
+    }
+    if (nextState === "completada" && !["asignada", "en_curso", "incidencia"].includes(operation.estado)) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ success: false, error: "Solo se puede finalizar una operación asignada o en curso" });
     }
     const hasOwnResources = operation.vehiculo_id && operation.conductor_id;
     const hasConfirmedSubcontracting = operation.subcontratacion_estado === "confirmada"
@@ -1297,9 +1313,9 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
       && operation.subcontratista_vehiculo
       && operation.subcontratista_placa
       && operation.subcontratista_conductor;
-    if (nextState === "en_curso" && !hasOwnResources && !hasConfirmedSubcontracting) {
+    if (isServiceAction && !hasOwnResources && !hasConfirmedSubcontracting) {
       await client.query("ROLLBACK");
-      return res.status(409).json({ success: false, error: "No se puede iniciar una operación sin vehículo y conductor" });
+      return res.status(409).json({ success: false, error: "No se puede registrar el servicio sin una asignación confirmada" });
     }
     const now = nextState === "en_curso" ? "hora_inicio_real = CURRENT_TIMESTAMP," : nextState === "completada" ? "hora_fin_real = CURRENT_TIMESTAMP," : "";
     const linkedCancellation = nextState === "cancelada"
@@ -1339,6 +1355,30 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
         );
       }
     }
+    if (operation.reserva_id && nextState === "en_curso") {
+      await client.query(
+        "UPDATE reservas SET estado_operativo = 'en_curso', recogido = false WHERE id = $1 AND estado = 'confirmada'",
+        [operation.reserva_id]
+      );
+    }
+    let completedReservation = false;
+    if (operation.reserva_id && !operation.requerimiento_id && nextState === "completada") {
+      const hasPendingReturn = operation.tipo_servicio === "reserva_ida"
+        && linkedReservation?.fecha_regreso
+        && !linkedReservation.ida_finalizada;
+      if (hasPendingReturn) {
+        await client.query(
+          "UPDATE reservas SET ida_finalizada = true, estado_operativo = 'asignada', recogido = false WHERE id = $1 AND estado = 'confirmada'",
+          [operation.reserva_id]
+        );
+      } else {
+        await client.query(
+          "UPDATE reservas SET estado = 'finalizada', estado_operativo = 'finalizada', recogido = false WHERE id = $1 AND estado = 'confirmada'",
+          [operation.reserva_id]
+        );
+        completedReservation = true;
+      }
+    }
     if (operation.reserva_id && !operation.requerimiento_id && nextState === "cancelada") {
       await client.query(
         `UPDATE reservas
@@ -1352,13 +1392,30 @@ const actualizarEstadoOperacion = async (req: any, res: any) => {
         client,
         Number(affected.id),
         req.user?.id || null,
-        "cambio_estado",
+        nextState === "en_curso"
+          ? "inicio_confirmado_administracion"
+          : nextState === "completada"
+            ? "finalizacion_confirmada_administracion"
+            : "cambio_estado",
         affected.estado,
-        nextState
+        nextState,
+        isServiceAction
+          ? {
+            canal_confirmacion: confirmationChannel,
+            inicio_omitido: nextState === "completada" && affected.estado === "asignada",
+          }
+          : {}
       );
     }
     const updated = await getOperation(client, operationId);
     await client.query("COMMIT");
+    if (operation.requerimiento_id && isServiceAction) {
+      await notificarClienteOperacion(operationId, req.user?.id || null, nextState);
+    } else if (operation.reserva_id && nextState === "en_curso") {
+      await notificarClienteReserva(operation.reserva_id, "en_curso", req.user?.id || null);
+    } else if (operation.reserva_id && completedReservation) {
+      await notificarClienteReserva(operation.reserva_id, "finalizada", req.user?.id || null);
+    }
     return res.json({ success: true, data: updated });
   } catch (error) {
     await client.query("ROLLBACK");

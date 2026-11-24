@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useConductorPanel, type ReservaConductor } from "../_components/use-conductor-panel";
 import { LocationSharing } from "../_components/location-sharing";
 import { WhatsAppButton } from "../../../components/whatsapp-button";
 import {
   User, MapPin, Users, Zap, Clock, Check, X,
-  Loader2, Bus, CheckCircle, Calendar, Navigation, Flag
+  Loader2, Bus, CheckCircle, Calendar, Navigation
 } from "lucide-react";
 
 // Fecha larga en español (ej. "lunes, 21 de julio de 2026").
@@ -24,14 +24,14 @@ type NavPunto = { lat?: number | null; lng?: number | null; texto?: string | nul
 
 const navTarget = (r: ReservaConductor): NavPunto => {
   const regresando = Boolean(r.ida_finalizada && r.fecha_regreso);
-  if (regresando) {
-    return !r.recogido
-      ? { lat: r.destino_lat, lng: r.destino_lng, texto: r.destino || r.tour_ubicacion }
-      : { lat: r.origen_lat, lng: r.origen_lng, texto: r.origen };
+  if (r.estado === "en_curso") {
+    return regresando
+      ? { lat: r.origen_lat, lng: r.origen_lng, texto: r.origen }
+      : { lat: r.destino_lat, lng: r.destino_lng, texto: r.destino || r.tour_ubicacion };
   }
-  return !r.recogido
-    ? { lat: r.origen_lat, lng: r.origen_lng, texto: r.origen }
-    : { lat: r.destino_lat, lng: r.destino_lng, texto: r.destino || r.tour_ubicacion };
+  return regresando
+    ? { lat: r.destino_lat, lng: r.destino_lng, texto: r.destino || r.tour_ubicacion }
+    : { lat: r.origen_lat, lng: r.origen_lng, texto: r.origen };
 };
 
 const regresoDisponible = (r: ReservaConductor) => {
@@ -61,11 +61,6 @@ const formatEstadoLabel = (estado: string) => {
   }
 };
 
-const localDateTimeValue = (date: Date) => {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-};
-
 const ESTADO_BADGE: Record<string, string> = {
   confirmada: "bg-blue-100 text-blue-700 border-blue-200",
   en_curso: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -78,8 +73,7 @@ const ESTADO_ICON: Record<string, React.ReactNode> = {
 };
 
 export default function ConductorActivasPage() {
-  const { checkingSession, panel, msg, err, user, callAction, actionLoadingId } = useConductorPanel();
-  const [delayForms, setDelayForms] = useState<Record<number, { detalle: string; eta: string }>>({});
+  const { checkingSession, panel, err, user } = useConductorPanel();
 
   useEffect(() => {
     if (!window.location.hash.startsWith("#operacion-")) return;
@@ -99,12 +93,8 @@ export default function ConductorActivasPage() {
   const mapTarget = (() => {
     const t = enCursoTrip;
     if (!t || t.requerimiento_id) return null;
-    if (!t.recogido && t.origen_lat != null && t.origen_lng != null) {
-      return { lat: Number(t.origen_lat), lng: Number(t.origen_lng), texto: `Recoger a ${t.usuario_nombre || "cliente"}` };
-    }
-    if (t.destino_lat != null && t.destino_lng != null) {
-      return { lat: Number(t.destino_lat), lng: Number(t.destino_lng), texto: t.destino || t.tour_ubicacion || "Destino" };
-    }
+    const target = navTarget(t);
+    if (target.lat != null && target.lng != null) return { lat: Number(target.lat), lng: Number(target.lng), texto: target.texto || "Destino" };
     return null;
   })();
 
@@ -117,12 +107,7 @@ export default function ConductorActivasPage() {
         destino={mapTarget}
       />
 
-      {/* MENSAJES */}
-      {msg && (
-        <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm font-bold rounded-r-xl flex items-center gap-2">
-          <Check size={16} /> {msg}
-        </div>
-      )}
+      {/* ERRORES */}
       {err && (
         <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm font-bold rounded-r-xl flex items-center gap-2">
           <X size={16} /> {err}
@@ -144,21 +129,11 @@ export default function ConductorActivasPage() {
         <div className="grid gap-5">
           {panel.activas.map((r) => {
             const isCustomOperation = Boolean(r.requerimiento_id);
-            const actionId = r.operation_id || r.id;
             const badgeCls = ESTADO_BADGE[r.estado] || ESTADO_BADGE.pendiente;
             const badgeIcon = ESTADO_ICON[r.estado] || null;
             const regresoEnCurso = Boolean(r.ida_finalizada && r.fecha_regreso);
             const regresoHabilitado = regresoDisponible(r);
             const destinoFinal = regresoEnCurso ? r.origen : (r.destino || r.tour_ubicacion);
-            const delayForm = delayForms[r.id] || { detalle: "", eta: "" };
-            const reportDelay = () => {
-              const eta = new Date(delayForm.eta);
-              if (!Number.isFinite(eta.getTime())) return;
-              void callAction(r.id, "incidencia", {
-                detalle: delayForm.detalle,
-                nueva_eta: eta.toISOString(),
-              });
-            };
 
             return (
               <article
@@ -299,89 +274,6 @@ export default function ConductorActivasPage() {
                     </div>
                   )}
 
-                  {r.estado === "en_curso" && !isCustomOperation && (
-                    <div className="space-y-3 rounded-2xl border border-orange-200 bg-orange-50 p-4">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-orange-800">¿Tuviste un retraso?</p>
-                      <textarea
-                        value={delayForm.detalle}
-                        onChange={(event) => setDelayForms((current) => ({
-                          ...current,
-                          [r.id]: { ...delayForm, detalle: event.target.value },
-                        }))}
-                        maxLength={500}
-                        rows={2}
-                        placeholder="Describe brevemente el obstáculo"
-                        className="w-full rounded-xl border border-orange-200 bg-white p-3 text-sm text-slate-800"
-                      />
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <label className="flex-1 text-xs font-bold text-orange-900">
-                          Nueva llegada estimada
-                          <input
-                            type="datetime-local"
-                            value={delayForm.eta}
-                            onChange={(event) => setDelayForms((current) => ({
-                              ...current,
-                              [r.id]: { ...delayForm, eta: event.target.value },
-                            }))}
-                            min={localDateTimeValue(new Date())}
-                            className="mt-1 w-full rounded-xl border border-orange-200 bg-white p-3 text-sm text-slate-800"
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={reportDelay}
-                          disabled={actionLoadingId === r.id || delayForm.detalle.trim().length < 8 || !delayForm.eta}
-                          className="self-end rounded-xl bg-orange-700 px-4 py-3 text-xs font-black text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Reportar retraso
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* FASE DEL VIAJE EN CURSO: recoger primero, luego llevar */}
-                  {r.estado === "en_curso" && !isCustomOperation && (
-                    r.recogido ? (
-                      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3">
-                        <Flag size={18} className="text-emerald-600 mt-0.5 shrink-0" />
-                        <div>
-                          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                            Ahora lleva al cliente {regresoEnCurso ? "de regreso a" : "a"}
-                          </p>
-                          <p className="text-sm font-black text-slate-900">{destinoFinal || "Destino"}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
-                        <Navigation size={18} className="text-blue-600 mt-0.5 shrink-0" />
-                        <div>
-                          <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
-                            Primero ve a recoger al cliente {regresoEnCurso ? "en el destino" : "en"}
-                          </p>
-                          <p className="text-sm font-black text-slate-900">
-                            {regresoEnCurso ? (r.destino || r.tour_ubicacion || "Destino") : (r.origen || "Punto de recogida")}
-                          </p>
-                          {!regresoEnCurso && r.referencia_recogida && (
-                            <p className="mt-2 text-xs font-semibold text-blue-800">
-                              Referencia: {r.referencia_recogida}
-                            </p>
-                          )}
-                          {!regresoEnCurso && r.recogida_lat != null && r.recogida_lng != null && (
-                            <a
-                              href={`https://www.google.com/maps/dir/?api=1&destination=${r.recogida_lat},${r.recogida_lng}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-blue-700"
-                            >
-                              <Navigation size={12} /> Abrir punto de recogida
-                            </a>
-                          )}
-                          <p className="text-[10px] text-slate-400 mt-1">Activa &ldquo;Compartir ubicación&rdquo; arriba para ver la ruta en el mapa.</p>
-                        </div>
-                      </div>
-                    )
-                  )}
-
                   {/* CÓMO LLEGAR EN GOOGLE MAPS (según la fase: recoger o destino) */}
                   {!isCustomOperation && (r.estado === "confirmada" || r.estado === "en_curso")
                     && (!regresoEnCurso || regresoHabilitado)
@@ -392,104 +284,20 @@ export default function ConductorActivasPage() {
                       rel="noopener noreferrer"
                       className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-slate-900 hover:bg-black text-white font-black text-[11px] uppercase tracking-widest transition-all"
                     >
-                      <Navigation size={14} /> Cómo llegar {r.recogido
+                      <Navigation size={14} /> Cómo llegar {r.estado === "en_curso"
                         ? (regresoEnCurso ? "al origen" : "al destino")
                         : (regresoEnCurso ? "al cliente en el destino" : "al cliente")} (Google Maps)
                     </a>
                   )}
 
-                  {/* ACCIONES DEL CONDUCTOR */}
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    {r.operation_id && !r.asignacion_confirmada_en && ["confirmada", "en_curso"].includes(r.estado) && (
-                      <button
-                        onClick={() => callAction(actionId, "confirmar-asignacion", undefined, "operaciones")}
-                        disabled={actionLoadingId === actionId}
-                        className="flex-1 rounded-2xl border-2 border-blue-200 bg-blue-50 py-3 text-xs font-black text-blue-900 disabled:opacity-60"
-                      >
-                        {actionLoadingId === actionId ? "Guardando..." : "Confirmar que recibí este servicio"}
-                      </button>
-                    )}
-                    {r.estado === "confirmada" && (
-                      <button
-                        onClick={() => callAction(actionId, "estado", { estado: "en_curso" }, isCustomOperation ? "operaciones" : "reservas")}
-                        disabled={actionLoadingId === actionId || (!isCustomOperation && regresoEnCurso && !regresoHabilitado)}
-                        className="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                        {isCustomOperation ? "Iniciar servicio" : regresoEnCurso && !regresoHabilitado ? "Regreso programado" : regresoEnCurso ? "Iniciar regreso" : "Iniciar viaje"}
-                      </button>
-                    )}
-                    {r.estado === "en_curso" && r.itinerario?.length
-                      && (isCustomOperation || r.recogido)
-                      && (Number(r.itinerario_progreso) || 0) < r.itinerario.length && (
-                      <button
-                        onClick={() => callAction(actionId, "llegada", undefined, "operaciones")}
-                        disabled={actionLoadingId === actionId}
-                        className="flex-1 rounded-2xl bg-violet-700 py-3 text-xs font-black text-white disabled:opacity-60"
-                      >
-                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
-                        {" "}Llegué a {r.itinerario[Number(r.itinerario_progreso) || 0]?.label || r.itinerario[Number(r.itinerario_progreso) || 0]?.destino || "este destino"}
-                      </button>
-                    )}
-                    {r.estado === "en_curso" && isCustomOperation && (!r.itinerario?.length
-                      || (Number(r.itinerario_progreso) || 0) >= r.itinerario.length) && (
-                      <button
-                        onClick={() => {
-                          if (window.confirm("¿Confirmas que llegaste al destino final y terminaste este servicio?")) {
-                            void callAction(actionId, "estado", { estado: "completada" }, "operaciones");
-                          }
-                        }}
-                        disabled={actionLoadingId === actionId}
-                        className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
-                      >
-                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Finalizar servicio
-                      </button>
-                    )}
-                    {r.estado === "en_curso" && !isCustomOperation && !r.recogido && (
-                      <button
-                        onClick={() => callAction(r.id, "recoger")}
-                        disabled={actionLoadingId === actionId}
-                        className="flex-1 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
-                      >
-                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Ya recogí al cliente
-                      </button>
-                    )}
-                    {r.estado === "en_curso" && !isCustomOperation && !r.itinerario?.length && r.recogido && (
-                      <button
-                        onClick={() => {
-                          if (window.confirm("¿Confirmas que llegaste al destino y terminaste este servicio?")) {
-                            void callAction(r.id, "estado", { estado: "finalizada" });
-                          }
-                        }}
-                        disabled={actionLoadingId === actionId}
-                        className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
-                      >
-                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Finalizar viaje
-                      </button>
-                    )}
-                    {r.estado === "en_curso" && !isCustomOperation && r.itinerario?.length
-                      && (Number(r.itinerario_progreso) || 0) >= r.itinerario.length && (
-                      <button
-                        onClick={() => {
-                          if (window.confirm("¿Confirmas que llegaste al último destino y terminaste este servicio?")) {
-                            void callAction(r.id, "estado", { estado: "finalizada" });
-                          }
-                        }}
-                        disabled={actionLoadingId === actionId}
-                        className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60"
-                      >
-                        {actionLoadingId === actionId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Finalizar servicio
-                      </button>
-                    )}
-                  </div>
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex items-center gap-2">
                     <CheckCircle size={14} className="text-[#E31E24] flex-shrink-0" />
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                       {isCustomOperation
-                        ? "El cliente recibirá una actualización al iniciar y cuando todas las unidades del servicio estén completas."
+                        ? "El itinerario es informativo. Administración registra el inicio y cierre después de coordinar contigo."
                         : r.fecha_regreso && !regresoEnCurso
-                        ? "Al finalizar la ida, el regreso seguirá programado en esta reserva."
-                        : "Al finalizar, el cliente podrá calificar su viaje"}
+                        ? "El itinerario es informativo. Administración coordina contigo por llamada o WhatsApp y registra el avance del servicio."
+                        : "Administración coordina contigo por llamada o WhatsApp y registra el inicio y la finalización."}
                     </p>
                   </div>
                 </div>
