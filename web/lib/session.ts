@@ -8,6 +8,7 @@ export type SessionUser = {
   email?: string;
   rol?: string;
   imagen_url?: string | null;
+  preferred_language?: "es" | "en" | null;
 };
 
 export const normalizeRole = (role?: string) => {

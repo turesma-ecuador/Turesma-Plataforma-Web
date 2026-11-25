@@ -5,6 +5,7 @@ import {
   cloneElement,
   createContext,
   isValidElement,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -12,10 +13,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { getAuthHeaders, getStoredToken } from "./session";
 
 export type Language = "es" | "en";
 
 const LANGUAGE_KEY = "turesma-language";
+const PENDING_LANGUAGE_KEY = "turesma-pending-language";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 const translations: Record<string, string> = {
   "Nosotros": "About us",
@@ -772,29 +776,134 @@ const translations: Record<string, string> = {
   "Los datos de tu cuenta se actualizaron correctamente.": "Your account details were updated successfully.",
 };
 
-const localeContext = createContext<{ language: Language; setLanguage: (language: Language) => void }>({
+type LocaleContextValue = {
+  language: Language;
+  setLanguage: (language: Language) => Promise<void>;
+  languageSaveError: string;
+  savingLanguage: boolean;
+};
+
+const localeContext = createContext<LocaleContextValue>({
   language: "es",
-  setLanguage: () => undefined,
+  setLanguage: async () => undefined,
+  languageSaveError: "",
+  savingLanguage: false,
 });
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>("es");
+  const [languageSaveError, setLanguageSaveError] = useState("");
+  const [savingLanguage, setSavingLanguage] = useState(false);
+  const languageChoiceRevision = useRef(0);
+  const languageSaveQueue = useRef<Promise<void>>(Promise.resolve());
+
+  const saveAccountLanguage = useCallback((next: Language) => {
+    const save = languageSaveQueue.current.then(async () => {
+      const response = await fetch(`${API_URL}/api/auth/me/language`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ language: next }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "No se pudo guardar el idioma");
+    });
+    languageSaveQueue.current = save.catch(() => undefined);
+    return save;
+  }, []);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(LANGUAGE_KEY);
     if (saved === "en" || saved === "es") setLanguageState(saved);
-  }, []);
+
+    if (!getStoredToken()) return;
+    let active = true;
+    const syncAccountLanguage = async () => {
+      const revisionAtStart = languageChoiceRevision.current;
+      try {
+        const response = await fetch(`${API_URL}/api/auth/me`, { headers: getAuthHeaders() });
+        if (response.status === 401) return;
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.error || "No se pudo cargar el idioma de la cuenta");
+        if (languageChoiceRevision.current !== revisionAtStart) return;
+
+        const pending = window.localStorage.getItem(PENDING_LANGUAGE_KEY);
+        if (pending === "en" || pending === "es") {
+          await saveAccountLanguage(pending);
+          if (
+            languageChoiceRevision.current === revisionAtStart
+            && window.localStorage.getItem(PENDING_LANGUAGE_KEY) === pending
+          ) {
+            window.localStorage.removeItem(PENDING_LANGUAGE_KEY);
+          }
+          return;
+        }
+
+        const preferred = data?.user?.preferred_language;
+        if (preferred === "en" || preferred === "es") {
+          window.localStorage.setItem(LANGUAGE_KEY, preferred);
+          if (active) setLanguageState(preferred);
+          return;
+        }
+
+        const localPreference = window.localStorage.getItem(LANGUAGE_KEY);
+        const initialPreference = localPreference === "en" ? "en" : "es";
+        await saveAccountLanguage(initialPreference);
+      } catch (error) {
+        console.error("No se pudo sincronizar el idioma de la cuenta:", error);
+        const currentLanguage = window.localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "es";
+        if (active) setLanguageSaveError(
+          currentLanguage === "en"
+            ? "We couldn't sync your language preference. Try selecting it again."
+            : "No se pudo sincronizar tu idioma. Intenta seleccionarlo nuevamente.",
+        );
+      }
+    };
+    void syncAccountLanguage();
+    return () => { active = false; };
+  // The account language is loaded once when the app starts with an active session.
+  }, [saveAccountLanguage]);
 
   useEffect(() => {
     document.documentElement.lang = language === "en" ? "en" : "es";
   }, [language]);
 
-  const setLanguage = (next: Language) => {
+  const setLanguage = useCallback(async (next: Language) => {
+    const revision = ++languageChoiceRevision.current;
     window.localStorage.setItem(LANGUAGE_KEY, next);
     setLanguageState(next);
-  };
+    setLanguageSaveError("");
+    if (!getStoredToken()) {
+      window.localStorage.setItem(PENDING_LANGUAGE_KEY, next);
+      return;
+    }
 
-  const value = useMemo(() => ({ language, setLanguage }), [language]);
+    window.localStorage.setItem(PENDING_LANGUAGE_KEY, next);
+    setSavingLanguage(true);
+    try {
+      await saveAccountLanguage(next);
+      if (
+        languageChoiceRevision.current === revision
+        && window.localStorage.getItem(PENDING_LANGUAGE_KEY) === next
+      ) {
+        window.localStorage.removeItem(PENDING_LANGUAGE_KEY);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setLanguageSaveError(
+        next === "en"
+          ? `Language changed on this device, but couldn't be saved to your account${message ? `: ${message}` : "."}`
+          : `El idioma cambió en este dispositivo, pero no se pudo guardar en tu cuenta${message ? `: ${message}` : "."}`,
+      );
+      throw error;
+    } finally {
+      setSavingLanguage(false);
+    }
+  }, [saveAccountLanguage]);
+
+  const value = useMemo(
+    () => ({ language, setLanguage, languageSaveError, savingLanguage }),
+    [language, setLanguage, languageSaveError, savingLanguage],
+  );
   return <localeContext.Provider value={value}>{children}</localeContext.Provider>;
 }
 
@@ -810,9 +919,17 @@ export function formatLocalizedDate(value: string, language: Language) {
 }
 
 export function LanguageSwitcher({ compactOnMobile = false }: { compactOnMobile?: boolean }) {
-  const { language, setLanguage } = useLocale();
+  const { language, setLanguage, languageSaveError, savingLanguage } = useLocale();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const chooseLanguage = async (next: Language) => {
+    try {
+      await setLanguage(next);
+      setOpen(false);
+    } catch {
+      // The provider exposes the save error in this menu.
+    }
+  };
 
   return (
     <div
@@ -846,19 +963,22 @@ export function LanguageSwitcher({ compactOnMobile = false }: { compactOnMobile?
           <button
             type="button"
             aria-pressed={language === "en"}
-            onClick={() => { setLanguage("en"); setOpen(false); }}
-            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-bold text-white transition hover:bg-black/15 ${language === "en" ? "bg-black/15" : ""}`}
+            disabled={savingLanguage}
+            onClick={() => void chooseLanguage("en")}
+            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-bold text-white transition hover:bg-black/15 disabled:opacity-60 ${language === "en" ? "bg-black/15" : ""}`}
           >
             <span aria-hidden="true">🇬🇧</span> English
           </button>
           <button
             type="button"
             aria-pressed={language === "es"}
-            onClick={() => { setLanguage("es"); setOpen(false); }}
-            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-bold text-white transition hover:bg-black/15 ${language === "es" ? "bg-black/15" : ""}`}
+            disabled={savingLanguage}
+            onClick={() => void chooseLanguage("es")}
+            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-bold text-white transition hover:bg-black/15 disabled:opacity-60 ${language === "es" ? "bg-black/15" : ""}`}
           >
             <span aria-hidden="true">🇪🇸</span> Español
           </button>
+          {languageSaveError && <p role="alert" className="px-3 py-2 text-xs font-semibold text-white">{languageSaveError}</p>}
         </div>
       )}
     </div>

@@ -183,8 +183,8 @@ function LoginPageContent() {
 
       const user = (data?.user ?? {}) as Record<string, unknown>;
       const token = data?.token as string | undefined;
-      setStoredUser(user);
       if (token) setStoredToken(token);
+      setStoredUser(user);
       localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
       window.location.replace(getRolePath(String(user.rol || "")));
     } catch (submitError) {

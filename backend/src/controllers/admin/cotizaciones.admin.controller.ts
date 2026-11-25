@@ -253,7 +253,7 @@ const aprobarCotizacion = async (req: any, res: any) => {
     await client.query("COMMIT");
 
     // La reserva se asignará desde Despacho solo después de confirmar el pago.
-    await crearNotificacion(req.user?.id, c.usuario_id, `Tu cotización fue aprobada por $${precio}. Reserva #${reservaId} creada: completa el pago para confirmarla y luego asignaremos el vehículo desde Despacho.`, reservaId, "reserva", reservaId);
+    await crearNotificacion(req.user?.id, c.usuario_id, `Tu cotización fue aprobada por $${precio}. Reserva #${reservaId} creada: completa el pago para confirmarla y luego asignaremos el vehículo desde Despacho.`, reservaId, "reserva", reservaId, `Your quote was approved for $${precio}. Reservation #${reservaId} has been created: complete the payment to confirm it, then we'll assign a vehicle.`);
 
     return res.json({ message: "Cotización aprobada y reserva creada sin asignación, pendiente de pago", reserva_id: reservaId });
   } catch (e) {
@@ -301,7 +301,7 @@ const contraofertarCotizacion = async (req: any, res: any) => {
       [id, precio, mensaje || null]
     );
     await client.query("COMMIT");
-    await crearNotificacion(req.user?.id, cot.rows[0].usuario_id, `El administrador te propone $${precio} por tu cotización #${id}. Revisa y responde.`, null, "cotizacion", Number(id));
+    await crearNotificacion(req.user?.id, cot.rows[0].usuario_id, `El administrador te propone $${precio} por tu cotización #${id}. Revisa y responde.`, null, "cotizacion", Number(id), `The administrator is offering $${precio} for your quote #${id}. Review and respond.`);
     return res.json({ message: "Contraoferta enviada al cliente" });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -428,7 +428,7 @@ const rechazarCotizacion = async (req: any, res: any) => {
       [id, respuesta_admin || "Cotización no disponible"]
     );
     const dueno = await pool.query("SELECT usuario_id FROM cotizaciones WHERE id = $1", [id]);
-    await crearNotificacion(req.user?.id, dueno.rows[0]?.usuario_id, `Tu cotización #${id} fue rechazada. ${respuesta_admin || ""}`.trim(), null, "cotizacion", Number(id));
+    await crearNotificacion(req.user?.id, dueno.rows[0]?.usuario_id, `Tu cotización #${id} fue rechazada. ${respuesta_admin || ""}`.trim(), null, "cotizacion", Number(id), `Your quote #${id} was declined. ${respuesta_admin || ""}`.trim());
     return res.json({ message: "Cotización rechazada" });
   } catch (e) {
     console.error(e);

@@ -75,7 +75,8 @@ const aprobarVerificacion = async (req: any, res: any) => {
       "Tu identidad fue VERIFICADA. Ya puedes solicitar y confirmar tus servicios en Turesma.",
       null,
       null,
-      null
+      null,
+      "Your identity has been VERIFIED. You can now request and confirm services on Turesma."
     );
 
     // Correo al cliente avisando que su identidad quedó verificada (best-effort).
@@ -117,7 +118,8 @@ const rechazarVerificacion = async (req: any, res: any) => {
       `Tu verificación de identidad fue RECHAZADA${notas ? ": " + notas : ""}. Puedes volver a enviar tu documento.`,
       null,
       null,
-      null
+      null,
+      `Your identity verification was REJECTED${notas ? `: ${notas}` : ""}. You can submit your document again.`
     );
 
     return res.status(200).json({ message: "Verificación rechazada" });

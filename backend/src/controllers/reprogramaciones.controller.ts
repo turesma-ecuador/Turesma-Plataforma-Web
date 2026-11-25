@@ -475,7 +475,8 @@ const proponerReprogramacion = async (req: any, res: any) => {
     await client.query("COMMIT");
     await crearNotificacion(req.user?.id, item.usuario_id,
       `Turesma envió una alternativa de fecha para el servicio${item.grupo_numero ? ` del grupo ${item.grupo_numero}` : ""} de la reserva #${item.reserva_id}.`,
-      Number(item.reserva_id), "reserva", Number(item.reserva_id));
+      Number(item.reserva_id), "reserva", Number(item.reserva_id),
+      `Turesma sent an alternative date for the service${item.grupo_numero ? ` in group ${item.grupo_numero}` : ""} on reservation #${item.reserva_id}.`);
     return res.json({ message: "Alternativa enviada al cliente" });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -515,7 +516,8 @@ const rechazarSolicitudReprogramacion = async (req: any, res: any) => {
     await client.query("COMMIT");
     await crearNotificacion(req.user?.id, item.usuario_id,
       `La solicitud de cambio de fecha${item.grupo_numero ? ` del grupo ${item.grupo_numero}` : ""} de la reserva #${item.reserva_id} no está disponible. La reserva conserva su fecha original. ${note}`,
-      Number(item.reserva_id), "reserva", Number(item.reserva_id));
+      Number(item.reserva_id), "reserva", Number(item.reserva_id),
+      `The date change request${item.grupo_numero ? ` for group ${item.grupo_numero}` : ""} on reservation #${item.reserva_id} isn't available. The reservation keeps its original date. ${note}`);
     return res.json({ message: "Solicitud respondida; la fecha original se mantiene" });
   } catch (error) {
     await client.query("ROLLBACK");

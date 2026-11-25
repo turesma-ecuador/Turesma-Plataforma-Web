@@ -8,6 +8,7 @@ const {
   resetPassword,
   getMe,
   updateMe,
+  updateLanguagePreference,
   recordSessionActivity,
   logout,
 } = require("../controllers/auth.controller");
@@ -39,6 +40,7 @@ router.post("/reset-password", resetPassword);
 router.post("/upload-perfil", uploadPerfilImagen);
 router.get("/me", verifyToken, getMe);
 router.put("/me", verifyToken, updateMe);
+router.put("/me/language", verifyToken, updateLanguagePreference);
 router.post("/activity", verifyToken, recordSessionActivity);
 router.post("/logout", verifyToken, logout);
 

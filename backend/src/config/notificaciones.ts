@@ -12,14 +12,21 @@ const crearNotificacion = async (
   mensaje: string,
   reservaId: number | null = null,
   linkType: LinkType = null,
-  linkId: number | null = null
+  linkId: number | null = null,
+  englishMessage: string | null = null
 ): Promise<boolean> => {
   if (!senderId || !recipientId || Number(senderId) === Number(recipientId)) return false;
   try {
     await pool.query(
       `INSERT INTO mensajes_comunicacion (sender_user_id, recipient_user_id, mensaje, reserva_id, leido, link_type, link_id)
-       VALUES ($1, $2, $3, $4, false, $5, $6)`,
-      [senderId, recipientId, mensaje, reservaId, linkType, linkId]
+       VALUES ($1, $2,
+         CASE
+           WHEN COALESCE((SELECT preferred_language FROM usuarios WHERE id = $2), 'es') = 'en'
+             AND $7::text IS NOT NULL THEN $7
+           ELSE $3
+         END,
+         $4, false, $5, $6)`,
+      [senderId, recipientId, mensaje, reservaId, linkType, linkId, englishMessage]
     );
     return true;
   } catch (e: any) {

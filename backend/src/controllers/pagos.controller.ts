@@ -151,7 +151,8 @@ const confirmarPagoPayphone = async (req: any, res: any) => {
         `Recibimos tu pago PayPhone de $${monto.toFixed(2)} para la reserva #${reservaId}. Estado de pago: ${estadoPago}.`,
         reservaId,
         "reserva",
-        reservaId
+        reservaId,
+        `We received your PayPhone payment of $${monto.toFixed(2)} for reservation #${reservaId}. Payment status: ${estadoPago === "parcial" ? "partially paid" : estadoPago === "reembolsado" ? "refunded" : "pending"}.`
       );
     }
     let despacho = null;

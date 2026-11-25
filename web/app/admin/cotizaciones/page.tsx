@@ -127,6 +127,7 @@ function AdminCotizacionesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pendingFocusId = useRef<number | null>(null);
+  const handledChatParam = useRef<string | null>(null);
   const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
   const [customRequests, setCustomRequests] = useState<RequerimientoPersonalizado[]>([]);
   const [resumen, setResumen] = useState<Resumen | null>(null);
@@ -359,10 +360,18 @@ function AdminCotizacionesContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    const match = /^cotizacion:(\d+)$/.exec(searchParams.get("chat") || "");
-    if (!match) return;
+    const chatParam = searchParams.get("chat") || "";
+    const match = /^cotizacion:(\d+)$/.exec(chatParam);
+    if (!match) {
+      handledChatParam.current = null;
+      return;
+    }
+    if (handledChatParam.current === chatParam) return;
     const target = cotizaciones.find((cotizacion) => cotizacion.id === Number(match[1]));
-    if (target) setChatCotizacion(target);
+    if (target) {
+      handledChatParam.current = chatParam;
+      setChatCotizacion(target);
+    }
   }, [cotizaciones, searchParams]);
 
   // Una vez cargada la lista, si hay una cotización pendiente de enfocar, la abrimos.

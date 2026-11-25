@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import {
   Calendar, Plus, Edit3, Trash2, X, Search,
   CheckCircle, Clock, AlertCircle, Loader2, User, Car,
-  MapPin, ArrowRight, CreditCard, FileSpreadsheet, History
+  MapPin, ArrowRight, CreditCard, FileSpreadsheet, History, MessageCircle
 } from "lucide-react";
 import { MapPicker, Punto } from "../../../components/map-picker";
 import { VehiculoCalendario } from "../../../components/vehiculo-calendario";
@@ -1102,101 +1102,117 @@ export default function AdminReservasPage() {
           </div>
           {/* ESCRITORIO: tabla */}
           <div className="hidden lg:block overflow-x-auto">
-            <table className="min-w-[1100px] w-full text-left border-collapse">
+            <table className="w-full min-w-[885px] table-fixed border-collapse text-left">
+              <colgroup>
+                <col style={{ width: "45px" }} />
+                <col style={{ width: "145px" }} />
+                <col style={{ width: "125px" }} />
+                <col style={{ width: "125px" }} />
+                <col style={{ width: "195px" }} />
+                <col style={{ width: "110px" }} />
+                <col style={{ width: "140px" }} />
+              </colgroup>
               <thead>
                 <tr className="bg-slate-50/60 border-b border-slate-100">
-                  {["#ID", "Cliente", "Vehículo / Conductor (solo lectura)", "Origen → Destino", "Fecha Reserva", "Estado", "Acciones"].map(h => (
-                    <th key={h} className="px-4 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
+                  {["#", "Cliente", "Unidad / conductor", "Ruta", "Fechas", "Estado", "Acciones"].map(h => (
+                    <th key={h} className="px-2.5 py-3 text-[9px] font-black uppercase tracking-wide text-slate-400">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filtered.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="px-4 py-4">
+                    <td className="px-2.5 py-3">
                       <span className="font-black text-slate-700 text-sm">#{r.id}</span>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-2.5 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-red-50">
                           <User size={12} className="text-[#E31E24]" />
                         </div>
-                        <div>
-                          <p className="text-xs font-black text-slate-700">{r.cliente_nombre || `Usuario #${r.usuario_id}`}</p>
-                          <p className="text-[10px] text-slate-400">{r.cliente_email || ""}</p>
+                        <div className="min-w-0">
+                          <p className="line-clamp-2 break-words text-[11px] font-black leading-tight text-slate-700" title={r.cliente_nombre || `Usuario #${r.usuario_id}`}>{r.cliente_nombre || `Usuario #${r.usuario_id}`}</p>
+                          <p className="truncate text-[10px] text-slate-400" title={r.cliente_email || ""}>{r.cliente_email || ""}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-2.5 py-3">
                       <div className="space-y-1">
                         {r.vehiculo_placa ? (
-                          <div className="flex items-center gap-1">
+                          <div className="flex min-w-0 items-center gap-1">
                             <Car size={11} className="text-slate-400" />
-                            <span className="text-xs font-black text-slate-700">{r.vehiculo_placa}</span>
-                            {r.vehiculo_modelo && <span className="text-[10px] text-slate-400">· {r.vehiculo_modelo}</span>}
+                            <span className="truncate text-[11px] font-black text-slate-700" title={`${r.vehiculo_placa}${r.vehiculo_modelo ? ` · ${r.vehiculo_modelo}` : ""}`}>
+                              {r.vehiculo_placa}{r.vehiculo_modelo ? ` · ${r.vehiculo_modelo}` : ""}
+                            </span>
                           </div>
                         ) : (
-                          <span className="text-[10px] text-amber-500 font-bold">Preferencia: {r.tipo_vehiculo || "Sin indicar"} · unidad pendiente</span>
+                          <span className="block truncate text-[10px] font-bold text-amber-600" title={`Preferencia: ${r.tipo_vehiculo || "Sin indicar"} · unidad pendiente`}>
+                            {r.tipo_vehiculo || "Sin preferencia"} · pendiente
+                          </span>
                         )}
-                        {r.vehiculo_placa && <span className="block text-[10px] text-slate-400">Preferencia: {r.tipo_vehiculo || "Sin indicar"}</span>}
+                        {r.vehiculo_placa && <span className="block truncate text-[10px] text-slate-400" title={`Preferencia: ${r.tipo_vehiculo || "Sin indicar"}`}>Pref.: {r.tipo_vehiculo || "Sin indicar"}</span>}
                         {r.conductor_nombre && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex min-w-0 items-center gap-1">
                             <User size={11} className="text-slate-400" />
-                            <span className="text-[10px] text-slate-500">{r.conductor_nombre}</span>
+                            <span className="truncate text-[10px] text-slate-500" title={r.conductor_nombre}>{r.conductor_nombre}</span>
                           </div>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-2.5 py-3">
                       <div className="space-y-1">
                         {r.origen && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex min-w-0 items-center gap-1">
                             <MapPin size={10} className="text-emerald-500" />
-                            <span className="text-[10px] text-slate-600 max-w-[140px] truncate">{r.origen}</span>
+                            <span className="min-w-0 truncate text-[10px] text-slate-600" title={r.origen}>{r.origen}</span>
                           </div>
                         )}
                         {r.destino && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex min-w-0 items-center gap-1">
                             <MapPin size={10} className="text-[#E31E24]" />
-                            <span className="text-[10px] text-slate-600 max-w-[140px] truncate">{r.destino}</span>
+                            <span className="min-w-0 truncate text-[10px] text-slate-600" title={r.destino}>{r.destino}</span>
                           </div>
                         )}
                         {!r.origen && !r.destino && <span className="text-[10px] text-slate-300 italic">Sin ruta</span>}
                       </div>
                     </td>
-                    <td className="px-4 py-4">
-                      <p className="text-xs text-slate-600">{formatFecha(r.fecha_reserva)}</p>
+                    <td className="px-2.5 py-3">
+                      <p className="truncate whitespace-nowrap text-[11px] font-semibold text-slate-700" title={`Reserva: ${formatFecha(r.fecha_reserva)}`}>
+                        <span className="text-slate-400">Reserva · </span>{formatFecha(r.fecha_reserva)}
+                      </p>
                       {r.num_personas && <p className="text-[10px] text-slate-400">{r.num_personas} persona(s)</p>}
-                      {r.fecha_salida && <p className="text-[10px] text-slate-500">Salida: {formatFecha(r.fecha_salida)}</p>}
-                      {r.fecha_llegada && <p className="text-[10px] text-slate-500">Llegada: {formatFecha(r.fecha_llegada)}</p>}
-                      {r.fecha_fin && <p className="text-[10px] text-slate-500">Hasta: {formatFechaCorta(r.fecha_fin)}</p>}
-                      {r.fecha_regreso && <p className="text-[10px] text-slate-500">Regreso: {formatFechaCorta(r.fecha_regreso)}{r.hora_regreso ? ` · ${r.hora_regreso.slice(0, 5)}` : ""}</p>}
+                      {r.fecha_salida && <p className="truncate whitespace-nowrap text-[10px] text-slate-600" title={`Salida: ${formatFecha(r.fecha_salida)}`}>Salida · {formatFecha(r.fecha_salida)}</p>}
+                      {r.fecha_llegada && <p className="truncate whitespace-nowrap text-[10px] text-slate-600" title={`Llegada: ${formatFecha(r.fecha_llegada)}`}>Llegada · {formatFecha(r.fecha_llegada)}</p>}
+                      {r.fecha_fin && <p className="text-[10px] text-slate-500">Hasta · {formatFechaCorta(r.fecha_fin)}</p>}
+                      {r.fecha_regreso && <p className="text-[10px] text-slate-500">Regreso · {formatFechaCorta(r.fecha_regreso)}{r.hora_regreso ? ` · ${r.hora_regreso.slice(0, 5)}` : ""}</p>}
                       <p className="text-[10px] text-slate-400">{r.num_viajes || 1} viaje(s) · {r.modalidad_servicio === "varios_dias" || r.fecha_fin ? "Varios días" : r.modalidad_servicio === "horas" ? `Por horas${r.duracion_horas ? ` · ${r.duracion_horas} h` : ""}` : "Por día"}</p>
                     </td>
-                    <td className="px-4 py-4">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-black uppercase border ${ESTADO_BADGE[r.estado] || ESTADO_BADGE.pendiente}`}>
+                    <td className="px-1 py-3">
+                      <span className={`inline-flex whitespace-nowrap items-center gap-1 rounded-full border px-2 py-1 text-[9px] font-black uppercase ${ESTADO_BADGE[r.estado] || ESTADO_BADGE.pendiente}`}>
                         {ESTADO_ICON[r.estado]}
                         {ESTADO_LABEL[r.estado] || r.estado.replace("_", " ")}
                       </span>
                     </td>
-                    <td className="px-4 py-4">
-                      <div className="flex gap-1 flex-wrap">
-                        <button type="button" onClick={() => openReservationConversation(r)} className="rounded-lg px-2 py-1.5 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-50">Conversación</button>
-                        <button onClick={() => void openHistory(r)} className="rounded-lg p-1.5 text-violet-600 hover:bg-violet-50" title="Ver historial"><History size={14} /></button>
+                    <td className="px-2.5 py-3">
+                      <div className="flex items-center gap-0.5">
+                        <button type="button" onClick={() => openReservationConversation(r)} aria-label={`Conversación de reserva ${r.id}`} title="Conversación" className="rounded-lg p-1 text-blue-700 hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-[#E31E24]"><MessageCircle size={14} /></button>
+                        <button type="button" onClick={() => void openHistory(r)} aria-label={`Historial de reserva ${r.id}`} className="rounded-lg p-1 text-violet-600 hover:bg-violet-50 focus-visible:ring-2 focus-visible:ring-[#E31E24]" title="Ver historial"><History size={14} /></button>
                         <button
+                          type="button"
                           onClick={() => {
                             setEstadoModal(r);
                             setNuevoEstado(TRANSICIONES_VALIDAS[r.estado]?.[0] || "");
                           }}
-                          className="px-2 py-1.5 text-[10px] font-black uppercase bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-all"
+                          aria-label={`Cambiar estado de reserva ${r.id}`}
+                          className="rounded-lg p-1 text-slate-600 transition-all hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-[#E31E24]"
                           title="Cambiar estado"
                         >
-                          Estado
+                          <Clock size={14} />
                         </button>
-                        <button onClick={() => openEdit(r)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-all" title="Editar">
+                        <button type="button" onClick={() => openEdit(r)} aria-label={`Editar reserva ${r.id}`} className="rounded-lg p-1 text-blue-500 transition-all hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-[#E31E24]" title="Editar">
                           <Edit3 size={14} />
                         </button>
-                        <button onClick={() => handleDelete(r)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Eliminar">
+                        <button type="button" onClick={() => handleDelete(r)} aria-label={`Eliminar reserva ${r.id}`} className="rounded-lg p-1 text-red-500 transition-all hover:bg-red-50 focus-visible:ring-2 focus-visible:ring-[#E31E24]" title="Eliminar">
                           <Trash2 size={14} />
                         </button>
                       </div>

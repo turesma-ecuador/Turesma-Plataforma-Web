@@ -387,6 +387,9 @@ const actualizarRequerimientoAdmin = async (req: any, res: any) => {
     const notificationText = isProposal
       ? `Turesma envió una propuesta para tu requerimiento #${id}. Total: $${Number(updated.precio_final).toFixed(2)}. Revisa la proforma y los detalles en Mis requerimientos.`
       : `Turesma respondió a tu requerimiento personalizado #${id}: ${respuesta}`;
+    const notificationTextEn = isProposal
+      ? `Turesma sent a proposal for your request #${id}. Total: $${Number(updated.precio_final).toFixed(2)}. Review the invoice and details in My Requests.`
+      : `Turesma replied to your custom request #${id}: ${respuesta}`;
     let inAppSent = false;
     try {
       inAppSent = await crearNotificacion(
@@ -395,7 +398,8 @@ const actualizarRequerimientoAdmin = async (req: any, res: any) => {
         notificationText,
         null,
         "requerimiento",
-        Number(updated.id)
+        Number(updated.id),
+        notificationTextEn
       );
     } catch (error) {
       console.error("Error notificando al cliente sobre su requerimiento:", error);

@@ -202,7 +202,8 @@ const registrarReembolso = async (req: any, res: any) => {
     `Se registró una solicitud de devolución por $${monto.toFixed(2)} para tu reserva #${reservationId}. El dinero aún no se ha transferido; recibirás otra notificación cuando se procese.`,
     reservationId,
     "reserva",
-    reservationId
+    reservationId,
+    `A refund request of $${monto.toFixed(2)} has been recorded for reservation #${reservationId}. The money has not been transferred yet; you'll receive another notification when it is processed.`
   );
   return res.status(201).json({
     message: "Solicitud de devolución registrada como pendiente. No se transfirió dinero.",
@@ -299,7 +300,8 @@ const completarReembolso = async (req: any, res: any) => {
     `La devolución de $${amount.toFixed(2)} para tu reserva #${reservationId} fue marcada como realizada. Si aún no ves el dinero, consulta con el banco o medio de pago.`,
     reservationId,
     "reserva",
-    reservationId
+    reservationId,
+    `The $${amount.toFixed(2)} refund for reservation #${reservationId} was marked as completed. If the money is not visible yet, check with your bank or payment provider.`
   );
   return res.status(200).json({ message: "Devolución marcada como completada. El dinero se procesó fuera de Turesma." });
 };
@@ -378,7 +380,12 @@ const aprobarPago = async (req: any, res: any) => {
       : estadoPago === "pagado"
         ? `Tu pago de $${monto} fue APROBADO. La reserva #${pago.rows[0].reserva_id} está pagada completamente.`
         : `Tu pago de $${monto} fue APROBADO para la reserva #${pago.rows[0].reserva_id}. Aún falta completar el pago total.`;
-    await crearNotificacion(req.user?.id, pago.rows[0].usuario_id, mensaje, pago.rows[0].reserva_id, "reserva", pago.rows[0].reserva_id);
+    const englishMessage = reservaConfirmada
+      ? `Your payment of $${monto} was APPROVED. Reservation #${pago.rows[0].reserva_id} is CONFIRMED!`
+      : estadoPago === "pagado"
+        ? `Your payment of $${monto} was APPROVED. Reservation #${pago.rows[0].reserva_id} is fully paid.`
+        : `Your payment of $${monto} was APPROVED for reservation #${pago.rows[0].reserva_id}. The remaining balance is still due.`;
+    await crearNotificacion(req.user?.id, pago.rows[0].usuario_id, mensaje, pago.rows[0].reserva_id, "reserva", pago.rows[0].reserva_id, englishMessage);
 
     return res.status(200).json({ message: "Pago aprobado", monto_pagado: montoPagado, estado_pago: estadoPago, reserva_confirmada: reservaConfirmada });
   } catch (error) {
@@ -408,7 +415,8 @@ const rechazarPago = async (req: any, res: any) => {
       `Tu comprobante de pago para la reserva #${pago.rows[0].reserva_id} fue RECHAZADO${notas ? ": " + notas : ""}. Puedes volver a intentarlo.`,
       pago.rows[0].reserva_id,
       "reserva",
-      pago.rows[0].reserva_id
+      pago.rows[0].reserva_id,
+      `Your payment receipt for reservation #${pago.rows[0].reserva_id} was REJECTED${notas ? `: ${notas}` : ""}. You can submit it again.`
     );
 
     return res.status(200).json({ message: "Pago rechazado" });
@@ -438,7 +446,8 @@ const actualizarLinkPago = async (req: any, res: any) => {
         `El administrador envió un link de pago para tu reserva #${reservaId}.`,
         reservaId,
         "reserva",
-        reservaId
+        reservaId,
+        `The administrator sent a payment link for your reservation #${reservaId}.`
       );
     }
 
@@ -486,7 +495,8 @@ const registrarPagoManual = async (req: any, res: any) => {
       `El administrador registró un pago de $${monto.toFixed(2)} para la reserva #${reservaId}.`,
       reservaId,
       "reserva",
-      reservaId
+      reservaId,
+      `The administrator recorded a payment of $${monto.toFixed(2)} for reservation #${reservaId}.`
     );
 
     return res.status(200).json({

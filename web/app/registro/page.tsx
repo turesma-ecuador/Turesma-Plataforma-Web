@@ -22,12 +22,13 @@ import {
   Bus
 } from "lucide-react";
 import AuthCarousel from "../../components/auth-carousel";
-import { LanguageSwitcher, LocalizedContent } from "../../lib/i18n";
+import { LanguageSwitcher, LocalizedContent, useLocale } from "../../lib/i18n";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 export default function RegistroPage() {
   const router = useRouter();
+  const { language } = useLocale();
   const [loading, setLoading] = useState(false);
   const [uploadingFoto, setUploadingFoto] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -135,6 +136,7 @@ export default function RegistroPage() {
           cedula: form.cedula.trim(),
           password: form.password,
           foto_url: fotoUrl,
+          preferred_language: language,
         }),
       });
 

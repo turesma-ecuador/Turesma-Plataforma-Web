@@ -86,4 +86,5 @@ test("avisa al cliente cuando PayPhone confirma un pago parcial", async () => {
   assert.equal(notifications[0][0], 99);
   assert.equal(notifications[0][1], 51);
   assert.match(notifications[0][2], /pago PayPhone de \$50\.00/);
+  assert.match(notifications[0][6], /PayPhone payment of \$50\.00/i);
 });

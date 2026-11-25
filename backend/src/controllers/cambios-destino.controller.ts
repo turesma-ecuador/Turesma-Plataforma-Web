@@ -216,7 +216,7 @@ const aceptarPropuestaCambioDestino = async (req: any, res: any) => {
         total_nuevo: request.total_propuesto,
       });
       await client.query("COMMIT");
-      await crearNotificacion(userId, userId, "La ruta de tu reserva fue actualizada.", Number(request.reserva_id), "reserva", Number(request.reserva_id));
+      await crearNotificacion(userId, userId, "La ruta de tu reserva fue actualizada.", Number(request.reserva_id), "reserva", Number(request.reserva_id), "Your reservation route has been updated.");
       return res.json({ message: "Propuesta aceptada. La nueva ruta quedó aplicada." });
     }
     if (Number(request.total_propuesto) > Number(request.total_anterior)) {
@@ -424,7 +424,7 @@ const proponerCambioDestino = async (req: any, res: any) => {
       nota_admin: note,
     });
     await client.query("COMMIT");
-    await crearNotificacion(req.user?.id, item.usuario_id, `Turesma envió una propuesta de precio para el cambio de ruta de la reserva #${item.reserva_id}.`, Number(item.reserva_id), "reserva", Number(item.reserva_id));
+    await crearNotificacion(req.user?.id, item.usuario_id, `Turesma envió una propuesta de precio para el cambio de ruta de la reserva #${item.reserva_id}.`, Number(item.reserva_id), "reserva", Number(item.reserva_id), `Turesma sent a price proposal for the route change on reservation #${item.reserva_id}.`);
     return res.json({ message: "Propuesta enviada al cliente" });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -460,7 +460,7 @@ const rechazarSolicitudCambioDestino = async (req: any, res: any) => {
       nota_admin: note,
     });
     await client.query("COMMIT");
-    await crearNotificacion(req.user?.id, result.rows[0].usuario_id, `La solicitud de cambio de ruta de la reserva #${result.rows[0].reserva_id} fue rechazada: ${note}`, Number(result.rows[0].reserva_id), "reserva", Number(result.rows[0].reserva_id));
+    await crearNotificacion(req.user?.id, result.rows[0].usuario_id, `La solicitud de cambio de ruta de la reserva #${result.rows[0].reserva_id} fue rechazada: ${note}`, Number(result.rows[0].reserva_id), "reserva", Number(result.rows[0].reserva_id), `The route change request for reservation #${result.rows[0].reserva_id} was rejected: ${note}`);
     return res.json({ message: "Solicitud rechazada" });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -557,7 +557,7 @@ const registrarDevolucionCambioDestino = async (req: any, res: any) => {
       referencia_externa: reference,
     });
     await client.query("COMMIT");
-    await crearNotificacion(req.user?.id, request.usuario_id, `La nueva ruta de la reserva #${request.reserva_id} fue aplicada y se registró la devolución de $${amountToRefund.toFixed(2)}.`, Number(request.reserva_id), "reserva", Number(request.reserva_id));
+    await crearNotificacion(req.user?.id, request.usuario_id, `La nueva ruta de la reserva #${request.reserva_id} fue aplicada y se registró la devolución de $${amountToRefund.toFixed(2)}.`, Number(request.reserva_id), "reserva", Number(request.reserva_id), `The new route for reservation #${request.reserva_id} was applied and a refund of $${amountToRefund.toFixed(2)} was recorded.`);
     return res.json({ message: `Devolución de $${amountToRefund.toFixed(2)} registrada y nueva ruta aplicada` });
   } catch (error: any) {
     await client.query("ROLLBACK");
@@ -604,7 +604,7 @@ const aplicarCambioDestinoTrasPago = async (reservaId: number, actorId?: number 
       total_nuevo: request.total_propuesto,
     });
     await client.query("COMMIT");
-    await crearNotificacion(actorId, request.usuario_id, `Se confirmó el pago de la diferencia y se aplicó la nueva ruta de la reserva #${reservaId}.`, reservaId, "reserva", reservaId);
+    await crearNotificacion(actorId, request.usuario_id, `Se confirmó el pago de la diferencia y se aplicó la nueva ruta de la reserva #${reservaId}.`, reservaId, "reserva", reservaId, `The remaining balance was paid and the new route for reservation #${reservaId} was applied.`);
     return true;
   } catch (error) {
     await client.query("ROLLBACK");

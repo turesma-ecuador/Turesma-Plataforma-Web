@@ -126,6 +126,10 @@ const register = async (req, res) => {
   const identification = normalizeIdentification(req.body.tipo_identificacion || "cedula", req.body.cedula);
   const password = typeof req.body.password === "string" ? req.body.password : "";
   const fotoUrl = typeof req.body.foto_url === "string" ? req.body.foto_url.trim() : null;
+  const preferredLanguage = req.body.preferred_language || "es";
+  if (preferredLanguage !== "en" && preferredLanguage !== "es") {
+    return res.status(400).json({ error: "El idioma debe ser español (es) o inglés (en)" });
+  }
 
   if (!nombre || !email || !telefono || !password || !identification.value) {
     return res.status(400).json({ error: identification.error || "Debes enviar nombre, email, teléfono, identificación y contraseña" });
@@ -144,10 +148,10 @@ const register = async (req, res) => {
     const rol = (await normalizeRole("cliente")) || "cliente";
 
     const result = await pool.query(
-      `INSERT INTO usuarios (nombre, email, telefono, cedula, tipo_identificacion, password_hash, rol, imagen_url, activo, estado_verificacion)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, 'no_verificado')
-       RETURNING id, nombre, email, telefono, cedula, tipo_identificacion, rol, imagen_url, activo, creado_en`,
-      [nombre, email, telefono, identification.value, identification.type, passwordHash, rol, fotoUrl]
+      `INSERT INTO usuarios (nombre, email, telefono, cedula, tipo_identificacion, password_hash, rol, imagen_url, activo, estado_verificacion, preferred_language)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, 'no_verificado', $9)
+       RETURNING id, nombre, email, telefono, cedula, tipo_identificacion, rol, imagen_url, activo, preferred_language, creado_en`,
+      [nombre, email, telefono, identification.value, identification.type, passwordHash, rol, fotoUrl, preferredLanguage]
     );
 
     const newUser = result.rows[0];
@@ -194,7 +198,7 @@ const login = async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, nombre, email, rol, imagen_url, password_hash,
+      `SELECT id, nombre, email, rol, imagen_url, password_hash, preferred_language,
               activo, email_verified_at, pending_email, session_version,
               COALESCE(estado_verificacion, 'no_verificado') AS estado_verificacion
        FROM usuarios
@@ -250,6 +254,7 @@ const login = async (req, res) => {
       email: user.email,
       rol: normalizedRole,
       imagen_url: user.imagen_url || null,
+      preferred_language: user.preferred_language || null,
     };
     const sessionId = crypto.randomUUID();
     await pool.query(
@@ -441,7 +446,7 @@ const updateMe = async (req: any, res: any) => {
     values.push(userId);
     const result = await pool.query(
       `UPDATE usuarios SET ${updates.join(", ")} WHERE id = $${i}
-       RETURNING id, nombre, email, rol, imagen_url, telefono`,
+       RETURNING id, nombre, email, rol, imagen_url, telefono, preferred_language`,
       values
     );
 
@@ -449,6 +454,28 @@ const updateMe = async (req: any, res: any) => {
   } catch (error) {
     console.error("Error actualizando perfil:", error);
     return res.status(500).json({ error: "Error interno del servidor" });
+  }
+};
+
+const updateLanguagePreference = async (req: any, res: any) => {
+  const userId = req.user?.id;
+  const language = req.body?.language;
+  if (!userId) return res.status(401).json({ error: "No autenticado" });
+  if (language !== "es" && language !== "en") {
+    return res.status(400).json({ error: "El idioma debe ser español (es) o inglés (en)" });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE usuarios SET preferred_language = $1 WHERE id = $2 AND activo = true
+       RETURNING preferred_language`,
+      [language, userId]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "Usuario no encontrado" });
+    return res.status(200).json({ preferred_language: result.rows[0].preferred_language });
+  } catch (error) {
+    console.error("Error guardando idioma preferido:", error);
+    return res.status(500).json({ error: "No se pudo guardar el idioma preferido" });
   }
 };
 
@@ -460,7 +487,7 @@ const getMe = async (req: any, res: any) => {
     }
 
     const result = await pool.query(
-      `SELECT id, nombre, email, pending_email, rol, telefono, cedula, tipo_identificacion, imagen_url, activo, creado_en
+      `SELECT id, nombre, email, pending_email, rol, telefono, cedula, tipo_identificacion, imagen_url, activo, preferred_language, creado_en
        FROM usuarios
        WHERE id = $1
          AND activo = true
@@ -524,6 +551,7 @@ module.exports = {
   resetPassword,
   getMe,
   updateMe,
+  updateLanguagePreference,
   recordSessionActivity,
   logout,
 };

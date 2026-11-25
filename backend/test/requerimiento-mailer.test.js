@@ -146,3 +146,39 @@ test("el correo aclara qué grupos se incluyeron y cuáles quedaron fuera", asyn
   assert.match(email.text, /Grupo 1: No incluido en esta propuesta — Sin disponibilidad/);
   assert.match(email.text, /Grupo 2: Manta → Montecristi — \$900\.00/);
 });
+
+test("localiza al inglés los correos de respuestas y propuestas", async () => {
+  recipient.preferred_language = "en";
+  try {
+    await notificarRespuestaRequerimiento({
+      id: 44,
+      usuario_id: 7,
+      respuesta_admin: "The service is available.",
+    });
+    const replyEmail = sentEmails.at(-1);
+    assert.match(replyEmail.subject, /replied to your request #44/i);
+    assert.match(replyEmail.html, /Hello <strong>Ana &lt;Cliente&gt;<\/strong>/);
+    assert.match(replyEmail.html, /View my request/);
+
+    await notificarPropuestaRequerimiento({
+      id: 44,
+      usuario_id: 7,
+      precio_final: 3400,
+      service_groups: [{
+        cantidad_vehiculos: 2,
+        origen: "Manta",
+        destino: "Quito",
+        fecha_servicio: "2026-11-10",
+        precio_total: 3400,
+      }],
+    });
+    const proposalEmail = sentEmails.at(-1);
+    assert.match(proposalEmail.subject, /Your Turesma proposal is ready/i);
+    assert.match(proposalEmail.html, /<strong>Group 1<\/strong>/);
+    assert.match(proposalEmail.html, /SERVICE/);
+    assert.match(proposalEmail.html, /Proposal total/);
+    assert.match(proposalEmail.text, /Group 1: Manta → Quito/);
+  } finally {
+    delete recipient.preferred_language;
+  }
+});

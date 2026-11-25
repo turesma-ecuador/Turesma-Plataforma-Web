@@ -79,7 +79,8 @@ const reservarViajePublicado = async (req: any, res: any) => {
     const notification = `Reserva #${reservationId}: ${pickupLocation} → ${tour.destino}, ${travelDate} a las ${travelTime}.${pickupReference ? ` Referencia: ${pickupReference}` : ""}`;
     if (driverUserId) await crearNotificacion(userId, driverUserId, `Nuevo viaje asignado. ${notification}`, reservationId, "reserva", reservationId);
     const admin = await client.query("SELECT id FROM usuarios WHERE rol = 'admin' AND activo = true AND id <> $1 ORDER BY id LIMIT 1", [userId]);
-    await crearNotificacion(Number(admin.rows[0]?.id) || driverUserId || null, userId, `Tu reserva fue registrada. ${notification}`, reservationId, "reserva", reservationId);
+    const notificationEn = `Reservation #${reservationId}: ${pickupLocation} → ${tour.destino}, ${travelDate} at ${travelTime}.${pickupReference ? ` Reference: ${pickupReference}` : ""}`;
+    await crearNotificacion(Number(admin.rows[0]?.id) || driverUserId || null, userId, `Tu reserva fue registrada. ${notification}`, reservationId, "reserva", reservationId, `Your reservation has been registered. ${notificationEn}`);
     return res.status(201).json({ success: true, data: reservation.rows[0], message: "Viaje reservado. Selecciona un método de pago en tu historial." });
   } catch (error) {
     await client.query("ROLLBACK");

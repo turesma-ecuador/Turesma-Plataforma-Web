@@ -1347,7 +1347,8 @@ const actualizarEstadoOperacionConductor = async (req, res) => {
       `El conductor inició la unidad ${operationDetails.grupo_numero}/${operationDetails.unidad_numero} de tu reserva #${reservaId} (${operationDetails.origen} → ${operationDetails.destino}).`,
       reservaId,
       "reserva",
-      reservaId
+      reservaId,
+      `The driver started unit ${operationDetails.grupo_numero}/${operationDetails.unidad_numero} of your reservation #${reservaId} (${operationDetails.origen} → ${operationDetails.destino}).`
     );
   } else if (allOperationsCompleted) {
     await notificarClienteReserva(reservaId, "finalizada", conductorId);
@@ -1569,7 +1570,8 @@ const marcarLlegadaDestinoConductor = async (req, res) => {
     `Llegaron a ${eventData.pointLabel} (${eventData.arrivedNumber} de ${eventData.stopCount}) en tu reserva #${eventData.reservaId}.`,
     eventData.reservaId,
     "reserva",
-    eventData.reservaId
+    eventData.reservaId,
+    `The driver arrived at ${eventData.pointLabel} (${eventData.arrivedNumber} of ${eventData.stopCount}) on your reservation #${eventData.reservaId}${eventData.groupNumber ? ` · Group ${eventData.groupNumber}, unit ${eventData.unitNumber}` : ""}.`
   );
   return res.status(200).json({
     message: `Llegada registrada en ${eventData.pointLabel}.`,
@@ -1912,7 +1914,7 @@ const registrarViajeConductor = async (req, res) => {
     const nombreConductor = conductorInfo.rows[0]?.nombre || "Un conductor";
     const { notificarAdmins, crearNotificacion } = require("../config/notificaciones");
     await notificarAdmins(conductorId, `${nombreConductor} registró un viaje completado #${reserva.id}: ${origen} → ${destino} ($${Number(valorCobrado).toFixed(2)}).`, "reserva", reserva.id);
-    await crearNotificacion(conductorId, clienteId, `Tu viaje #${reserva.id} fue registrado por el conductor. ¡Puedes calificarlo en tu historial!`, reserva.id, "reserva", reserva.id);
+    await crearNotificacion(conductorId, clienteId, `Tu viaje #${reserva.id} fue registrado por el conductor. ¡Puedes calificarlo en tu historial!`, reserva.id, "reserva", reserva.id, `Your trip #${reserva.id} was recorded by the driver. You can rate it in your history.`);
 
     return res.status(201).json({
       message: "Viaje registrado correctamente. Ya aparece en tu historial.",

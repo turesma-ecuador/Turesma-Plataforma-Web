@@ -95,6 +95,7 @@ const {
   notificarClienteReserva,
   notificarClienteOperacion,
   notificarConductorOperacion,
+  notificarReprogramacion,
 } = require("../dist/config/reservaMailer");
 
 test("notifica la asignación y sus cambios con los datos del vehículo", async (t) => {
@@ -187,4 +188,43 @@ test("adjunta el logo inline sin reemplazar la proforma de una reserva confirmad
   assert.match(sentEmails[0].html, /src="cid:turesma-logo"/);
   assert.equal(sentEmails[0].attachments[0].cid, "turesma-logo");
   assert.equal(sentEmails[0].attachments[1].filename, "Proforma-22609.pdf");
+});
+
+test("envía la asignación en el idioma preferido del cliente", async () => {
+  sentEmails.length = 0;
+  inAppNotifications.length = 0;
+  const previousLanguage = reservation.preferred_language;
+  reservation = { ...reservation, preferred_language: "en" };
+
+  try {
+    await notificarClienteReserva(42, "conductor_asignado", 99);
+  } finally {
+    reservation = { ...reservation, preferred_language: previousLanguage };
+  }
+
+  assert.match(sentEmails[0].subject, /assigned vehicle and driver/i);
+  assert.match(sentEmails[0].html, /Your trip is ready/);
+  assert.match(sentEmails[0].html, />Origin</);
+  assert.match(inAppNotifications[0][6], /Turesma assigned resources for reservation #42/);
+});
+
+test("localiza el correo de confirmación de reprogramación según la preferencia del cliente", async () => {
+  sentEmails.length = 0;
+  const previousLanguage = reservation.preferred_language;
+  reservation = {
+    ...reservation,
+    preferred_language: "en",
+    conductor_id: null,
+    hora_salida: "10:00",
+  };
+
+  try {
+    await notificarReprogramacion(42, 99);
+  } finally {
+    reservation = { ...reservation, preferred_language: previousLanguage };
+  }
+
+  assert.match(sentEmails[0].subject, /reservation date\/time has changed/i);
+  assert.match(sentEmails[0].html, /Reservation updated/);
+  assert.match(sentEmails[0].html, /Your new departure date and time is/);
 });

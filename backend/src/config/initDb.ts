@@ -92,6 +92,10 @@ const initDatabase = async () => {
     ADD COLUMN IF NOT EXISTS session_version INT NOT NULL DEFAULT 0;
   `);
   await pool.query(`
+    ALTER TABLE usuarios
+    ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(2);
+  `);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS auth_sessions (
       id UUID PRIMARY KEY,
       user_id INT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
