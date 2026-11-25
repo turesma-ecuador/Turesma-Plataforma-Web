@@ -58,14 +58,13 @@ const handleQuery = async (sql, params = []) => {
     return result(state.blocks);
   }
   if (query.startsWith("update vehiculo_indisponibilidades")) {
-    const [id, userId, isAdmin] = params;
-    const block = state.blocks.find((entry) => entry.id === Number(id) && entry.estado === "activa"
-      && (isAdmin || entry.creado_por === Number(userId)));
+    const [id, userId] = params;
+    const block = state.blocks.find((entry) => entry.id === Number(id) && entry.estado === "activa");
     if (!block) return result();
     block.estado = "cerrada";
     block.cerrado_por = Number(userId);
     block.cerrado_en = "2026-11-16T12:00:00.000Z";
-    return result([{ vehiculo_id: block.vehiculo_id, tipo: block.tipo, motivo: block.motivo }]);
+    return result([{ vehiculo_id: block.vehiculo_id }]);
   }
 
   throw new Error(`Unexpected pool query: ${query}`);
@@ -193,7 +192,7 @@ const resetState = () => {
   state.connectCalls = 0;
 };
 
-test("mantenimiento: rutas, permisos, ventanas horarias, conflictos y cierre", async (t) => {
+test("mantenimiento: permisos y gestión administrativa de bloqueos", async (t) => {
   resetState();
   let server;
   await new Promise((resolve) => {
@@ -211,7 +210,10 @@ test("mantenimiento: rutas, permisos, ventanas horarias, conflictos y cierre", a
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
-    return { status: response.status, body: await response.json() };
+    const text = await response.text();
+    let responseBody;
+    try { responseBody = text ? JSON.parse(text) : null; } catch { responseBody = null; }
+    return { status: response.status, body: responseBody };
   };
 
   const driverPath = (id = 301) => `/api/conductor/${id}/indisponibilidades-mantenimiento`;
@@ -228,107 +230,15 @@ test("mantenimiento: rutas, permisos, ventanas horarias, conflictos y cierre", a
     ...overrides,
   });
 
-  await t.test("exige autenticación y restringe las rutas por rol y propiedad", async () => {
+  await t.test("exige autenticación y deja la gestión de bloqueos solo a Administración", async () => {
     assert.equal((await request(adminPath)).status, 401);
     assert.equal((await request(driverPath())).status, 401);
     assert.equal((await request(adminPath, { method: "POST", body: validPlannedBlock() })).status, 401);
     assert.equal((await request(adminPath, { token: tokens.client })).status, 403);
     assert.equal((await request(adminPath, { method: "POST", token: tokens.operativo, body: validPlannedBlock() })).status, 403);
-    assert.equal((await request(driverPath(301), { method: "POST", token: tokens.otherDriver, body: validPlannedBlock() })).status, 403);
-    assert.equal((await request(driverPath(301), { method: "POST", token: tokens.client, body: validPlannedBlock() })).status, 403);
-  });
-
-  await t.test("rechaza fechas, tipos, horas y motivos inválidos antes de abrir transacción", async () => {
-    const invalidBodies = [
-      validPlannedBlock({ tipo: "otro" }),
-      validPlannedBlock({ urgente: true }),
-      validPlannedBlock({ fecha_inicio: "2098-02-29", fecha_fin: "2098-03-01" }),
-      validPlannedBlock({ fecha_inicio: "2098-11-19", fecha_fin: "2098-11-18" }),
-      validPlannedBlock({ fecha_inicio: "2000-01-01", fecha_fin: "2000-01-02" }),
-      validPlannedBlock({ hora_inicio: "24:00" }),
-      validPlannedBlock({ hora_fin: null }),
-      validPlannedBlock({ hora_inicio: "09:00", hora_fin: "09:00" }),
-      validPlannedBlock({ motivo: "   " }),
-      validPlannedBlock({ motivo: "x".repeat(1001) }),
-    ];
-    for (const body of invalidBodies) {
-      const response = await request(driverPath(), { method: "POST", token: tokens.driver, body });
-      assert.equal(response.status, 400, JSON.stringify(body));
-    }
+    assert.equal((await request(driverPath(301), { method: "POST", token: tokens.driver, body: validPlannedBlock() })).status, 404);
+    assert.equal((await request(`${driverPath()}/1/cerrar`, { method: "PATCH", token: tokens.driver })).status, 404);
     assert.equal(state.connectCalls, 0);
-
-    const wrongVehicle = await request(driverPath(), {
-      method: "POST", token: tokens.driver, body: validPlannedBlock({ vehiculo_id: 702 }),
-    });
-    assert.equal(wrongVehicle.status, 403);
-  });
-
-  await t.test("registra planes, reporta los conflictos sin alterar viajes y respeta límites horarios", async () => {
-    state.operations.push({
-      id: 901, reserva_id: 801, vehiculo_id: 701,
-      fecha_inicio: "2098-11-18", fecha_fin: "2098-11-18",
-      hora_inicio: "10:00", hora_fin: "12:00", estado: "asignada",
-    });
-    state.reservations.push({
-      id: 802, vehiculo_id: 701, fecha_inicio: "2098-11-18", fecha_fin: "2098-11-18",
-      hora_inicio: "10:00", hora_fin: "11:00", estado: "confirmada",
-    });
-    const operationBefore = structuredClone(state.operations);
-    const reservationBefore = structuredClone(state.reservations);
-
-    const created = await request(driverPath(), {
-      method: "POST", token: tokens.driver,
-      body: validPlannedBlock({ hora_inicio: "09:00", hora_fin: "11:00" }),
-    });
-    assert.equal(created.status, 201);
-    assert.equal(created.body.indisponibilidad.estado, "activa");
-    assert.deepEqual(created.body.conflictos.map((entry) => entry.tipo).sort(), ["operacion", "reserva"]);
-    assert.match(created.body.message, /servicios existentes que requieren coordinación/i);
-    assert.deepEqual(state.operations, operationBefore);
-    assert.deepEqual(state.reservations, reservationBefore);
-
-    const duplicate = await request(driverPath(), {
-      method: "POST", token: tokens.driver,
-      body: validPlannedBlock({ hora_inicio: "10:00", hora_fin: "12:00" }),
-    });
-    assert.equal(duplicate.status, 409);
-
-    const adjacent = await request(driverPath(), {
-      method: "POST", token: tokens.driver,
-      body: validPlannedBlock({ hora_inicio: "11:00", hora_fin: "12:00" }),
-    });
-    assert.equal(adjacent.status, 201, "dos ventanas que solo se tocan en el límite no se duplican");
-
-    const afterTrip = await request(driverPath(), {
-      method: "POST", token: tokens.driver,
-      body: validPlannedBlock({ hora_inicio: "12:00", hora_fin: "13:00" }),
-    });
-    assert.equal(afterTrip.status, 201);
-    assert.equal(afterTrip.body.conflictos.length, 0, "el fin de un viaje es un límite exclusivo");
-
-    const listed = await request(driverPath(), { token: tokens.driver });
-    assert.equal(listed.status, 200);
-    assert.equal(listed.body[0].fecha_inicio, "2098-11-18");
-  });
-
-  await t.test("las urgencias son correctivas, abiertas y bloquean solicitudes duplicadas", async () => {
-    state.blocks.length = 0;
-    state.operations.length = 0;
-    state.reservations.length = 0;
-    state.operations.push({
-      id: 903, reserva_id: 803, vehiculo_id: 701,
-      fecha_inicio: "2098-11-20", fecha_fin: "2098-11-20",
-      hora_inicio: "08:00", hora_fin: "09:00", estado: "programada",
-    });
-    const urgentBody = { vehiculo_id: 701, tipo: "correctivo", urgente: true, motivo: "Falla mecánica" };
-    const urgent = await request(driverPath(), { method: "POST", token: tokens.driver, body: urgentBody });
-    assert.equal(urgent.status, 201);
-    assert.equal(urgent.body.indisponibilidad.urgente, true);
-    assert.equal(urgent.body.indisponibilidad.fecha_fin, null);
-    assert.equal(urgent.body.conflictos.length, 1);
-
-    const duplicate = await request(driverPath(), { method: "POST", token: tokens.driver, body: urgentBody });
-    assert.equal(duplicate.status, 409);
   });
 
   await t.test("administración puede listar y bloquear; operativo no puede crear ni cerrar", async () => {
@@ -372,22 +282,4 @@ test("mantenimiento: rutas, permisos, ventanas horarias, conflictos y cierre", a
     assert.equal(closedAgain.status, 404);
   });
 
-  await t.test("el conductor puede cerrar su aviso, pero otro conductor no puede hacerlo", async () => {
-    const created = await request(driverPath(), {
-      method: "POST", token: tokens.driver,
-      body: validPlannedBlock({ fecha_inicio: "2098-12-01", fecha_fin: "2098-12-01", hora_inicio: null, hora_fin: null }),
-    });
-    assert.equal(created.status, 201);
-    const id = created.body.indisponibilidad.id;
-
-    const otherOwnerPath = `${driverPath(302)}/${id}/cerrar`;
-    const otherOwner = await request(otherOwnerPath, { method: "PATCH", token: tokens.otherDriver });
-    assert.equal(otherOwner.status, 404);
-
-    const closed = await request(`${driverPath()}/${id}/cerrar`, {
-      method: "PATCH", token: tokens.driver,
-    });
-    assert.equal(closed.status, 200);
-    assert.equal(state.blocks.find((block) => block.id === id).estado, "cerrada");
-  });
 });

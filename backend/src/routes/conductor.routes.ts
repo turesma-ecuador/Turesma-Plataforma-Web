@@ -14,13 +14,9 @@ const {
   marcarLlegadaDestinoConductor,
   marcarRecogidoConductor,
   obtenerDisponibilidadConductor,
-  actualizarDisponibilidadConductor,
   listarDisponibilidadExterna,
-  crearDisponibilidadExterna,
-  cancelarDisponibilidadExterna,
   crearReporteRutaConductor,
   listarReportesRutaConductor,
-  actualizarEstadoConductor,
   obtenerMiVehiculoConductor,
   listarMantenimientoConductor,
   crearMantenimientoConductor,
@@ -30,8 +26,6 @@ const {
 } = require("../controllers/conductor.controller");
 const {
   listDriverVehicleUnavailability: listarIndisponibilidadesMantenimiento,
-  createDriverVehicleUnavailability: crearIndisponibilidadMantenimiento,
-  closeVehicleUnavailability: cerrarIndisponibilidadMantenimiento,
 } = require("../controllers/vehiculo-indisponibilidades.controller");
 
 const router = express.Router();
@@ -51,19 +45,13 @@ router.patch("/:id/operaciones/:operationId/confirmar-asignacion", requireRole("
 router.patch("/:id/operaciones/:operationId/llegada", requireRole("conductor", "vehiculo"), marcarLlegadaDestinoConductor);
 router.patch("/:id/reservas/:reservaId/recoger", marcarRecogidoConductor);
 router.get("/:id/disponibilidad", obtenerDisponibilidadConductor);
-router.patch("/:id/disponibilidad", actualizarDisponibilidadConductor);
 router.get("/:id/disponibilidad-externa", listarDisponibilidadExterna);
-router.post("/:id/disponibilidad-externa", crearDisponibilidadExterna);
-router.delete("/:id/disponibilidad-externa/:bloqueoId", cancelarDisponibilidadExterna);
 router.get("/:id/rutas", listarReportesRutaConductor);
 router.post("/:id/rutas", crearReporteRutaConductor);
-router.patch("/:id/estado", actualizarEstadoConductor);
 router.get("/:id/vehiculo", obtenerMiVehiculoConductor);
 router.get("/:id/mantenimiento", listarMantenimientoConductor);
 router.post("/:id/mantenimiento", crearMantenimientoConductor);
 router.get("/:id/indisponibilidades-mantenimiento", listarIndisponibilidadesMantenimiento);
-router.post("/:id/indisponibilidades-mantenimiento", requireRole("conductor", "vehiculo"), crearIndisponibilidadMantenimiento);
-router.patch("/:id/indisponibilidades-mantenimiento/:indisponibilidadId/cerrar", cerrarIndisponibilidadMantenimiento);
 router.post("/:id/ubicacion", compartirUbicacionConductor);
 router.get("/:id/clientes", listarClientesConductor);
 router.post("/:id/registrar-viaje", registrarViajeConductor);
