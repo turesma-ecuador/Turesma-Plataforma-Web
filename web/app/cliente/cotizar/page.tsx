@@ -200,9 +200,9 @@ export default function ClienteCotizarPage() {
   const [fechaCalendarioActiva, setFechaCalendarioActiva] = useState<"salida" | "regreso">("salida");
   const [origin, setOrigin] = useState<Punto | null>(null);
   const [destination, setDestination] = useState<Punto | null>(null);
-  const [itinerarioContinuo, setItinerarioContinuo] = useState(false);
+  const [modoItinerario, setModoItinerario] = useState(false);
   const [itineraryDestinations, setItineraryDestinations] = useState<ItineraryDestination[]>([]);
-  const [itineraryReturnToOrigin, setItineraryReturnToOrigin] = useState(true);
+  const [itineraryReturnToOrigin, setItineraryReturnToOrigin] = useState(false);
   const [locatingOrigin, setLocatingOrigin] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [focusSignal, setFocusSignal] = useState(0);
@@ -210,6 +210,22 @@ export default function ClienteCotizarPage() {
     && new URLSearchParams(window.location.search).get("guia") === "reserva";
   const onMapChange = (which: "origin" | "destination", val: Punto) => {
     if (which === "origin") setOrigin(val); else setDestination(val);
+  };
+  const toggleItineraryMode = (enabled: boolean) => {
+    setModoItinerario(enabled);
+    if (enabled) {
+      setItineraryDestinations(destination
+        ? [{ ...destination, fecha_llegada: "", hora_salida: "", dias_estadia: 0 }]
+        : []);
+      setDestination(null);
+      setItineraryReturnToOrigin(false);
+      setRegresoOtraFecha(false);
+      setForm(current => ({ ...current, fecha_regreso: "", hora_regreso: "", hora_llegada_estimada: "" }));
+      return;
+    }
+    setDestination(itineraryDestinations[itineraryDestinations.length - 1] || null);
+    setItineraryDestinations([]);
+    setItineraryReturnToOrigin(false);
   };
   const step = (field: "num_personas", delta: number, min: number) =>
     setForm(p => ({ ...p, [field]: String(Math.max(min, (Number(p[field]) || min) + delta)) }));
@@ -387,13 +403,13 @@ export default function ClienteCotizarPage() {
   }, [checkingSession, userId]);
 
   useEffect(() => {
-    if (itinerarioContinuo) { setRoute(null); return; }
+    if (modoItinerario) { setRoute(null); return; }
     if (!origin || !destination) { setRoute(null); return; }
     let cancelled = false;
     setRouteLoading(true);
     calcularRuta(origin, destination).then(result => { if (!cancelled) setRoute(result); }).finally(() => { if (!cancelled) setRouteLoading(false); });
     return () => { cancelled = true; };
-  }, [origin, destination, itinerarioContinuo]);
+  }, [origin, destination, modoItinerario]);
 
   useEffect(() => {
     if (!route || !form.hora_salida) return;
@@ -411,16 +427,19 @@ export default function ClienteCotizarPage() {
 
   const getDateStepError = () => {
     if (!form.fecha_servicio) return "Selecciona la fecha de inicio del servicio.";
-    if (itinerarioContinuo) {
-      if (!form.fecha_fin) return "Indica la fecha estimada de retorno del itinerario.";
-      if (form.fecha_fin < form.fecha_servicio) return "La fecha de retorno no puede ser anterior a la salida.";
-      if (diasEntre(form.fecha_servicio, form.fecha_fin) > MAX_DIAS) return `El servicio no puede superar los ${MAX_DIAS} días seguidos.`;
+    if (variosDias && !form.fecha_fin) return "Toca también el último día del viaje en el calendario.";
+    if (variosDias && form.fecha_fin < form.fecha_servicio) return "La fecha final no puede ser anterior a la salida.";
+    if (variosDias && diasEntre(form.fecha_servicio, form.fecha_fin) > MAX_DIAS) return `El servicio no puede superar los ${MAX_DIAS} días seguidos.`;
+    if (modoItinerario) {
+      const itineraryEndDate = variosDias ? form.fecha_fin : form.fecha_servicio;
       if (itineraryDestinations.some((stop) => stop.fecha_llegada && (
-        stop.fecha_llegada < form.fecha_servicio || stop.fecha_llegada > form.fecha_fin
+        stop.fecha_llegada < form.fecha_servicio || stop.fecha_llegada > itineraryEndDate
       ))) return "Las fechas de llegada de cada destino deben estar dentro del período del viaje.";
+      if (!variosDias && itineraryDestinations.some((stop) => stop.dias_estadia > 0)) {
+        return "Selecciona varios días para indicar estadías en los destinos.";
+      }
       return "";
     }
-    if (variosDias && !form.fecha_fin) return "Toca también el último día del viaje en el calendario.";
     if (regresoOtraFecha && !form.fecha_regreso) return "Selecciona la fecha de recogida para el regreso.";
     if (regresoOtraFecha && form.fecha_regreso <= form.fecha_servicio) {
       return "La fecha de regreso debe ser posterior a la fecha de salida.";
@@ -432,8 +451,8 @@ export default function ClienteCotizarPage() {
   };
 
   const getStepError = (stepNumber: number) => {
-    if (stepNumber === 1 && (!origin || (itinerarioContinuo ? itineraryDestinations.length === 0 : !destination))) {
-      return itinerarioContinuo
+    if (stepNumber === 1 && (!origin || (modoItinerario ? itineraryDestinations.length === 0 : !destination))) {
+      return modoItinerario
         ? "Marca el origen y agrega al menos un destino al itinerario."
         : "Marca el punto de salida y el destino en el mapa.";
     }
@@ -441,8 +460,8 @@ export default function ClienteCotizarPage() {
       const dateError = getDateStepError();
       if (dateError) return dateError;
       if (!form.hora_salida) return "Indica la hora de salida que prefieres.";
-      if (!form.hora_llegada_estimada) return "Indica una hora estimada de llegada.";
-      if (duracionEntreHoras(form.hora_salida, form.hora_llegada_estimada) <= 0) {
+      if (!modoItinerario && !form.hora_llegada_estimada) return "Indica una hora estimada de llegada.";
+      if (!modoItinerario && duracionEntreHoras(form.hora_salida, form.hora_llegada_estimada) <= 0) {
         return "La llegada estimada debe ser posterior a la salida.";
       }
       if (regresoOtraFecha && !form.hora_regreso) {
@@ -506,9 +525,9 @@ export default function ClienteCotizarPage() {
         return;
       }
     }
-    if (!origin || (itinerarioContinuo ? itineraryDestinations.length === 0 : !destination)) {
+    if (!origin || (modoItinerario ? itineraryDestinations.length === 0 : !destination)) {
       setWizardStep(1);
-      setFormErr(itinerarioContinuo
+      setFormErr(modoItinerario
         ? "Marca el origen y agrega al menos un destino al itinerario."
         : "Marca el punto de salida y el destino en el mapa.");
       return;
@@ -519,41 +538,41 @@ export default function ClienteCotizarPage() {
         method: "POST", headers: getAuthHeaders(),
         body: JSON.stringify({
           ...form,
-          fecha_fin: itinerarioContinuo || variosDias ? form.fecha_fin || null : null,
+          fecha_fin: variosDias ? form.fecha_fin || null : null,
           origen: origin.label,
-          destino: itinerarioContinuo
+          destino: modoItinerario
             ? itineraryReturnToOrigin ? origin.label : itineraryDestinations[itineraryDestinations.length - 1].label
             : destination?.label,
           origen_lat: origin.lat, origen_lng: origin.lng,
-          destino_lat: itinerarioContinuo
+          destino_lat: modoItinerario
             ? (itineraryReturnToOrigin ? origin.lat : itineraryDestinations[itineraryDestinations.length - 1].lat)
             : destination?.lat,
-          destino_lng: itinerarioContinuo
+          destino_lng: modoItinerario
             ? (itineraryReturnToOrigin ? origin.lng : itineraryDestinations[itineraryDestinations.length - 1].lng)
             : destination?.lng,
-          itinerario: itinerarioContinuo
+          itinerario: modoItinerario
             ? [
                 ...itineraryDestinations,
                 ...(itineraryReturnToOrigin && origin ? [{
                   ...origin,
-                  fecha_llegada: form.fecha_fin,
+                  fecha_llegada: form.fecha_fin || form.fecha_servicio,
                   hora_salida: form.hora_regreso || "",
                   dias_estadia: 0,
                   es_retorno: true,
                 }] : []),
               ]
             : [],
-          modo_itinerario: itinerarioContinuo,
+          modo_itinerario: modoItinerario,
           num_personas: Number(form.num_personas) || 1,
           num_viajes: Number(form.num_viajes) || 1,
           tipo_vehiculo: form.tipo_vehiculo,
-          modalidad_servicio: itinerarioContinuo || variosDias ? "varios_dias" : form.modalidad_servicio,
+          modalidad_servicio: variosDias ? "varios_dias" : form.modalidad_servicio,
           duracion_horas: form.modalidad_servicio === "horas" ? Number(form.duracion_horas) || 1 : null,
           hora_salida: form.hora_salida || null,
           hora_llegada_estimada: form.hora_llegada_estimada || null,
           duracion_estimada_minutos: duracionEntreHoras(form.hora_salida, form.hora_llegada_estimada),
-          fecha_regreso: itinerarioContinuo ? null : regresoOtraFecha ? form.fecha_regreso : null,
-          hora_regreso: itinerarioContinuo ? null : regresoOtraFecha ? form.hora_regreso : null,
+          fecha_regreso: modoItinerario ? null : regresoOtraFecha ? form.fecha_regreso : null,
+          hora_regreso: modoItinerario ? null : regresoOtraFecha ? form.hora_regreso : null,
         }),
       });
       if (handleUnauthorized(res.status)) return;
@@ -568,9 +587,9 @@ export default function ClienteCotizarPage() {
       setWizardStep(1);
       setVariosDias(false);
       setRegresoOtraFecha(false);
-      setItinerarioContinuo(false);
+      setModoItinerario(false);
       setItineraryDestinations([]);
-      setItineraryReturnToOrigin(true);
+      setItineraryReturnToOrigin(false);
       setOrigin(null); setDestination(null);
       locateMyLocation();
       loadCotizaciones();
@@ -994,14 +1013,16 @@ export default function ClienteCotizarPage() {
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Calendar size={12} /> 2. Fecha del servicio</p>
               <p className="text-xs text-slate-500">
                 {variosDias
-                  ? "Selecciona la fecha de salida y luego el último día del servicio. La disponibilidad se confirma al revisar tu solicitud."
+                  ? "Selecciona la fecha de salida y el último día del servicio. La disponibilidad se confirma al revisar tu solicitud."
                   : regresoOtraFecha
                     ? "Elige la salida y el regreso en el mismo calendario."
-                    : "Elige la fecha de salida que prefieres. La disponibilidad final se confirma después de revisar tu solicitud."}
+                    : modoItinerario
+                      ? "Elige la fecha del recorrido. Si el vehículo debe permanecer contigo durante varios días, selecciona esa modalidad."
+                      : "Elige la fecha de salida que prefieres. La disponibilidad final se confirma después de revisar tu solicitud."}
               </p>
 
               {/* Un día o varios días */}
-              {!itinerarioContinuo && <div className="grid grid-cols-2 gap-2 bg-slate-100 rounded-2xl p-1">
+              <div className="grid grid-cols-2 gap-2 bg-slate-100 rounded-2xl p-1">
                 <button type="button"
                   onClick={() => { setVariosDias(false); setForm(p => ({ ...p, fecha_fin: "" })); }}
                   className={`py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${!variosDias ? "bg-white text-[#E31E24] shadow" : "text-slate-400"}`}>
@@ -1013,40 +1034,19 @@ export default function ClienteCotizarPage() {
                     setRegresoOtraFecha(false);
                     setForm(p => ({ ...p, fecha_regreso: "", hora_regreso: "" }));
                   }}
-                  disabled={regresoOtraFecha}
+                  disabled={regresoOtraFecha && !modoItinerario}
                   className={`py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all disabled:cursor-not-allowed disabled:opacity-40 ${variosDias ? "bg-white text-[#E31E24] shadow" : "text-slate-400"}`}>
                   Varios días
                 </button>
-              </div>}
-
-              <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
-                <label className="flex cursor-pointer items-start gap-2 text-sm font-bold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={itinerarioContinuo}
-                    onChange={(event) => {
-                      const enabled = event.target.checked;
-                      setItinerarioContinuo(enabled);
-                      setDestination(null);
-                      setItineraryDestinations([]);
-                      setItineraryReturnToOrigin(true);
-                      setRegresoOtraFecha(false);
-                      setFechaCalendarioActiva("salida");
-                      setVariosDias(enabled);
-                      setForm((current) => ({ ...current, fecha_regreso: "", hora_regreso: "", fecha_fin: enabled ? current.fecha_fin : "" }));
-                    }}
-                    className="mt-0.5 h-4 w-4 accent-blue-700"
-                  />
-                  <span>
-                    <span className="block">Viaje continuo con varios destinos</span>
-                    <span className="mt-0.5 block text-xs font-medium text-slate-500">
-                      El vehículo y el conductor permanecen contigo durante las estadías.
-                    </span>
-                  </span>
-                </label>
               </div>
 
-              {!itinerarioContinuo && <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
+              {modoItinerario && (
+                <p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs font-medium text-blue-900">
+                  Las paradas pueden ser parte de un recorrido de un día. Selecciona “Varios días” solo si el vehículo debe permanecer contigo durante las estadías.
+                </p>
+              )}
+
+              {!modoItinerario && <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
                 <label className="flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
                   <input
                     type="checkbox"
@@ -1066,14 +1066,14 @@ export default function ClienteCotizarPage() {
                   />
                   Regreso en otra fecha
                 </label>
-                {regresoOtraFecha && (
+                {regresoOtraFecha && !modoItinerario && (
                   <p className="text-xs leading-relaxed text-slate-500">
                     Te llevamos al destino y regresamos a recogerte en la fecha acordada para volver al punto de salida.
                   </p>
                 )}
               </div>}
 
-              {regresoOtraFecha && (
+              {regresoOtraFecha && !modoItinerario && (
                 <div className="grid grid-cols-2 gap-2" role="group" aria-label={language === "en" ? "Trip dates" : "Fechas del viaje"}>
                   {(["salida", "regreso"] as const).map((target) => {
                     const fecha = target === "salida" ? form.fecha_servicio : form.fecha_regreso;
@@ -1121,7 +1121,7 @@ export default function ClienteCotizarPage() {
                       setFechaCalendarioActiva("regreso");
                     }
                   }}
-                  range={variosDias && !itinerarioContinuo}
+                  range={variosDias}
                   endValue={form.fecha_fin}
                   onSelectEnd={(f) => setForm(p => ({ ...p, fecha_fin: f }))}
                   maxDays={MAX_DIAS}
@@ -1133,31 +1133,15 @@ export default function ClienteCotizarPage() {
                 />
               </div>
 
-              {itinerarioContinuo && (
-                <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
-                  <div>
-                    <label htmlFor="itinerary-end-date" className="text-xs font-black uppercase tracking-wide text-slate-600">
-                      Fecha estimada de retorno *
-                    </label>
-                    <input id="itinerary-end-date" type="date" min={form.fecha_servicio || undefined}
-                      value={form.fecha_fin} onChange={(event) => setForm((current) => ({ ...current, fecha_fin: event.target.value }))}
-                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 sm:max-w-xs" />
-                    <p className="mt-1 text-[11px] text-slate-500">Indica el último día reservado para el vehículo y el conductor, incluido el regreso.</p>
-                  </div>
-                </div>
-              )}
-
               {/* Resumen del rango elegido */}
               {form.fecha_servicio && (
                 <div className="flex items-center justify-center gap-2 text-[11px] font-bold text-slate-500 bg-emerald-50 border border-emerald-200 rounded-xl py-2 px-3">
                   <Calendar size={13} className="text-emerald-600" />
-                  {itinerarioContinuo && form.fecha_fin
-                    ? <span>Viaje continuo: <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> al <b className="text-slate-700">{new Date(form.fecha_fin + "T00:00").toLocaleDateString(dateLocale)}</b></span>
-                    : regresoOtraFecha && form.fecha_regreso
+                  {regresoOtraFecha && !modoItinerario && form.fecha_regreso
                     ? <span>Fecha de salida: <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> · Fecha de regreso: <b className="text-slate-700">{new Date(form.fecha_regreso + "T00:00").toLocaleDateString(dateLocale)}</b></span>
                     : variosDias && form.fecha_fin
                     ? <span>Del <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> al <b className="text-slate-700">{new Date(form.fecha_fin + "T00:00").toLocaleDateString(dateLocale)}</b> · {diasEntre(form.fecha_servicio, form.fecha_fin)} días</span>
-                    : regresoOtraFecha
+                    : regresoOtraFecha && !modoItinerario
                       ? <span>Fecha de salida: <b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b> · Fecha de regreso: <b className="text-slate-700">Pendiente</b></span>
                       : <span><b className="text-slate-700">{new Date(form.fecha_servicio + "T00:00").toLocaleDateString(dateLocale)}</b>{variosDias ? " — elige el último día" : " · 1 día"}</span>}
                 </div>
@@ -1180,17 +1164,21 @@ export default function ClienteCotizarPage() {
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="hora-llegada-estimada" className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
-                    <Clock size={14} className="text-emerald-600" /> Llegada estimada <span className="text-[#E31E24]">*</span>
+                    <Clock size={14} className="text-emerald-600" /> Llegada estimada {!modoItinerario && <span className="text-[#E31E24]">*</span>}
                   </label>
                   <input
                     id="hora-llegada-estimada"
                     type="time"
-                    required
+                    required={!modoItinerario}
                     value={form.hora_llegada_estimada}
                     onChange={event => setForm(current => ({ ...current, hora_llegada_estimada: event.target.value }))}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-[#E31E24]"
                   />
-                  <p className="text-[11px] text-slate-500">Se calcula con la ruta estimada y puedes ajustarla. Si pasa de medianoche, se considera el día siguiente.</p>
+                  <p className="text-[11px] text-slate-500">
+                    {modoItinerario
+                      ? "Opcional. Puedes indicar horarios por destino si ya los conoces."
+                      : "Se calcula con la ruta estimada y puedes ajustarla. Si pasa de medianoche, se considera el día siguiente."}
+                  </p>
                 </div>
               </div>
               {regresoOtraFecha && (
@@ -1240,7 +1228,7 @@ export default function ClienteCotizarPage() {
                 <p className="text-[11px] text-amber-600 font-bold flex items-center gap-1.5"><AlertCircle size={12} /> {locationError}</p>
               )}
 
-              {itinerarioContinuo ? (
+              {modoItinerario ? (
                 <div data-tour-target="booking-route">
                   <ItineraryMapPicker
                     origin={origin}
@@ -1252,7 +1240,7 @@ export default function ClienteCotizarPage() {
                   />
                 </div>
               ) : (
-                <>
+                <div className="space-y-3">
                   <MapPicker
                     localized
                     addressSearch
@@ -1266,7 +1254,17 @@ export default function ClienteCotizarPage() {
                   <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-xs font-bold text-sky-800">
                     {routeLoading ? "Calculando distancia por carretera…" : route ? `Distancia estimada: ${route.distanciaKm.toFixed(1)} km · Duración: ${formatDuracion(route.duracionMin)}` : "Marca ambos puntos para calcular la distancia."}
                   </div>
-                </>
+                  <button type="button" onClick={() => toggleItineraryMode(true)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs font-black text-blue-800 transition hover:bg-blue-100">
+                    <Plus size={15} /> Agregar otro destino y marcarlo en el mapa
+                  </button>
+                </div>
+              )}
+              {modoItinerario && (
+                <button type="button" onClick={() => toggleItineraryMode(false)}
+                  className="rounded-lg px-2 py-1 text-xs font-bold text-slate-600 underline underline-offset-2 hover:text-slate-900">
+                  Volver a un solo destino
+                </button>
               )}
             </div>
 
@@ -1452,7 +1450,7 @@ export default function ClienteCotizarPage() {
                       )}
                       {cot.notas && <div className="bg-slate-50 rounded-xl p-3"><p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Tus notas</p><p data-no-translate className="text-sm text-slate-600">{cot.notas}</p></div>}
                       {cot.itinerario?.length ? <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-violet-700">Itinerario continuo · vehículo y conductor durante todo el viaje</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-violet-700">Ruta con varios destinos · en orden</p>
                         <ol className="mt-2 list-inside list-decimal space-y-1 text-xs text-violet-950">
                           {cot.itinerario.map((point, pointIndex) => <li key={pointIndex}>
                             {point.label}{point.fecha_llegada ? ` · llegada ${formatLocalizedDate(point.fecha_llegada, language)}` : ""}{point.dias_estadia ? ` · estadía ${point.dias_estadia} día(s)` : ""}{point.hora_salida ? ` · salida ${point.hora_salida}` : ""}

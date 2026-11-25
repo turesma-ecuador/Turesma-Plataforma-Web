@@ -41,6 +41,7 @@ const pool = {
     const query = sql.replace(/\s+/g, " ").trim().toLowerCase();
     queries.push({ query, params });
     if (query.startsWith("insert into requerimientos_personalizados")) {
+      assert.match(query, /^insert into requerimientos_personalizados \(usuario_id, organizacion, cantidad_vehiculos, tipo_vehiculo, pasajeros_por_vehiculo, fecha_servicio, fecha_fin, hora_salida, origen, destino, detalles, service_groups\) values \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12\)/);
       const groups = JSON.parse(params[11]);
       savedRequest = {
         id: 44,

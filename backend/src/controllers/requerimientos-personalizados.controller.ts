@@ -135,7 +135,6 @@ const crearRequerimiento = async (req: any, res: any) => {
     const result = await pool.query(
       `INSERT INTO requerimientos_personalizados
          (usuario_id, organizacion, cantidad_vehiculos, tipo_vehiculo, pasajeros_por_vehiculo,
-          fecha_servicio, fecha_fin, hora_salida, origen, destino,           itinerario: itinerary,
           fecha_servicio, fecha_fin, hora_salida, origen, destino, detalles, service_groups)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id, estado, creado_en`,

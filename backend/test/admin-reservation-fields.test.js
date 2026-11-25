@@ -244,6 +244,44 @@ test("valida y guarda itinerario continuo al crear una cotización", async () =>
   assert.equal(queries.some(({ query }) => query.startsWith("insert into cotizaciones")), false);
 });
 
+test("guarda varias paradas para un recorrido de un solo día", async () => {
+  queries.length = 0;
+  const res = response();
+  await crearCotizacion({
+    user: { id: 7, rol: "admin" },
+    body: {
+      usuario_id: 7, origen: "Quito", destino: "Otavalo",
+      fecha_servicio: "2026-07-06", num_personas: 2, modalidad_servicio: "dia",
+      modo_itinerario: true,
+      itinerario: [
+        { label: "Cayambe", lat: 0.04, lng: -78.15, dias_estadia: 0 },
+        { label: "Otavalo", lat: 0.23, lng: -78.26, dias_estadia: 0 },
+      ],
+    },
+  }, res);
+
+  assert.equal(res.statusCode, 201);
+  const insert = queries.find(({ query }) => query.startsWith("insert into cotizaciones"));
+  assert.ok(insert);
+  assert.equal(insert.params[4], null);
+  assert.equal(JSON.parse(insert.params.at(-1)).length, 2);
+
+  queries.length = 0;
+  const invalidRes = response();
+  await crearCotizacion({
+    user: { id: 7, rol: "admin" },
+    body: {
+      usuario_id: 7, origen: "Quito", destino: "Otavalo",
+      fecha_servicio: "2026-07-06", num_personas: 2, modalidad_servicio: "dia",
+      modo_itinerario: true,
+      itinerario: [{ label: "Cayambe", lat: 0.04, lng: -78.15, dias_estadia: 1 }],
+    },
+  }, invalidRes);
+
+  assert.equal(invalidRes.statusCode, 400);
+  assert.equal(queries.some(({ query }) => query.startsWith("insert into cotizaciones")), false);
+});
+
 test("edita los detalles operativos usando el parámetro SQL correcto", async () => {
   currentReservation = {
     id: 55,

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { CheckCircle2, CreditCard, Download, FileText, Loader2, Plus, Send, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, CreditCard, Download, FileText, Loader2, Plus, Send, Trash2 } from "lucide-react";
 import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
 import { useClienteGuard } from "../../../lib/use-cliente-guard";
 import { CommunicationPanel } from "../../../components/communication-panel";
@@ -131,7 +131,21 @@ export default function ClienteRequerimientoPersonalizadoPage() {
   };
 
   const submit = async (event: FormEvent) => {
-    event.preventDefault(); setSending(true); setError(""); setMessage("");
+    event.preventDefault(); setError(""); setMessage("");
+    const invalidStay = groups.some(group => group.itinerario.some(stop =>
+      stop.dias_estadia > 0 && (
+        !group.fecha_servicio
+        || !group.fecha_fin
+        || !stop.fecha_llegada
+        || stop.fecha_llegada < group.fecha_servicio
+        || stop.fecha_llegada > group.fecha_fin
+      )
+    ));
+    if (invalidStay) {
+      setError("Para indicar estadías, completa las fechas de inicio y fin del grupo y la fecha de llegada a cada destino.");
+      return;
+    }
+    setSending(true);
     try {
       const response = await fetch(`${API}/api/requerimientos-personalizados`, {
         method: "POST", headers: getAuthHeaders(),
@@ -181,8 +195,7 @@ export default function ClienteRequerimientoPersonalizadoPage() {
               ["fecha_fin", "Fecha final", "date", ""],
               ["hora_salida", "Hora de salida", "time", ""],
               ["origen", "Origen", "text", "Ciudad o dirección"],
-              ["destino", "Destino o destinos", "text", "Incluye todos los destinos"],
-              ["paradas", "Paradas", "text", "Opcional"],
+              ["destino", "Destino final", "text", "Destino final del grupo"],
             ] as const).map(([field, label, type, placeholder]) => <div key={field} className="space-y-1.5 sm:col-span-1">
               <label htmlFor={`custom-${field}-${index}`} className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</label>
               {field === "tipo_vehiculo" ? (
@@ -199,6 +212,80 @@ export default function ClienteRequerimientoPersonalizadoPage() {
                   onChange={e => updateGroup(index, { [field]: e.target.value })} className={INPUT} />
               )}
             </div>)}
+            <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-900">Destinos intermedios (opcional)</p>
+                  <p className="mt-1 text-[10px] leading-relaxed text-blue-800">Agrégalos en el orden del recorrido. No hace falta marcar cada punto en el mapa.</p>
+                </div>
+                <button type="button" disabled={group.itinerario.length >= 10}
+                  onClick={() => updateGroup(index, {
+                    itinerario: [...group.itinerario, { destino: "", fecha_llegada: "", dias_estadia: 0, hora_salida: "" }],
+                  })}
+                  className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-2 text-[9px] font-black uppercase text-blue-800 disabled:opacity-50">
+                  <Plus size={13} /> Agregar destino
+                </button>
+              </div>
+              {group.itinerario.map((stop, stopIndex) => (
+                <div key={stopIndex} className="grid gap-2 rounded-lg border border-blue-100 bg-white p-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_1fr_1fr_1fr_auto]">
+                  <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">
+                    Destino {stopIndex + 1}
+                    <input maxLength={300} required value={stop.destino}
+                      onChange={event => updateGroup(index, {
+                        itinerario: group.itinerario.map((item, itemIndex) => itemIndex === stopIndex ? { ...item, destino: event.target.value } : item),
+                      })}
+                      className={`${INPUT} mt-1`} placeholder="Ciudad o lugar" />
+                  </label>
+                  <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">
+                    Llegada (opcional)
+                    <input type="date" min={group.fecha_servicio || undefined} max={group.fecha_fin || undefined}
+                      value={stop.fecha_llegada}
+                      onChange={event => updateGroup(index, {
+                        itinerario: group.itinerario.map((item, itemIndex) => itemIndex === stopIndex ? { ...item, fecha_llegada: event.target.value } : item),
+                      })}
+                      className={`${INPUT} mt-1`} />
+                  </label>
+                  <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">
+                    Estadía (días)
+                    <input type="number" min={0} max={365} value={stop.dias_estadia}
+                      onChange={event => updateGroup(index, {
+                        itinerario: group.itinerario.map((item, itemIndex) => itemIndex === stopIndex ? { ...item, dias_estadia: Math.max(0, Math.min(365, Number(event.target.value) || 0)) } : item),
+                      })}
+                      className={`${INPUT} mt-1`} />
+                  </label>
+                  <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">
+                    Hora de salida
+                    <input type="time" value={stop.hora_salida}
+                      onChange={event => updateGroup(index, {
+                        itinerario: group.itinerario.map((item, itemIndex) => itemIndex === stopIndex ? { ...item, hora_salida: event.target.value } : item),
+                      })}
+                      className={`${INPUT} mt-1`} />
+                  </label>
+                  <div className="flex items-end gap-1">
+                    <button type="button" disabled={stopIndex === 0}
+                      onClick={() => {
+                        const itinerary = [...group.itinerario];
+                        [itinerary[stopIndex - 1], itinerary[stopIndex]] = [itinerary[stopIndex], itinerary[stopIndex - 1]];
+                        updateGroup(index, { itinerario: itinerary });
+                      }}
+                      aria-label={`Mover destino ${stopIndex + 1} arriba`}
+                      className="rounded-lg p-2 text-slate-500 disabled:opacity-30"><ArrowUp size={14} /></button>
+                    <button type="button" disabled={stopIndex === group.itinerario.length - 1}
+                      onClick={() => {
+                        const itinerary = [...group.itinerario];
+                        [itinerary[stopIndex], itinerary[stopIndex + 1]] = [itinerary[stopIndex + 1], itinerary[stopIndex]];
+                        updateGroup(index, { itinerario: itinerary });
+                      }}
+                      aria-label={`Mover destino ${stopIndex + 1} abajo`}
+                      className="rounded-lg p-2 text-slate-500 disabled:opacity-30"><ArrowDown size={14} /></button>
+                    <button type="button"
+                      onClick={() => updateGroup(index, { itinerario: group.itinerario.filter((_, itemIndex) => itemIndex !== stopIndex) })}
+                      aria-label={`Quitar destino ${stopIndex + 1}`}
+                      className="rounded-lg p-2 text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
             <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 sm:col-span-2 lg:col-span-4"><input type="checkbox" checked={group.simultaneo} onChange={e => updateGroup(index, { simultaneo: e.target.checked })} className="accent-[#E31E24]" /> Los vehículos deben operar simultáneamente</label>
           </div>
           <input value={group.detalles} maxLength={2000} onChange={e => updateGroup(index, { detalles: e.target.value })} className={INPUT} placeholder="Indicaciones para este grupo (horarios, equipaje, necesidades especiales)" />
@@ -221,6 +308,15 @@ export default function ClienteRequerimientoPersonalizadoPage() {
               <p className="font-black text-slate-800">Requerimiento #{request.id}{request.organizacion ? ` · ${request.organizacion}` : ""}</p>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-[9px] font-black uppercase text-slate-600">{request.estado.replace(/_/g, " ")}</span>
             </div>
+            {!hasProposal && groups.map((group, index) => <div key={index} className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+              <p className="font-black">Grupo {index + 1} · {group.cantidad_vehiculos} vehículo(s){group.tipo_vehiculo ? ` · ${group.tipo_vehiculo}` : ""}</p>
+              <p className="mt-1">{group.origen || "Salida"} → {group.destino || "Destino"}{group.fecha_servicio ? ` · ${group.fecha_servicio.slice(0, 10)}` : ""}{group.hora_salida ? ` · ${group.hora_salida}` : ""}</p>
+              {group.itinerario?.length ? <ol className="mt-2 list-inside list-decimal space-y-0.5 text-slate-600">
+                {group.itinerario.map((stop, stopIndex) => <li key={stopIndex}>
+                  {stop.destino}{stop.fecha_llegada ? ` · llegada ${stop.fecha_llegada.slice(0, 10)}` : ""}{stop.dias_estadia ? ` · estadía ${stop.dias_estadia} día(s)` : ""}
+                </li>)}
+              </ol> : null}
+            </div>)}
             {hasProposal && <div className="mt-3 space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-black text-emerald-700">Total de la propuesta{excludedGroupCount ? " parcial" : ""}: ${Number(request.precio_final || 0).toFixed(2)}</p>
@@ -238,7 +334,7 @@ export default function ClienteRequerimientoPersonalizadoPage() {
                 </div>
                 <p className="mt-1">{group.origen || "Salida"} → {group.destino || "Destino"}{group.fecha_servicio ? ` · ${group.fecha_servicio.slice(0, 10)}` : ""}{group.hora_salida ? ` · ${group.hora_salida}` : ""}</p>
                 {group.itinerario?.length ? <div className="mt-2 rounded-lg border border-violet-100 bg-violet-50 p-2.5">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-violet-700">Itinerario continuo · mismo vehículo y conductor</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-violet-700">Destinos intermedios · en orden</p>
                   <ol className="mt-1 list-inside list-decimal space-y-0.5 text-xs text-violet-950">
                     {group.itinerario.map((stop, stopIndex) => <li key={stopIndex}>
                       {stop.destino}{stop.fecha_llegada ? ` · llegada ${stop.fecha_llegada.slice(0, 10)}` : ""}{stop.dias_estadia ? ` · estadía ${stop.dias_estadia} día(s)` : ""}{stop.hora_salida ? ` · salida ${stop.hora_salida}` : ""}

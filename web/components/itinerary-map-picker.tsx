@@ -32,7 +32,7 @@ export function ItineraryMapPicker({
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const routeRef = useRef<any>(null);
-  const [mode, setMode] = useState<"origin" | "destination">("origin");
+  const [mode, setMode] = useState<"origin" | "destination">(origin ? "destination" : "origin");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Array<Punto & { label: string }>>([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
@@ -53,7 +53,7 @@ export function ItineraryMapPicker({
     }
     const nextDestinations = [
       ...currentDestinations,
-      { ...point, fecha_llegada: "", hora_salida: "", dias_estadia: 1 },
+      { ...point, fecha_llegada: "", hora_salida: "", dias_estadia: 0 },
     ];
     selectionRef.current = { ...selectionRef.current, mode: "destination", destinations: nextDestinations };
     onDestinationsChange(nextDestinations);
@@ -67,8 +67,10 @@ export function ItineraryMapPicker({
     setError("");
     try {
       const point = { lat, lng, label: await reverseGeocode(lat, lng) };
-      if (selectionRef.current.mode === "origin") onOriginChange(point);
-      else if (!selectionRef.current.origin) onOriginChange(point);
+      if (selectionRef.current.mode === "origin" || !selectionRef.current.origin) {
+        onOriginChange(point);
+        setMode("destination");
+      }
       else addDestination(point);
     } finally {
       setMapBusy(false);
@@ -167,9 +169,9 @@ export function ItineraryMapPicker({
   return (
     <div className="space-y-4 rounded-2xl border border-blue-200 bg-blue-50/50 p-4">
       <div>
-        <h3 className="text-sm font-black text-blue-950">Itinerario continuo</h3>
+        <h3 className="text-sm font-black text-blue-950">Ruta con varios destinos</h3>
         <p className="mt-1 text-xs leading-relaxed text-blue-900">
-          El mismo vehículo y conductor permanecen asignados durante el viaje y las estadías.
+          Agrega y ordena las paradas en el mapa. Si necesitas estadías, selecciona “Varios días” en las fechas.
           Administración confirmará disponibilidad y preparará la proforma.
         </p>
       </div>
@@ -200,7 +202,10 @@ export function ItineraryMapPicker({
           {results.map((point, index) => (
             <li key={`${point.lat}-${point.lng}-${index}`}>
               <button type="button" onClick={() => {
-                if (mode === "origin" || !origin) onOriginChange(point);
+                if (mode === "origin" || !origin) {
+                  onOriginChange(point);
+                  setMode("destination");
+                }
                 else addDestination(point);
                 setResults([]);
                 setQuery("");
@@ -245,7 +250,7 @@ export function ItineraryMapPicker({
                 <input type="date" value={point.fecha_llegada} onChange={(event) => updateDestination(index, { fecha_llegada: event.target.value })}
                   className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs font-semibold" />
               </label>
-              <label className="text-[9px] font-black uppercase text-slate-500">Días de estadía
+              <label className="text-[9px] font-black uppercase text-slate-500">Días de estadía (si aplica)
                 <input type="number" min={0} max={365} value={point.dias_estadia}
                   onChange={(event) => updateDestination(index, { dias_estadia: Math.max(0, Math.min(365, Number(event.target.value) || 0)) })}
                   className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs font-semibold" />

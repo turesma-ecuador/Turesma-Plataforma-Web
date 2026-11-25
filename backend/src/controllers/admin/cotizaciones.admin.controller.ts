@@ -502,11 +502,13 @@ const crearCotizacion = async (req: any, res: any) => {
       || points.some((point, index) => point.es_retorno && index !== points.length - 1)) return null;
     return points;
   })();
-  if (itineraryMode && (!normalizedItinerary || !fechaFin || !esFecha(fecha_servicio))) {
-    return res.status(400).json({ error: "Completa un itinerario válido y la fecha estimada de retorno" });
+  if (itineraryMode && (!normalizedItinerary || !esFecha(fecha_servicio)
+    || normalizedItinerary.some((point: { dias_estadia: number }) => point.dias_estadia > 0) && !fechaFin)) {
+    return res.status(400).json({ error: "Completa un itinerario válido y selecciona varios días si necesitas estadías" });
   }
+  const itineraryEndDate = fechaFin || String(fecha_servicio).trim();
   if (itineraryMode && normalizedItinerary.some((point: { fecha_llegada: string | null }) =>
-    point.fecha_llegada && (point.fecha_llegada < String(fecha_servicio) || point.fecha_llegada > String(fechaFin))
+    point.fecha_llegada && (point.fecha_llegada < String(fecha_servicio) || point.fecha_llegada > itineraryEndDate)
   )) {
     return res.status(400).json({ error: "Las fechas de llegada del itinerario deben estar dentro del período del viaje" });
   }
@@ -514,12 +516,12 @@ const crearCotizacion = async (req: any, res: any) => {
     if (!point.fecha_llegada) return false;
     const lastStayDate = new Date(`${point.fecha_llegada}T00:00:00.000Z`);
     lastStayDate.setUTCDate(lastStayDate.getUTCDate() + point.dias_estadia);
-    return lastStayDate.toISOString().slice(0, 10) > String(fechaFin);
+    return lastStayDate.toISOString().slice(0, 10) > itineraryEndDate;
   })) {
     return res.status(400).json({ error: "La estadía de cada destino debe finalizar dentro del período del viaje" });
   }
   if (itineraryMode && normalizedItinerary.reduce((total: number, point: { dias_estadia: number }) => total + point.dias_estadia, 0)
-    > (Date.parse(`${fechaFin}T00:00:00.000Z`) - Date.parse(`${fecha_servicio}T00:00:00.000Z`)) / 86400000) {
+    > (Date.parse(`${itineraryEndDate}T00:00:00.000Z`) - Date.parse(`${fecha_servicio}T00:00:00.000Z`)) / 86400000) {
     return res.status(400).json({ error: "La duración total de las estadías excede el período del viaje" });
   }
   if (itineraryMode && normalizedItinerary[normalizedItinerary.length - 1]?.es_retorno) {
