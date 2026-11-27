@@ -1,11 +1,13 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, MessageCircle, Send, X } from "lucide-react";
 import { getAuthHeaders } from "../lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 
 export type CommunicationContextType = "cotizacion" | "requerimiento" | "reserva";
 

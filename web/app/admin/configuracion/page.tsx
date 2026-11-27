@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
@@ -9,7 +10,7 @@ import {
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders, getStoredUser, setStoredUser, handleUnauthorized } from "../../../lib/session";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Perfil = { id: number; nombre: string; email: string; rol: string; telefono?: string | null; imagen_url?: string | null };
 const INPUT = "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition-all focus:border-[#E31E24] focus:ring-2 focus:ring-[#E31E24]/10 disabled:bg-slate-50 disabled:text-slate-400";

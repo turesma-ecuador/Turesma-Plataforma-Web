@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -15,7 +17,7 @@ import {
 } from "lucide-react";
 import { LanguageSwitcher, LocalizedContent } from "../../lib/i18n";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 
 export default function RecuperarPasswordPage() {
   const router = useRouter();

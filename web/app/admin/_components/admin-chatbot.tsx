@@ -1,10 +1,12 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { Bot, Send, Sparkles, X } from "lucide-react";
 import { FormEvent, useRef, useState } from "react";
 import { getAuthHeaders } from "../../../lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 
 type Message = {
   id: string;

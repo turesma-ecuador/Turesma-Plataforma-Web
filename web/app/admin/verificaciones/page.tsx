@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
@@ -9,7 +11,7 @@ import {
   ShieldCheck, Loader2, CheckCircle2, XCircle, X, ImageIcon, Phone, Mail, IdCard,
 } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Verificacion = {
   id: number; nombre: string; email: string; telefono: string | null;

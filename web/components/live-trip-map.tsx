@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Bus, Flag, MapPin, Phone, RefreshCw, Clock, Navigation } from "lucide-react";
 import { ensureLeaflet, calcularRuta, formatDuracion } from "../lib/leaflet";
@@ -7,7 +9,7 @@ import { getAuthHeaders } from "../lib/session";
 import { WhatsAppButton } from "./whatsapp-button";
 import { LocalizedContent, useLocale } from "../lib/i18n";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 const POLL_MS = 2000;
 
 type Seguimiento = {

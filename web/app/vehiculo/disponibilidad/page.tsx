@@ -1,11 +1,13 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import { CalendarClock, Loader2 } from "lucide-react";
 import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
 import { useConductorPanel } from "../_components/use-conductor-panel";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Block = {
   id: number;

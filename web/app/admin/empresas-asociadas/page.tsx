@@ -1,11 +1,12 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Building2, Loader2, Plus, RefreshCw, Truck, X } from "lucide-react";
 import { getAuthHeaders, normalizeRole } from "../../../lib/session";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type PartnerVehicle = {
   id: number;

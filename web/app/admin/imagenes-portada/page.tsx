@@ -1,12 +1,13 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import Image from "next/image";
 import { CheckCircle2, ImagePlus, Loader2, Move, RotateCcw, Save, UploadCloud, XCircle } from "lucide-react";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 const SLOTS = ["primary", "secondary"] as const;
 type Slot = (typeof SLOTS)[number];
 type CropSettings = { positionX: number; positionY: number; zoom: number };

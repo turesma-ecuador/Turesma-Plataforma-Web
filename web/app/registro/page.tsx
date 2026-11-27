@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
@@ -24,7 +26,7 @@ import {
 import AuthCarousel from "../../components/auth-carousel";
 import { LanguageSwitcher, LocalizedContent, useLocale } from "../../lib/i18n";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 
 export default function RegistroPage() {
   const router = useRouter();

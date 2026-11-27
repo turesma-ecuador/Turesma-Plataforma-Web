@@ -1,11 +1,13 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useRef, useState } from "react";
 import { Navigation, Loader2, Radio, Clock, MapPin } from "lucide-react";
 import { getAuthHeaders } from "../../../lib/session";
 import { ensureLeaflet, calcularRuta, formatDuracion } from "../../../lib/leaflet";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 const SEND_INTERVAL_MS = 2000;
 

@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
@@ -11,7 +13,7 @@ import { useClienteGuard } from "../../../lib/use-cliente-guard";
 import { useAutoRefresh } from "../../../lib/use-auto-refresh";
 import { LocalizedContent } from "../../../lib/i18n";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Perfil = { id: number; nombre: string; email: string; pending_email?: string | null; rol: string; telefono?: string | null; imagen_url?: string | null };
 type Verif = { estado_verificacion: string; cedula: string | null; tipo_identificacion?: string | null; cedula_url?: string | null; selfie_cedula_url?: string | null; email_verified_at?: string | null; pending_email?: string | null; notas_verificacion: string | null };

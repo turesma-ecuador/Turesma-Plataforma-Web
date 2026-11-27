@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
@@ -13,7 +14,7 @@ import {
   CheckCircle, AlertCircle, Star, Loader2, Car, UploadCloud
 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 
 type Conductor = {
   id: number;

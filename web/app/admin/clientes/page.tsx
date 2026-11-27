@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -19,7 +20,7 @@ import {
   Edit3, Eye, ShoppingCart, DollarSign, Mail, FileText, FileSpreadsheet, CalendarPlus,
 } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Cliente = {
   id: number;

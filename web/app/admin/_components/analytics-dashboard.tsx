@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState, useCallback } from "react";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
@@ -15,7 +17,7 @@ import {
 } from "lucide-react";
 import { descargarExcel } from "../../../lib/download";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);

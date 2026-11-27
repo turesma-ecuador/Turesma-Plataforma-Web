@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders } from "../../../lib/session";
@@ -8,7 +9,7 @@ import {
   CalendarClock, Calendar, Car, Loader2, CheckCheck, Save, X,
 } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type MatriculaItem = {
   vehiculo_id: number; placa: string; modelo: string | null; tipo: string | null;

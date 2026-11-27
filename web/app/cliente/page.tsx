@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
@@ -14,7 +16,7 @@ import { LiveTripMap } from "../../components/live-trip-map";
 import { MapPicker, Punto } from "../../components/map-picker";
 import { formatLocalizedDate, LocalizedContent, useLocale } from "../../lib/i18n";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 export default function ClienteInicioPage() {
   const { language } = useLocale();

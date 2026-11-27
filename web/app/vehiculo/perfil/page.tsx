@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
@@ -10,7 +12,7 @@ import {
   getAuthHeaders, getStoredUser, setStoredUser, handleUnauthorized,
 } from "../../../lib/session";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Perfil = {
   id: number;

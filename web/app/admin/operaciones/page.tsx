@@ -1,10 +1,11 @@
 ﻿"use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { FormEvent, useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, Plus, RefreshCw, X } from "lucide-react";
 import { getAuthHeaders } from "../../../lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 
 class ApiResponseError extends Error {
   constructor(message: string, readonly code: string | null = null) {
@@ -17,7 +18,7 @@ const readApiJson = async <T,>(response: Response, path: string): Promise<T> => 
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("application/json") && !contentType.includes("+json")) {
     throw new Error(
-      `La API devolvió HTML en ${path} (HTTP ${response.status}). Verifica NEXT_PUBLIC_API_URL y que el backend publicado tenga esta ruta.`
+      `La API devolvió HTML en ${path} (HTTP ${response.status}). Verifica que el proxy y el backend publicado tengan esta ruta.`
     );
   }
 

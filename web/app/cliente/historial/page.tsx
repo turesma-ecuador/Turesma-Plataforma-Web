@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
@@ -16,7 +18,7 @@ import { CommunicationPanel } from "../../../components/communication-panel";
 import { descargarArchivo } from "../../../lib/download";
 import { formatLocalizedDate, LocalizedContent, useLocale } from "../../../lib/i18n";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 const ROUTE_CHANGE_LOCKED_MESSAGE = "El viaje ya comenzó. Los cambios de ruta después del inicio se coordinan por llamada o WhatsApp; la reserva conserva la ruta y el valor originales.";
 const LiveTripMap = dynamic(
   () => import("../../../components/live-trip-map").then((module) => module.LiveTripMap),

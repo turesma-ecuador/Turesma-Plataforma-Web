@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
@@ -7,7 +9,7 @@ import { Bell, CheckCheck, MessageCircle, X } from "lucide-react";
 import { getAuthHeaders } from "../lib/session";
 import { LocalizedContent } from "../lib/i18n";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 const NOTIFICATIONS_POLL_MS = 30000;
 
 type NotificationItem = {

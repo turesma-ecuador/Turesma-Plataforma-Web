@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders, normalizeRole } from "../../../lib/session";
@@ -17,7 +18,7 @@ import { VehiculoCalendario } from "../../../components/vehiculo-calendario";
 import { useConfirm } from "../../../components/confirm-dialog";
 import { CommunicationPanel } from "../../../components/communication-panel";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 
 type Reserva = {
   id: number;

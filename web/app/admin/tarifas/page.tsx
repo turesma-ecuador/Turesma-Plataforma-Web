@@ -1,11 +1,13 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import { Calculator, CheckCircle2, Loader2, Save, XCircle } from "lucide-react";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 const INPUT = "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition-all focus:border-[#E31E24] focus:ring-2 focus:ring-[#E31E24]/10";
 
 type Tarifas = {

@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import Image from "next/image";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
@@ -9,7 +10,7 @@ import {
   Images, Loader2, UploadCloud, Trash2, Eye, EyeOff, X, Plus, CheckCircle2, Video, MapPin, GripVertical, ArrowUpRight,
 } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "https://api.turesma.com";
+const API = API_BASE_URL;
 
 const createVideoPoster = (file: File): Promise<Blob | null> => new Promise((resolve) => {
   const sourceUrl = URL.createObjectURL(file);
@@ -167,7 +168,7 @@ export default function AdminGaleriaPage() {
       const json = await res.json().catch(() => null);
       if (!res.ok) {
         const message = json?.error || "No se pudo cargar la galería";
-        throw new Error(`${message} (HTTP ${res.status} en ${new URL(API).host})`);
+        throw new Error(`${message} (HTTP ${res.status} en ${API})`);
       }
       setFotos(json);
       setErr("");

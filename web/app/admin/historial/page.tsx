@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders } from "../../../lib/session";
@@ -11,7 +12,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Mes = {
   mes: number; nombre: string; viajes: number; pasajeros: number;

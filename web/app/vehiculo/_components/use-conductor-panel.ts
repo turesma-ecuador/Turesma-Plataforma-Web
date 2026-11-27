@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAutoRefresh } from "../../../lib/use-auto-refresh";
@@ -17,7 +19,7 @@ import {
   SessionUser,
 } from "../../../lib/session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 const POLLING_INTERVAL = 8000;
 
 export type ReservaConductor = {

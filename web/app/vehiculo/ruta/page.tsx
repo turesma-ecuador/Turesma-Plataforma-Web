@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -10,7 +12,7 @@ import { useConductorPanel } from "../_components/use-conductor-panel";
 import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
 import { MapPicker, Punto } from "../../../components/map-picker";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Cliente = { id: number; nombre: string; email: string; telefono?: string | null };
 

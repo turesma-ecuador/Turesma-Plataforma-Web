@@ -1,3 +1,5 @@
+import { API_BASE_URL } from "./api-url";
+
 export const SESSION_KEY = "turesma_user";
 export const TOKEN_KEY = "turesma_token";
 export const LAST_ACTIVITY_KEY = "turesma_last_activity";
@@ -75,8 +77,7 @@ export const refreshStoredUser = async (): Promise<SessionUser | null> => {
   if (!token) return null;
 
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-    const response = await fetch(`${apiUrl}/api/auth/me`, {
+    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },

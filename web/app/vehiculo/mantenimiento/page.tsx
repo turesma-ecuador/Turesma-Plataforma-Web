@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { FormEvent, useEffect, useState } from "react";
 import {
   Wrench, Plus, Loader2, Bus, Calendar, DollarSign,
@@ -8,7 +10,7 @@ import {
 } from "lucide-react";
 import { getAuthHeaders, getStoredUser, handleUnauthorized } from "../../../lib/session";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Vehiculo = {
   id: number; placa: string; modelo?: string | null; tipo?: string | null;

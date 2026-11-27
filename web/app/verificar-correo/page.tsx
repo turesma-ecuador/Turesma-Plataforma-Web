@@ -1,10 +1,12 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 export default function VerificarCorreoPage() {
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");

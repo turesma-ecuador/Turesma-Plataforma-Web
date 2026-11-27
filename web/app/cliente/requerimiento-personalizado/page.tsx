@@ -1,12 +1,14 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { FormEvent, useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, CheckCircle2, CreditCard, Download, FileText, Loader2, Plus, Send, Trash2 } from "lucide-react";
 import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
 import { useClienteGuard } from "../../../lib/use-cliente-guard";
 import { CommunicationPanel } from "../../../components/communication-panel";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 const INPUT = "w-full rounded-2xl border-2 border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-[#E31E24] focus:bg-white placeholder:text-slate-300";
 
 type Group = {

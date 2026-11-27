@@ -1,6 +1,7 @@
+import { API_BASE_URL } from "@/lib/api-url";
 import { getAuthHeaders } from "./session";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 
 export type AdminUserInput = {
   nombre: string;

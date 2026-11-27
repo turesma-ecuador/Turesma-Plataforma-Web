@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBackendApiUrl } from "../../../../../lib/backend-url";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_BASE_URL = getBackendApiUrl();
 
 export async function PUT(
   request: NextRequest,

@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import React, { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
@@ -20,7 +22,7 @@ import { CommunicationPanel } from "../../../components/communication-panel";
 import { ItineraryMapPicker } from "../../../components/itinerary-map-picker";
 import type { ItineraryDestination } from "../../../components/itinerary-map-picker";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Vehiculo = { id: number; placa: string; tipo: string; modelo?: string | null; capacidad?: number; imagen_url?: string | null };
 type Cotizacion = {
@@ -240,22 +242,26 @@ export default function ClienteCotizarPage() {
     setLocatingOrigin(true); setLocationError("");
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        const label = await reverseGeocode(latitude, longitude);
-        setOrigin({ lat: latitude, lng: longitude, label });
-        setFocusSignal((s) => s + 1);
-        setLocatingOrigin(false);
+        try {
+          const { latitude, longitude } = pos.coords;
+          const label = await reverseGeocode(latitude, longitude);
+          setOrigin({ lat: latitude, lng: longitude, label });
+          setFocusSignal((s) => s + 1);
+        } catch {
+          setLocationError("Se detectó tu ubicación, pero no se pudo obtener la dirección. Puedes marcar el origen en el mapa.");
+        } finally {
+          setLocatingOrigin(false);
+        }
       },
-      () => {
-        setLocationError("No se pudo detectar tu ubicación. Marca la salida manualmente en el mapa.");
+      (error) => {
+        setLocationError(error.code === error.PERMISSION_DENIED
+          ? "El permiso de ubicación está bloqueado. Habilítalo en los ajustes del sitio o marca el origen en el mapa."
+          : "No se pudo detectar tu ubicación. Marca la salida manualmente en el mapa.");
         setLocatingOrigin(false);
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
   };
-
-  // Al abrir la página, intenta ubicar al cliente automáticamente.
-  useEffect(() => { locateMyLocation();   }, []);
 
   const loadVehiculos = async () => {
     try {
@@ -591,7 +597,6 @@ export default function ClienteCotizarPage() {
       setItineraryDestinations([]);
       setItineraryReturnToOrigin(false);
       setOrigin(null); setDestination(null);
-      locateMyLocation();
       loadCotizaciones();
     } catch (e) { setFormErr(e instanceof Error ? e.message : "Error inesperado"); }
     finally { setSending(false); }

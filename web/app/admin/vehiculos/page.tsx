@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { FormEvent, PointerEvent, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
@@ -13,7 +15,7 @@ import {
   Users, Loader2, UploadCloud, GripVertical
 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 
 type Vehiculo = {
   id: number;

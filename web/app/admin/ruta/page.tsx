@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useRef, useState } from "react";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
@@ -7,7 +8,7 @@ import { useAutoRefresh } from "../../../lib/use-auto-refresh";
 import { MapPin, Bus, Loader2, Navigation, Clock, ArrowRight } from "lucide-react";
 import { calcularRuta, formatDuracion } from "../../../lib/leaflet";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 const POLL_MS = 2000;
 
 type Coord = { lat: number; lng: number };

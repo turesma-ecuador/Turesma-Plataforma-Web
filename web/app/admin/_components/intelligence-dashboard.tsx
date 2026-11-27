@@ -1,5 +1,7 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -15,7 +17,7 @@ import { getAuthHeaders, handleUnauthorized } from "../../../lib/session";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { useAutoRefresh } from "../../../lib/use-auto-refresh";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 
 type DashboardData = {
   resumen: {

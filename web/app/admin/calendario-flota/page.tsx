@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -11,7 +12,7 @@ import { getAuthHeaders, normalizeRole } from "../../../lib/session";
 import { useAdminGuard } from "../../../lib/use-admin-guard";
 import { useAutoRefresh } from "../../../lib/use-auto-refresh";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 
 type FleetVehicle = {

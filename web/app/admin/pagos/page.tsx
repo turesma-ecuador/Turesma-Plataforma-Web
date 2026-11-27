@@ -1,5 +1,6 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -13,7 +14,7 @@ import {
   MapPin, ArrowRight, X, FileDown,
 } from "lucide-react";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 
 type Pago = {
   id: number; reserva_id: number; monto: number; metodo: string;

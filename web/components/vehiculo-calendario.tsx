@@ -1,10 +1,12 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { LocalizedContent, useLocale } from "../lib/i18n";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 const DIAS = ["D", "L", "M", "X", "J", "V", "S"];
 
 const iso = (d: Date) => [

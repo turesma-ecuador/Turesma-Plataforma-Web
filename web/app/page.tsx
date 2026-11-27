@@ -1,5 +1,7 @@
 ﻿"use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState, useRef, type MouseEvent, type SyntheticEvent } from "react";
@@ -100,9 +102,7 @@ const createVideoMosaics = (videos: GaleriaFoto[]) => {
   return mosaics;
 };
 
-const API_URL = process.env.NODE_ENV === "production"
-  ? "/api-proxy"
-  : process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = API_BASE_URL;
 const HERO_IMAGE_URL = "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=2069&auto=format&fit=crop";
 const PUBLIC_API_ORIGIN = "https://api.turesma.com";
 const PROXYABLE_MEDIA_PATH = /^\/uploads\/(?:videos\/[A-Za-z0-9][A-Za-z0-9._-]*\.(?:mp4|webm|mov)|galeria\/[A-Za-z0-9][A-Za-z0-9._-]*\.webp)$/i;

@@ -1,11 +1,13 @@
 "use client";
 
+
+import { API_BASE_URL } from "@/lib/api-url";
 import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 import { Edit3, MapPin, Plus, Trash2, X } from "lucide-react";
 import { getAuthHeaders } from "../../../lib/session";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = API_BASE_URL;
 type Vehicle = { id: number; placa: string; modelo: string; capacidad: number; imagen_url?: string | null; estado: string; activo: boolean };
 type Trip = { id: number; titulo: string; origen: string; destino: string; precio: number; cupos_totales: number; cupos_disponibles: number; capacidad_personas: number; activo: boolean; vehiculo_id?: number | null; vehiculo_placa?: string | null; vehiculo_modelo?: string | null; vehiculo_imagen_url?: string | null; imagenes?: string[] };
 type FormState = { titulo: string; origen: string; destino: string; precio: string; tipo_servicio: string; descripcion: string; vehiculo_id: string; imagenes: string[] };

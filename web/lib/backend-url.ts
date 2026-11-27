@@ -21,9 +21,6 @@ export const getBackendApiUrl = () => {
   const configuredApiUrl = getOriginWithoutProxyPath(process.env.API_URL);
   if (configuredApiUrl) return configuredApiUrl;
 
-  const publicApiUrl = getOriginWithoutProxyPath(process.env.NEXT_PUBLIC_API_URL);
-  if (publicApiUrl) return publicApiUrl;
-
   return process.env.NODE_ENV === "production"
     ? PRODUCTION_BACKEND_ORIGIN
     : "http://localhost:4000";
