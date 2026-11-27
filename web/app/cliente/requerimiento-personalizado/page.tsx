@@ -212,22 +212,23 @@ export default function ClienteRequerimientoPersonalizadoPage() {
                   onChange={e => updateGroup(index, { [field]: e.target.value })} className={INPUT} />
               )}
             </div>)}
-            <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-900">Destinos intermedios (opcional)</p>
-                  <p className="mt-1 text-[10px] leading-relaxed text-blue-800">Agrégalos en el orden del recorrido. No hace falta marcar cada punto en el mapa.</p>
-                </div>
-                <button type="button" disabled={group.itinerario.length >= 10}
-                  onClick={() => updateGroup(index, {
-                    itinerario: [...group.itinerario, { destino: "", fecha_llegada: "", dias_estadia: 0, hora_salida: "" }],
-                  })}
-                  className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-2 text-[9px] font-black uppercase text-blue-800 disabled:opacity-50">
-                  <Plus size={13} /> Agregar destino
-                </button>
+          </div>
+          <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-blue-900">Destinos intermedios (opcional)</p>
+                <p className="mt-1 text-xs leading-relaxed text-blue-800">Agrégalos en el orden del recorrido. No hace falta marcar cada punto en el mapa.</p>
               </div>
-              {group.itinerario.map((stop, stopIndex) => (
-                <div key={stopIndex} className="grid gap-2 rounded-lg border border-blue-100 bg-white p-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_1fr_1fr_1fr_auto]">
+              <button type="button" disabled={group.itinerario.length >= 10}
+                onClick={() => updateGroup(index, {
+                  itinerario: [...group.itinerario, { destino: "", fecha_llegada: "", dias_estadia: 0, hora_salida: "" }],
+                })}
+                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-2 text-[10px] font-black uppercase text-blue-800 shadow-sm transition hover:bg-blue-100 disabled:opacity-50">
+                <Plus size={14} /> Agregar destino
+              </button>
+            </div>
+            {group.itinerario.map((stop, stopIndex) => (
+              <div key={stopIndex} className="grid items-end gap-3 rounded-lg border border-blue-100 bg-white p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
                   <label className="text-[9px] font-black uppercase tracking-wide text-slate-500">
                     Destino {stopIndex + 1}
                     <input maxLength={300} required value={stop.destino}
@@ -283,11 +284,10 @@ export default function ClienteRequerimientoPersonalizadoPage() {
                       aria-label={`Quitar destino ${stopIndex + 1}`}
                       className="rounded-lg p-2 text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>
                   </div>
-                </div>
-              ))}
-            </div>
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 sm:col-span-2 lg:col-span-4"><input type="checkbox" checked={group.simultaneo} onChange={e => updateGroup(index, { simultaneo: e.target.checked })} className="accent-[#E31E24]" /> Los vehículos deben operar simultáneamente</label>
+              </div>
+            ))}
           </div>
+          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700"><input type="checkbox" checked={group.simultaneo} onChange={e => updateGroup(index, { simultaneo: e.target.checked })} className="accent-[#E31E24]" /> Los vehículos deben operar simultáneamente</label>
           <input value={group.detalles} maxLength={2000} onChange={e => updateGroup(index, { detalles: e.target.value })} className={INPUT} placeholder="Indicaciones para este grupo (horarios, equipaje, necesidades especiales)" />
         </section>)}
         <button type="button" onClick={() => setGroups(current => [...current, emptyGroup()])} disabled={groups.length >= 20} className="inline-flex items-center gap-2 rounded-xl border border-[#E31E24]/30 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-[#E31E24] disabled:opacity-50"><Plus size={14} /> Agregar grupo</button>
